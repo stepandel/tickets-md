@@ -2,3 +2,4 @@
 /tickets.exe
 *.test
 *.out
+.tickets
