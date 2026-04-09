@@ -42,17 +42,70 @@ func Open(root string) (*Store, error) {
 	return &Store{Root: root, Config: c}, nil
 }
 
-// Init creates the config file (if missing) and the stage directories
-// for a brand new ticket store.
+// Init creates the config file and the stage directories for a brand
+// new ticket store.
+//
+// Init is atomic in the sense that it refuses to write anything to
+// disk if a precheck detects a path collision (e.g. a regular file
+// already exists where a stage directory needs to go). This avoids
+// the surprising "half-initialized" state where config.yml is on
+// disk but the stage folders are missing because mkdir failed.
+//
+// Two-line defense:
+//  1. checkInitPaths walks every directory we're about to create and
+//     fails fast if any of them collide with a non-directory file.
+//  2. Stage directories are created *before* config.yml is written,
+//     so even if a check is missed, an init failure leaves at most
+//     empty directories rather than an orphaned config.
 func Init(root string, c config.Config) (*Store, error) {
-	if err := config.Save(root, c); err != nil {
+	s := &Store{Root: root, Config: c}
+	if err := s.checkInitPaths(); err != nil {
 		return nil, err
 	}
-	s := &Store{Root: root, Config: c}
 	if err := s.EnsureStageDirs(); err != nil {
 		return nil, err
 	}
+	if err := config.Save(root, c); err != nil {
+		return nil, err
+	}
 	return s, nil
+}
+
+// checkInitPaths verifies that none of the directories Init needs to
+// create collide with an existing non-directory file. It catches the
+// common case where a project already has a binary or file with the
+// same name as the ticket directory (e.g. a stray `tickets` binary
+// in the project root).
+func (s *Store) checkInitPaths() error {
+	paths := []string{
+		filepath.Join(s.Root, config.ConfigDir),
+		filepath.Join(s.Root, s.Config.TicketDir),
+	}
+	for _, stage := range s.Config.Stages {
+		paths = append(paths, s.stageDir(stage))
+	}
+	for _, p := range paths {
+		if err := mustBeDirOrAbsent(p); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// mustBeDirOrAbsent returns nil if path either doesn't exist or is
+// already a directory, and a descriptive error otherwise.
+func mustBeDirOrAbsent(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("cannot create directory %s: a non-directory file already exists at that path", path)
+	}
+	return nil
 }
 
 // EnsureStageDirs creates any missing stage directories under
