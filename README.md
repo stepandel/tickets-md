@@ -48,7 +48,7 @@ tickets new "Add dark mode toggle"
 tickets list
 tickets move TIC-001 in-progress
 tickets show TIC-001
-tickets edit TIC-001        # opens $EDITOR
+tickets edit TIC-001        # opens your editor (see "Editor" below)
 tickets rm TIC-002          # prompts for confirmation
 ```
 
@@ -67,7 +67,7 @@ tickets -C ~/work/acme list
 | `tickets list [--stage X]`    | List tickets, grouped by stage (alias: `ls`) |
 | `tickets show <id>`           | Print a ticket's contents                    |
 | `tickets move <id> <stage>`   | Move a ticket to another stage (alias: `mv`) |
-| `tickets edit <id>`           | Open the ticket file in `$EDITOR`            |
+| `tickets edit <id>`           | Open the ticket file in your editor          |
 | `tickets rm <id> [--force]`   | Delete a ticket                              |
 
 `init` accepts `--prefix` and `--stages` to override the defaults at
@@ -95,6 +95,24 @@ default for new tickets. Submit a blank line when done.
 
 Pass `--stages new,doing,done` (or pipe stdin from a script) to skip
 the wizard.
+
+## Editor
+
+`tickets edit` resolves which editor to launch in this order:
+
+1. `$VISUAL` if set
+2. `$EDITOR` if set
+3. The `editor:` field in your user config at
+   `~/.config/tickets/config.yml` (or `$XDG_CONFIG_HOME/tickets/config.yml`)
+4. If none of the above is set and you're in a terminal, `tickets`
+   asks you once, saves your choice to the user config, and uses it
+   from then on
+5. If you're not in a terminal (script, pipe), `tickets edit` errors
+   out and asks you to set `$EDITOR`
+
+The first-run prompt only shows editors actually present on your
+`PATH`, so every option will work. You can also type a custom command
+like `subl -w` instead of picking from the list.
 
 ## Ticket file format
 
