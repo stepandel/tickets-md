@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -92,13 +93,33 @@ func (c Config) Validate() error {
 	}
 	seen := make(map[string]struct{}, len(c.Stages))
 	for _, s := range c.Stages {
-		if s == "" {
-			return errors.New("stage names must be non-empty")
+		if err := ValidateStageName(s); err != nil {
+			return err
 		}
 		if _, dup := seen[s]; dup {
 			return fmt.Errorf("duplicate stage %q", s)
 		}
 		seen[s] = struct{}{}
+	}
+	return nil
+}
+
+// ValidateStageName enforces the rules a stage folder name must
+// follow to be safe to create on disk: non-empty, no path separators
+// (so it can't escape .tickets/), and no leading dot (so it doesn't
+// collide with hidden tooling files like config.yml).
+func ValidateStageName(name string) error {
+	if name == "" {
+		return errors.New("stage names must be non-empty")
+	}
+	if strings.ContainsAny(name, `/\`) {
+		return fmt.Errorf("stage name %q must not contain path separators", name)
+	}
+	if strings.HasPrefix(name, ".") {
+		return fmt.Errorf("stage name %q must not start with a dot", name)
+	}
+	if name == ".." {
+		return fmt.Errorf("stage name %q is not allowed", name)
 	}
 	return nil
 }

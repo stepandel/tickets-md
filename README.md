@@ -71,7 +71,30 @@ tickets -C ~/work/acme list
 | `tickets rm <id> [--force]`   | Delete a ticket                              |
 
 `init` accepts `--prefix` and `--stages` to override the defaults at
-creation time.
+creation time. When run interactively without `--stages`, it walks
+you through naming the stage folders:
+
+```
+$ tickets init
+Set up the stages for your ticket store.
+Defaults: backlog, todo, in-progress, done
+Use defaults? [Y/n]: n
+
+Enter stage names one at a time. The first stage is the
+default for new tickets. Submit a blank line when done.
+
+  Stage 1: backlog
+  Stage 2: triage
+  Stage 3: in-progress
+  Stage 4: review
+  Stage 5: shipped
+  Stage 6:
+
+5 stages: backlog → triage → in-progress → review → shipped
+```
+
+Pass `--stages new,doing,done` (or pipe stdin from a script) to skip
+the wizard.
 
 ## Ticket file format
 
