@@ -32,10 +32,14 @@ type Config struct {
 }
 
 // Default returns the out-of-the-box configuration used by `tickets init`.
+//
+// TicketDir intentionally matches ConfigDir so that config.yml and
+// every stage folder live together under a single hidden `.tickets`
+// directory at the project root, the same way `.git` works.
 func Default() Config {
 	return Config{
 		Prefix:    "TIC",
-		TicketDir: "tickets",
+		TicketDir: ConfigDir,
 		Stages:    []string{"backlog", "todo", "in-progress", "done"},
 	}
 }

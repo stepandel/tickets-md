@@ -5,7 +5,8 @@ every stage is a folder. No database, no daemon — just files you can
 read, grep, edit, and commit alongside your code.
 
 ```
-tickets/
+.tickets/
+├── config.yml
 ├── backlog/
 ├── todo/
 │   └── TIC-002.md
@@ -13,6 +14,9 @@ tickets/
 │   └── TIC-001.md
 └── done/
 ```
+
+The whole store lives under a single hidden `.tickets/` directory at
+the project root, the same way `.git/` works.
 
 Moving a ticket between stages is just `mv`, and `git log` is your
 audit trail.
@@ -104,7 +108,7 @@ the CLI will see them in the right column on the next `list`.
 
 ```yaml
 prefix: TIC
-ticket_dir: tickets
+ticket_dir: .tickets
 stages:
   - backlog
   - todo
@@ -113,7 +117,10 @@ stages:
 ```
 
 - **prefix** — alphabetic prefix for ticket IDs (`TIC-001`, `TIC-002`, ...)
-- **ticket_dir** — folder under the project root that holds the stage subdirectories
+- **ticket_dir** — folder under the project root that holds the stage
+  subdirectories. Defaults to `.tickets` so config and stages share one
+  hidden namespace; set this to a non-hidden directory (e.g. `tickets`)
+  if you'd rather have ticket files visible in `ls` and Finder.
 - **stages** — ordered list of stage folder names. The first entry is
   the default stage for newly created tickets. Reorder, rename, or add
   stages by editing this file; the CLI picks the changes up on the next
