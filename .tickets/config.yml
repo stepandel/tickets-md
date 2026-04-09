@@ -1,7 +1,0 @@
-prefix: TIC
-ticket_dir: tickets
-stages:
-    - backlog
-    - todo
-    - in-progress
-    - done
