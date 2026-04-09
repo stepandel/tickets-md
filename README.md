@@ -22,9 +22,16 @@ audit trail.
 Requires Go 1.22+.
 
 ```sh
-go build -o tickets .
-# or drop the binary on your PATH:
-go install .
+go install ./cmd/tickets
+# or build a local binary without installing:
+go build -o tickets ./cmd/tickets
+```
+
+`go install` drops the binary in `$(go env GOPATH)/bin` (usually
+`~/go/bin`). Add that directory to your `$PATH` if it isn't already:
+
+```sh
+echo 'export PATH="$HOME/go/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
 ```
 
 ## Quick start
@@ -119,7 +126,7 @@ desync a counter.
 ## Project layout
 
 ```
-main.go                       # CLI entry point
+cmd/tickets/main.go           # CLI entry point
 internal/config/              # config.yml loader
 internal/ticket/
   ├── ticket.go               # Ticket struct + frontmatter (de)serialize
