@@ -11,9 +11,8 @@ import (
 
 func newInitCmd() *cobra.Command {
 	var (
-		prefix    string
-		ticketDir string
-		stages    []string
+		prefix string
+		stages []string
 	)
 	cmd := &cobra.Command{
 		Use:   "init",
@@ -23,9 +22,6 @@ func newInitCmd() *cobra.Command {
 			if prefix != "" {
 				c.Prefix = prefix
 			}
-			if ticketDir != "" {
-				c.TicketDir = ticketDir
-			}
 			if len(stages) > 0 {
 				c.Stages = stages
 			}
@@ -34,13 +30,11 @@ func newInitCmd() *cobra.Command {
 				return err
 			}
 			fmt.Printf("Initialized ticket store at %s\n", s.Root)
-			fmt.Printf("  prefix: %s\n  ticket_dir: %s\n  stages: %v\n",
-				s.Config.Prefix, s.Config.TicketDir, s.Config.Stages)
+			fmt.Printf("  prefix: %s\n  stages: %v\n", s.Config.Prefix, s.Config.Stages)
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&prefix, "prefix", "", "ticket ID prefix (default TIC)")
-	cmd.Flags().StringVar(&ticketDir, "ticket-dir", "", "directory holding stage folders (default tickets)")
 	cmd.Flags().StringSliceVar(&stages, "stages", nil, "comma-separated list of stage folder names")
 	return cmd
 }

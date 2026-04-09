@@ -22,7 +22,7 @@ var ErrNotFound = errors.New("ticket not found")
 // layout is:
 //
 //	<root>/.tickets/config.yml
-//	<root>/<TicketDir>/<stage>/<ID>.md
+//	<root>/.tickets/<stage>/<ID>.md
 //
 // Stage transitions are implemented as os.Rename between sibling
 // directories, so they are atomic on the same filesystem.
@@ -74,13 +74,10 @@ func Init(root string, c config.Config) (*Store, error) {
 // checkInitPaths verifies that none of the directories Init needs to
 // create collide with an existing non-directory file. It catches the
 // common case where a project already has a binary or file with the
-// same name as the ticket directory (e.g. a stray `tickets` binary
-// in the project root).
+// same name as the store directory (e.g. a stray `.tickets` file in
+// the project root).
 func (s *Store) checkInitPaths() error {
-	paths := []string{
-		filepath.Join(s.Root, config.ConfigDir),
-		filepath.Join(s.Root, s.Config.TicketDir),
-	}
+	paths := []string{filepath.Join(s.Root, config.ConfigDir)}
 	for _, stage := range s.Config.Stages {
 		paths = append(paths, s.stageDir(stage))
 	}
@@ -109,7 +106,7 @@ func mustBeDirOrAbsent(path string) error {
 }
 
 // EnsureStageDirs creates any missing stage directories under
-// <Root>/<TicketDir>.
+// <Root>/.tickets.
 func (s *Store) EnsureStageDirs() error {
 	for _, stage := range s.Config.Stages {
 		if err := os.MkdirAll(s.stageDir(stage), 0o755); err != nil {
@@ -121,7 +118,7 @@ func (s *Store) EnsureStageDirs() error {
 
 // stageDir returns the absolute path to a stage directory.
 func (s *Store) stageDir(stage string) string {
-	return filepath.Join(s.Root, s.Config.TicketDir, stage)
+	return filepath.Join(s.Root, config.ConfigDir, stage)
 }
 
 // ticketPath returns the absolute path of a ticket file in a given

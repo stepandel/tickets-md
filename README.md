@@ -70,8 +70,8 @@ tickets -C ~/work/acme list
 | `tickets edit <id>`           | Open the ticket file in `$EDITOR`            |
 | `tickets rm <id> [--force]`   | Delete a ticket                              |
 
-`init` accepts `--prefix`, `--ticket-dir`, and `--stages` to override
-the defaults at creation time.
+`init` accepts `--prefix` and `--stages` to override the defaults at
+creation time.
 
 ## Ticket file format
 
@@ -108,7 +108,6 @@ the CLI will see them in the right column on the next `list`.
 
 ```yaml
 prefix: TIC
-ticket_dir: .tickets
 stages:
   - backlog
   - todo
@@ -117,14 +116,13 @@ stages:
 ```
 
 - **prefix** — alphabetic prefix for ticket IDs (`TIC-001`, `TIC-002`, ...)
-- **ticket_dir** — folder under the project root that holds the stage
-  subdirectories. Defaults to `.tickets` so config and stages share one
-  hidden namespace; set this to a non-hidden directory (e.g. `tickets`)
-  if you'd rather have ticket files visible in `ls` and Finder.
 - **stages** — ordered list of stage folder names. The first entry is
   the default stage for newly created tickets. Reorder, rename, or add
   stages by editing this file; the CLI picks the changes up on the next
   invocation.
+
+The store always lives at `<project>/.tickets/`, the same way `.git/`
+always lives at the repo root.
 
 ID numbers are assigned by scanning every stage directory for the
 highest existing `<PREFIX>-NNN`, so deletions and manual edits never

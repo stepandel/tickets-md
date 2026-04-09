@@ -19,28 +19,22 @@ const ConfigDir = ".tickets"
 // ConfigFile is the filename of the config inside ConfigDir.
 const ConfigFile = "config.yml"
 
-// Config describes a ticket store layout.
+// Config describes a ticket store layout. The store always lives
+// under `<root>/.tickets/`, so the only things worth configuring are
+// the ID prefix and the stage list.
 type Config struct {
 	// Prefix is the alphabetic prefix used in ticket IDs, e.g. "TIC".
 	Prefix string `yaml:"prefix"`
-	// TicketDir is the directory (relative to project root) that holds
-	// the stage folders.
-	TicketDir string `yaml:"ticket_dir"`
 	// Stages is the ordered list of stage folder names. The first
 	// entry is treated as the default stage for new tickets.
 	Stages []string `yaml:"stages"`
 }
 
 // Default returns the out-of-the-box configuration used by `tickets init`.
-//
-// TicketDir intentionally matches ConfigDir so that config.yml and
-// every stage folder live together under a single hidden `.tickets`
-// directory at the project root, the same way `.git` works.
 func Default() Config {
 	return Config{
-		Prefix:    "TIC",
-		TicketDir: ConfigDir,
-		Stages:    []string{"backlog", "todo", "in-progress", "done"},
+		Prefix: "TIC",
+		Stages: []string{"backlog", "todo", "in-progress", "done"},
 	}
 }
 
@@ -92,9 +86,6 @@ func Save(root string, c Config) error {
 func (c Config) Validate() error {
 	if c.Prefix == "" {
 		return errors.New("prefix is empty")
-	}
-	if c.TicketDir == "" {
-		return errors.New("ticket_dir is empty")
 	}
 	if len(c.Stages) == 0 {
 		return errors.New("at least one stage is required")
