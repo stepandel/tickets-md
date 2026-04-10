@@ -161,6 +161,12 @@ func runWatch(s *ticket.Store) error {
 			if !ok {
 				return nil
 			}
+
+			if event.Has(fsnotify.Rename) || event.Has(fsnotify.Remove) {
+				handleRemove(s.Root, event.Name)
+				continue
+			}
+
 			if !event.Has(fsnotify.Create) {
 				continue
 			}
@@ -202,6 +208,38 @@ func handleCreate(s *ticket.Store, stageConfigs map[string]stage.Config, path st
 	}
 
 	spawnAgentTmux(t, sc, s.Root, mon)
+}
+
+// handleRemove is called when a ticket file disappears from a stage
+// directory (Rename or Remove event). If the ticket has an active tmux
+// session, it is killed and the status is updated.
+func handleRemove(root, path string) {
+	base := filepath.Base(path)
+	if !strings.HasSuffix(base, ".md") {
+		return
+	}
+	ticketID := strings.TrimSuffix(base, ".md")
+
+	// Only act if there's a live tmux session for this ticket.
+	if exec.Command("tmux", "has-session", "-t", ticketID).Run() != nil {
+		return
+	}
+
+	log.Printf("%s: ticket moved, killing agent session", ticketID)
+	if err := exec.Command("tmux", "kill-session", "-t", ticketID).Run(); err != nil {
+		log.Printf("%s: failed to kill tmux session: %v", ticketID, err)
+	}
+
+	// The waitForTmuxSession goroutine will detect the session is gone
+	// and handle the status update. But the exit code file won't exist
+	// (agent didn't exit normally), so set the status explicitly.
+	if as, err := agent.Read(root, ticketID); err == nil && !as.Status.IsTerminal() {
+		as.Status = agent.StatusFailed
+		as.Error = "ticket moved, agent terminated"
+		if err := agent.Write(root, as); err != nil {
+			log.Printf("%s: failed to update status: %v", ticketID, err)
+		}
+	}
 }
 
 // buildAgentArgs returns the full argv (without the command itself)
