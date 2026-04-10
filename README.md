@@ -35,10 +35,15 @@ brew install tmux
 ```
 
 ```sh
+make install
+# or manually:
 go install ./cmd/tickets
-# or build a local binary without installing:
-go build -o tickets ./cmd/tickets
 ```
+
+`make install` ensures tmux is present (installs via Homebrew if
+missing) and builds the `tickets` binary. Alternatively, `tickets
+watch` will offer to install tmux for you on first run if it's not
+found.
 
 `go install` drops the binary in `$(go env GOPATH)/bin` (usually
 `~/go/bin`). Add that directory to your `$PATH` if it isn't already:

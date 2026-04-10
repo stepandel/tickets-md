@@ -52,9 +52,42 @@ Create a .stage.yml in any stage directory to configure an agent:
 	return cmd
 }
 
-func runWatch(s *ticket.Store) error {
-	if _, err := exec.LookPath("tmux"); err != nil {
+func ensureTmux() error {
+	if _, err := exec.LookPath("tmux"); err == nil {
+		return nil
+	}
+	if !isTerminal(os.Stdin) {
 		return fmt.Errorf("tmux is required for `tickets watch`: brew install tmux")
+	}
+	fmt.Println("tmux is required for `tickets watch` but wasn't found on your PATH.")
+	fmt.Print("Install it now via Homebrew? [Y/n]: ")
+
+	var answer string
+	fmt.Scanln(&answer)
+	answer = strings.TrimSpace(strings.ToLower(answer))
+	if answer != "" && answer != "y" && answer != "yes" {
+		return fmt.Errorf("tmux is required: brew install tmux")
+	}
+
+	fmt.Println("Running: brew install tmux")
+	cmd := exec.Command("brew", "install", "tmux")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to install tmux: %w", err)
+	}
+	fmt.Println()
+
+	// Verify it's now on PATH.
+	if _, err := exec.LookPath("tmux"); err != nil {
+		return fmt.Errorf("tmux was installed but not found on PATH — try restarting your shell")
+	}
+	return nil
+}
+
+func runWatch(s *ticket.Store) error {
+	if err := ensureTmux(); err != nil {
+		return err
 	}
 
 	w, err := fsnotify.NewWatcher()
