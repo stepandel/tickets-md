@@ -73,6 +73,10 @@ type boardModel struct {
 	// Live status.
 	watcherRunning bool
 	agentStatuses  map[string]agent.AgentStatus // ticketID → status
+
+	// New ticket input mode.
+	inputActive bool   // true when the title input is shown
+	inputBuf    string // text typed so far
 }
 
 func newBoardModel(s *ticket.Store) (*boardModel, error) {
@@ -131,6 +135,9 @@ func (m *boardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, boardTickCmd()
 
 	case tea.KeyPressMsg:
+		if m.inputActive {
+			return m.handleInput(msg)
+		}
 		return m.handleKey(msg)
 
 	case tea.MouseClickMsg:
@@ -172,6 +179,48 @@ func (m *boardModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.err = m.reload()
 		m.refreshStatus()
 		m.clampRow()
+	case "n", "+":
+		m.inputActive = true
+		m.inputBuf = ""
+	}
+	return m, nil
+}
+
+func (m *boardModel) handleInput(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "enter":
+		title := strings.TrimSpace(m.inputBuf)
+		m.inputActive = false
+		m.inputBuf = ""
+		if title == "" {
+			return m, nil
+		}
+		t, err := m.store.Create(title)
+		if err != nil {
+			m.err = err
+			return m, nil
+		}
+		m.err = m.reload()
+		// Select the new ticket in the default stage (first column).
+		m.activeCol = 0
+		for i, c := range m.columns[0] {
+			if c.ID == t.ID {
+				m.activeRow = i
+				break
+			}
+		}
+	case "escape":
+		m.inputActive = false
+		m.inputBuf = ""
+	case "backspace":
+		if len(m.inputBuf) > 0 {
+			m.inputBuf = m.inputBuf[:len(m.inputBuf)-1]
+		}
+	default:
+		// Only append printable characters (single rune keys).
+		if len(msg.String()) == 1 || msg.String() == " " {
+			m.inputBuf += msg.String()
+		}
 	}
 	return m, nil
 }
@@ -402,6 +451,29 @@ func (m *boardModel) View() tea.View {
 			cardContent := id + priority + badge + "\n" + title
 			cards = append(cards, cStyle.Render(cardContent))
 		}
+		// Show inline input or [+] button at the bottom of the first column.
+		if i == 0 {
+			if m.inputActive {
+				cursor := "█"
+				inputStyle := lipgloss.NewStyle().
+					Border(lipgloss.NormalBorder()).
+					BorderForeground(accent).
+					Padding(0, 1).
+					Width(cardWidth)
+				inputLabel := lipgloss.NewStyle().
+					Foreground(lipgloss.Color("#888888")).Render("new ticket")
+				inputText := m.inputBuf + cursor
+				cards = append(cards, inputStyle.Render(inputLabel+"\n"+inputText))
+			} else {
+				addBtn := lipgloss.NewStyle().
+					Foreground(lipgloss.Color("#888888")).
+					Width(cardWidth).
+					Align(lipgloss.Center).
+					Render("[+] new ticket (n)")
+				cards = append(cards, addBtn)
+			}
+		}
+
 		if len(cards) == 0 {
 			empty := lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#555555")).
@@ -431,8 +503,10 @@ func (m *boardModel) View() tea.View {
 	board := lipgloss.JoinHorizontal(lipgloss.Top, renderedCols...)
 
 	// --- Help bar ---
-	helpText := "h/l: columns  j/k: cards  H/L: move card  mouse: drag & drop  r: reload  q: quit"
-	if m.dragging {
+	helpText := "h/l: columns  j/k: cards  H/L: move card  n: new ticket  mouse: drag & drop  r: reload  q: quit"
+	if m.inputActive {
+		helpText = "type a title, then enter to create • escape to cancel"
+	} else if m.dragging {
 		helpText = fmt.Sprintf("dragging %s — release over target column to move", m.dragID)
 	}
 	help := lipgloss.NewStyle().
