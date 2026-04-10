@@ -25,17 +25,18 @@ func TmuxSessionExists(sessionName string) bool {
 // Returns -1 if the session doesn't exist or the query fails.
 type IdleChecker func(sessionName string) int
 
-// TmuxPaneIdle queries tmux for the pane's idle time in seconds.
+// TmuxPaneIdle computes how long the pane has been idle by reading
+// #{window_activity} (a Unix epoch) and subtracting from now.
 func TmuxPaneIdle(sessionName string) int {
-	out, err := exec.Command("tmux", "display-message", "-t", sessionName, "-p", "#{pane_idle}").Output()
+	out, err := exec.Command("tmux", "display-message", "-t", sessionName, "-p", "#{window_activity}").Output()
 	if err != nil {
 		return -1
 	}
-	secs, err := strconv.Atoi(strings.TrimSpace(string(out)))
+	epoch, err := strconv.ParseInt(strings.TrimSpace(string(out)), 10, 64)
 	if err != nil {
 		return -1
 	}
-	return secs
+	return int(time.Now().Unix() - epoch)
 }
 
 // blockedThreshold is how long a pane must be idle (no output) before
