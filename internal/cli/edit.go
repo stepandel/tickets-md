@@ -1,13 +1,13 @@
 package cli
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
 
+	"charm.land/huh/v2"
 	"github.com/spf13/cobra"
 
 	"tickets-md/internal/userconfig"
@@ -50,7 +50,7 @@ func newEditCmd() *cobra.Command {
 //  1. $VISUAL  — POSIX convention: full-screen editor, preferred
 //  2. $EDITOR  — POSIX convention: line editor, fallback
 //  3. The user-level config at ~/.config/tickets/config.yml
-//  4. If stdin is a TTY: arrow-key picker → save to user config
+//  4. If stdin is a TTY: huh picker → save to user config
 //  5. If stdin is not a TTY: error out (scripts must set $EDITOR)
 func resolveEditor() (string, []string, error) {
 	for _, env := range []string{"VISUAL", "EDITOR"} {
@@ -87,13 +87,10 @@ func resolveEditor() (string, []string, error) {
 
 // editorCandidate is one entry in the auto-detected list of editors.
 type editorCandidate struct {
-	command string // full command including arguments, e.g. "code -w"
-	label   string // human-friendly name shown in the picker
+	command string
+	label   string
 }
 
-// allEditorCandidates is the canonical ordered list the picker
-// considers. Modern → classic so a developer with both `code` and
-// `vim` sees VS Code at the top of the menu.
 var allEditorCandidates = []editorCandidate{
 	{"code -w", "VS Code"},
 	{"cursor -w", "Cursor"},
@@ -103,8 +100,6 @@ var allEditorCandidates = []editorCandidate{
 	{"vi", "Vi"},
 }
 
-// detectAvailableEditors filters allEditorCandidates down to the
-// ones whose binary is actually on PATH.
 func detectAvailableEditors() []editorCandidate {
 	var available []editorCandidate
 	for _, c := range allEditorCandidates {
@@ -116,49 +111,58 @@ func detectAvailableEditors() []editorCandidate {
 	return available
 }
 
-// runEditorWizard prompts the user to pick an editor via an
-// interactive arrow-key picker. If the user picks "Other...", it
-// falls back to a text prompt for a custom command.
+// runEditorWizard prompts the user to pick an editor via a huh
+// Select picker. If the user picks "Other...", it shows a text
+// input for a custom command.
 func runEditorWizard() (string, error) {
 	available := detectAvailableEditors()
 
-	fmt.Println("You haven't picked an editor yet for `tickets edit`.")
-	fmt.Println("tickets will save your choice so it only asks this once.")
-	fmt.Println()
-
-	// Build the picker options list, with "Other..." at the end.
-	labels := make([]string, 0, len(available)+1)
+	opts := make([]huh.Option[string], 0, len(available)+1)
 	for _, c := range available {
-		labels = append(labels, fmt.Sprintf("%-12s (%s)", c.command, c.label))
+		opts = append(opts, huh.NewOption(
+			fmt.Sprintf("%-12s (%s)", c.command, c.label),
+			c.command,
+		))
 	}
-	labels = append(labels, "Other...")
+	opts = append(opts, huh.NewOption("Other...", "other"))
 
-	idx, err := runPicker("Choose your editor:", labels)
+	var choice string
+	err := huh.NewSelect[string]().
+		Title("Choose your editor").
+		Description("tickets will save your choice so it only asks this once").
+		Options(opts...).
+		Value(&choice).
+		Run()
 	if err != nil {
 		return "", err
 	}
 
-	// Known editor selected.
-	if idx < len(available) {
-		return available[idx].command, nil
+	if choice != "other" {
+		return choice, nil
 	}
 
-	// "Other..." selected — prompt for a custom command string.
-	fmt.Print("Enter editor command (e.g. 'subl -w'): ")
-	r := bufio.NewReader(os.Stdin)
-	line, err := readLine(r)
+	// "Other..." selected — prompt for a custom command.
+	var custom string
+	err = huh.NewInput().
+		Title("Editor command").
+		Description("e.g. 'subl -w', 'nvim', 'code --wait'").
+		Value(&custom).
+		Validate(func(s string) error {
+			if strings.TrimSpace(s) == "" {
+				return errors.New("command is required")
+			}
+			return nil
+		}).
+		Run()
 	if err != nil {
 		return "", err
 	}
-	if strings.TrimSpace(line) == "" {
-		return "", errors.New("no command entered")
-	}
-	// Warn (but allow) if the binary isn't on PATH.
-	bin := strings.Fields(line)[0]
+
+	bin := strings.Fields(custom)[0]
 	if _, err := exec.LookPath(bin); err != nil {
 		fmt.Printf("  warning: %q not found on PATH — saving anyway\n", bin)
 	}
-	return line, nil
+	return custom, nil
 }
 
 // splitEditorCommand parses a value like "code -w" into a command
