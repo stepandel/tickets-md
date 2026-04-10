@@ -1,9 +1,7 @@
 package cli
 
 import (
-	"bytes"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -27,15 +25,13 @@ func newWatchCmd() *cobra.Command {
 		Short: "Watch for ticket movements and spawn configured agents",
 		Long: `watch is a long-running process that monitors every stage
 directory for arriving tickets. When a ticket lands in a stage that
-has a .stage.yml with an agent configured, the agent is spawned.
+has a .stage.yml with an agent configured, the agent is spawned in
+a named tmux session. Attach to watch or interact:
 
-If tmux is available, each agent runs in a named tmux session that
-you can attach to with: tmux attach -t <ticket-id>
-
-If tmux is not installed, agents run as background processes with
-output streamed to the watch terminal.
+  tmux attach -t <ticket-id>
 
 Agent output is appended to the ticket file when the agent exits.
+Requires tmux (brew install tmux).
 
 Create a .stage.yml in any stage directory to configure an agent:
 
@@ -56,24 +52,16 @@ Create a .stage.yml in any stage directory to configure an agent:
 	return cmd
 }
 
-// hasTmux reports whether tmux is available on PATH.
-func hasTmux() bool {
-	return exec.Command("tmux", "-V").Run() == nil
-}
-
 func runWatch(s *ticket.Store) error {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		return fmt.Errorf("tmux is required for `tickets watch`: brew install tmux")
+	}
+
 	w, err := fsnotify.NewWatcher()
 	if err != nil {
 		return fmt.Errorf("creating watcher: %w", err)
 	}
 	defer w.Close()
-
-	useTmux := hasTmux()
-	if useTmux {
-		log.Println("tmux detected — agents will run in named sessions (tmux attach -t <id>)")
-	} else {
-		log.Println("tmux not found — agents will run as background processes")
-	}
 
 	// Load stage configs and register directories.
 	stageConfigs := make(map[string]stage.Config)
@@ -120,7 +108,7 @@ func runWatch(s *ticket.Store) error {
 			}
 			seen[event.Name] = time.Now()
 
-			handleCreate(s, stageConfigs, event.Name, useTmux)
+			handleCreate(s, stageConfigs, event.Name)
 
 		case err, ok := <-w.Errors:
 			if !ok {
@@ -131,7 +119,7 @@ func runWatch(s *ticket.Store) error {
 	}
 }
 
-func handleCreate(s *ticket.Store, stageConfigs map[string]stage.Config, path string, useTmux bool) {
+func handleCreate(s *ticket.Store, stageConfigs map[string]stage.Config, path string) {
 	dir := filepath.Dir(path)
 	stageName := filepath.Base(dir)
 
@@ -152,11 +140,7 @@ func handleCreate(s *ticket.Store, stageConfigs map[string]stage.Config, path st
 		return
 	}
 
-	if useTmux {
-		spawnAgentTmux(t, sc)
-	} else {
-		spawnAgentDirect(t, sc)
-	}
+	spawnAgentTmux(t, sc)
 }
 
 // buildAgentArgs returns the full argv (without the command itself)
@@ -244,45 +228,6 @@ func waitForTmuxSession(t ticket.Ticket, agent, sessionName, logFile string) {
 	} else {
 		log.Printf("%s: output appended to %s", t.ID, filepath.Base(t.Path))
 	}
-}
-
-// --- direct spawner (fallback when tmux is not available) ---
-
-func spawnAgentDirect(t ticket.Ticket, sc stage.Config) {
-	ac := sc.Agent
-	argv := buildAgentArgs(t, ac)
-
-	cmd := exec.Command(ac.Command, argv...)
-	var outBuf bytes.Buffer
-	mw := io.MultiWriter(&outBuf, os.Stdout)
-	cmd.Stdout = mw
-	cmd.Stderr = mw
-
-	if err := cmd.Start(); err != nil {
-		log.Printf("%s → %s: failed to start %s: %v", t.ID, t.Stage, ac.Command, err)
-		return
-	}
-
-	log.Printf("%s → %s: spawning %s (pid %d)", t.ID, t.Stage, ac.Command, cmd.Process.Pid)
-
-	go func() {
-		err := cmd.Wait()
-		if err != nil {
-			log.Printf("%s: agent %s failed: %v", t.ID, ac.Command, err)
-		} else {
-			log.Printf("%s: agent %s finished", t.ID, ac.Command)
-		}
-
-		output := strings.TrimSpace(outBuf.String())
-		if output == "" {
-			return
-		}
-		if appendErr := appendAgentOutput(t.Path, ac.Command, output); appendErr != nil {
-			log.Printf("%s: failed to append agent output: %v", t.ID, appendErr)
-		} else {
-			log.Printf("%s: output appended to %s", t.ID, filepath.Base(t.Path))
-		}
-	}()
 }
 
 // --- shared ---

@@ -28,7 +28,11 @@ automatically spawns the agent whenever a ticket arrives.
 
 ## Install
 
-Requires Go 1.22+.
+Requires Go 1.22+ and [tmux](https://github.com/tmux/tmux) (for `tickets watch`).
+
+```sh
+brew install tmux
+```
 
 ```sh
 go install ./cmd/tickets
