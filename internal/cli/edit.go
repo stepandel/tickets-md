@@ -92,8 +92,8 @@ type editorCandidate struct {
 }
 
 var allEditorCandidates = []editorCandidate{
-	{"code -w", "VS Code"},
-	{"cursor -w", "Cursor"},
+	{"code", "VS Code"},
+	{"cursor", "Cursor"},
 	{"nvim", "Neovim"},
 	{"vim", "Vim"},
 	{"nano", "Nano"},
