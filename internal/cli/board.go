@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -182,6 +183,8 @@ func (m *boardModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.err = m.reload()
 		m.refreshStatus()
 		m.clampRow()
+	case "enter", "o":
+		m.openSelected()
 	case "n", "+":
 		m.inputStep = 1
 		m.inputTitle = ""
@@ -366,6 +369,29 @@ func (m *boardModel) xToCol(x int) int {
 		return len(m.stages) - 1
 	}
 	return col
+}
+
+func (m *boardModel) openSelected() {
+	col := m.columns[m.activeCol]
+	if len(col) == 0 {
+		return
+	}
+	t := col[m.activeRow]
+	name, editorArgs, err := resolveEditor()
+	if err != nil {
+		m.err = err
+		return
+	}
+	argv := make([]string, 0, len(editorArgs)+1)
+	argv = append(argv, editorArgs...)
+	argv = append(argv, t.Path)
+	cmd := exec.Command(name, argv...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		m.err = err
+	}
 }
 
 func (m *boardModel) moveCard(dir int) {
@@ -572,7 +598,7 @@ func (m *boardModel) View() tea.View {
 	board := lipgloss.JoinHorizontal(lipgloss.Top, renderedCols...)
 
 	// --- Help bar ---
-	helpText := "h/l: columns  j/k: cards  H/L: move card  n: new ticket  mouse: drag & drop  r: reload  q: quit"
+	helpText := "h/l: columns  j/k: cards  H/L: move card  enter: open  n: new  mouse: drag & drop  r: reload  q: quit"
 	if m.inputStep == 1 {
 		helpText = "type a title, then enter to continue • esc to cancel"
 	} else if m.inputStep == 2 {
