@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -165,8 +166,11 @@ func spawnAgent(t ticket.Ticket, sc stage.Config) {
 
 	cmd := exec.Command(ac.Command, argv...)
 	var outBuf bytes.Buffer
-	cmd.Stdout = &outBuf
-	cmd.Stderr = &outBuf
+	// Stream to both the terminal (real-time) and the buffer (for
+	// appending to the ticket file when the agent finishes).
+	mw := io.MultiWriter(&outBuf, os.Stdout)
+	cmd.Stdout = mw
+	cmd.Stderr = mw
 
 	if err := cmd.Start(); err != nil {
 		log.Printf("%s → %s: failed to start %s: %v", t.ID, t.Stage, ac.Command, err)
