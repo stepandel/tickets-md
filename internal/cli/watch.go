@@ -388,8 +388,10 @@ func waitForTmuxSession(t ticket.Ticket, agentName, sessionName, logFile, root s
 		}
 	}
 
-	// Update status file.
-	if as, err := agent.Read(root, t.ID); err == nil {
+	// Update status file — skip if handleRemove already set a terminal
+	// state (resolves the race where both paths try to update after
+	// the tmux session closes).
+	if as, err := agent.Read(root, t.ID); err == nil && !as.Status.IsTerminal() {
 		as.Status = finalStatus
 		as.ExitCode = exitCode
 		as.Error = statusErr
