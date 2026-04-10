@@ -216,10 +216,14 @@ func (m *boardModel) handleInput(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if len(m.inputBuf) > 0 {
 			m.inputBuf = m.inputBuf[:len(m.inputBuf)-1]
 		}
+	case "space":
+		m.inputBuf += " "
 	default:
-		// Only append printable characters (single rune keys).
-		if len(msg.String()) == 1 || msg.String() == " " {
-			m.inputBuf += msg.String()
+		// Append printable single-rune keys.
+		s := msg.String()
+		runes := []rune(s)
+		if len(runes) == 1 && runes[0] >= 32 {
+			m.inputBuf += s
 		}
 	}
 	return m, nil
