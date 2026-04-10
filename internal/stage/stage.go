@@ -63,6 +63,27 @@ func Load(stageDir string) (Config, error) {
 	return c, nil
 }
 
+// WriteDefault creates a .stage.yml in stageDir with a commented-out
+// agent example so users can see the schema without reading docs. It
+// is a no-op if the file already exists.
+func WriteDefault(stageDir string) error {
+	p := filepath.Join(stageDir, configFile)
+	if _, err := os.Stat(p); err == nil {
+		return nil // already exists
+	}
+	return os.WriteFile(p, []byte(defaultStageYML), 0o644)
+}
+
+const defaultStageYML = `# Stage configuration — uncomment to enable an agent for this stage.
+# When a ticket is moved here, ` + "`tickets watch`" + ` will spawn the agent.
+#
+# agent:
+#   command: claude          # CLI binary (claude, codex, aider, etc.)
+#   args: ["--print"]        # extra flags before the prompt
+#   prompt: |                # template with {{path}}, {{id}}, {{title}}, {{stage}}, {{body}}
+#     Read the ticket at {{path}} and implement what it describes.
+`
+
 // RenderPrompt replaces template placeholders in the agent prompt
 // with concrete ticket values.
 func RenderPrompt(prompt string, vars PromptVars) string {

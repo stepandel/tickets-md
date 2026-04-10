@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"tickets-md/internal/config"
+	"tickets-md/internal/stage"
 )
 
 // ErrNotFound is returned when a ticket ID cannot be located in any
@@ -108,8 +109,12 @@ func mustBeDirOrAbsent(path string) error {
 // EnsureStageDirs creates any missing stage directories under
 // <Root>/.tickets.
 func (s *Store) EnsureStageDirs() error {
-	for _, stage := range s.Config.Stages {
-		if err := os.MkdirAll(s.stageDir(stage), 0o755); err != nil {
+	for _, st := range s.Config.Stages {
+		dir := s.stageDir(st)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+		if err := stage.WriteDefault(dir); err != nil {
 			return err
 		}
 	}
