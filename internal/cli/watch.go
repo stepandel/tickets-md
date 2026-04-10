@@ -101,7 +101,7 @@ func runWatch(s *ticket.Store) error {
 	defer w.Close()
 
 	// Start the agent status monitor.
-	mon := agent.NewMonitor(s.Root, agent.TmuxSessionExists)
+	mon := agent.NewMonitor(s.Root, agent.TmuxSessionExists, agent.TmuxPaneIdle)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

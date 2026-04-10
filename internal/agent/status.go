@@ -24,6 +24,7 @@ type Status string
 const (
 	StatusSpawned Status = "spawned" // tmux session creation requested
 	StatusRunning Status = "running" // tmux session confirmed alive
+	StatusBlocked Status = "blocked" // agent idle, likely waiting for user input
 	StatusDone    Status = "done"    // agent exited successfully (exit code 0)
 	StatusFailed  Status = "failed"  // agent exited with error (non-zero exit)
 	StatusErrored Status = "errored" // couldn't create the tmux session at all
@@ -39,7 +40,8 @@ func (s Status) IsTerminal() bool {
 // outbound edges.
 var validTransitions = map[Status][]Status{
 	StatusSpawned: {StatusRunning, StatusErrored, StatusFailed},
-	StatusRunning: {StatusDone, StatusFailed},
+	StatusRunning: {StatusDone, StatusFailed, StatusBlocked},
+	StatusBlocked: {StatusRunning, StatusDone, StatusFailed},
 }
 
 // Transition validates that moving from → to is a legal state change.

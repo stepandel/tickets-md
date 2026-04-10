@@ -2,9 +2,12 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"os/exec"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -18,25 +21,48 @@ func TmuxSessionExists(sessionName string) bool {
 	return exec.Command("tmux", "has-session", "-t", sessionName).Run() == nil
 }
 
+// IdleChecker returns how many seconds a tmux pane has been idle.
+// Returns -1 if the session doesn't exist or the query fails.
+type IdleChecker func(sessionName string) int
+
+// TmuxPaneIdle queries tmux for the pane's idle time in seconds.
+func TmuxPaneIdle(sessionName string) int {
+	out, err := exec.Command("tmux", "display-message", "-t", sessionName, "-p", "#{pane_idle}").Output()
+	if err != nil {
+		return -1
+	}
+	secs, err := strconv.Atoi(strings.TrimSpace(string(out)))
+	if err != nil {
+		return -1
+	}
+	return secs
+}
+
+// blockedThreshold is how long a pane must be idle (no output) before
+// the monitor considers it blocked (likely waiting for user input).
+const blockedThreshold = 30 // seconds
+
 // Monitor periodically reconciles agent status files against tmux
 // reality. It catches crashes, stale statuses from a previous watcher
-// run, and promotes spawned → running.
+// run, promotes spawned → running, and detects blocked agents.
 type Monitor struct {
-	root     string
-	interval time.Duration
-	check    SessionChecker
+	root      string
+	interval  time.Duration
+	check     SessionChecker
+	idleCheck IdleChecker
 
 	mu       sync.Mutex
 	watching map[string]struct{} // ticket IDs with active wait goroutines
 }
 
 // NewMonitor creates a monitor that checks tmux state every interval.
-func NewMonitor(root string, check SessionChecker) *Monitor {
+func NewMonitor(root string, check SessionChecker, idle IdleChecker) *Monitor {
 	return &Monitor{
-		root:     root,
-		interval: 5 * time.Second,
-		check:    check,
-		watching: make(map[string]struct{}),
+		root:      root,
+		interval:  5 * time.Second,
+		check:     check,
+		idleCheck: idle,
+		watching:  make(map[string]struct{}),
 	}
 }
 
@@ -139,11 +165,33 @@ func (m *Monitor) poll() {
 		}
 
 		if m.check(as.Session) {
-			// Session alive — promote spawned → running.
-			if as.Status == StatusSpawned {
+			idle := m.idleCheck(as.Session)
+
+			switch as.Status {
+			case StatusSpawned:
 				as.Status = StatusRunning
 				if err := Write(m.root, as); err != nil {
 					log.Printf("monitor: failed to promote %s to running: %v", as.TicketID, err)
+				}
+			case StatusRunning:
+				if idle >= blockedThreshold {
+					as.Status = StatusBlocked
+					as.Error = fmt.Sprintf("pane idle for %ds, likely waiting for input", idle)
+					if err := Write(m.root, as); err != nil {
+						log.Printf("monitor: failed to mark %s as blocked: %v", as.TicketID, err)
+					} else {
+						log.Printf("monitor: %s marked blocked (idle %ds)", as.TicketID, idle)
+					}
+				}
+			case StatusBlocked:
+				if idle < blockedThreshold {
+					as.Status = StatusRunning
+					as.Error = ""
+					if err := Write(m.root, as); err != nil {
+						log.Printf("monitor: failed to unblock %s: %v", as.TicketID, err)
+					} else {
+						log.Printf("monitor: %s resumed (no longer idle)", as.TicketID)
+					}
 				}
 			}
 		} else if !m.isTracked(as.TicketID) {
