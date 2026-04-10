@@ -83,7 +83,10 @@ tickets -C ~/work/acme list
 | `tickets move <id> <stage>`   | Move a ticket to another stage (alias: `mv`)   |
 | `tickets edit <id>`           | Open the ticket file in your editor            |
 | `tickets rm <id> [--force]`   | Delete a ticket                                |
+| `tickets board`               | Interactive kanban board TUI (alias: `tui`)    |
 | `tickets watch`               | Watch for ticket movements and spawn agents    |
+| `tickets agents`              | List active agent runs                         |
+| `tickets agents monitor <id>` | Follow one agent's status and output           |
 
 `init` accepts `--prefix` and `--stages` to override the defaults at
 creation time. When run interactively without `--stages`, it walks
@@ -194,6 +197,28 @@ The ticket file will have a new section at the end:
 Multiple agents can run concurrently for different tickets. The
 watcher also picks up manual file moves (`mv`, Finder, git) — it
 watches the filesystem directly, not just the `tickets move` command.
+
+### Monitoring agents
+
+List currently active agent runs:
+
+```sh
+tickets agents
+```
+
+Follow one agent's status changes and streamed output until it exits:
+
+```sh
+tickets agents monitor TIC-001
+```
+
+That gives you a read-only progress view without attaching to tmux. If
+you need to interact with the running process directly, attach to its
+session instead:
+
+```sh
+tmux attach -t TIC-001
+```
 
 ## Editor
 
