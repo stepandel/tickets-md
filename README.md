@@ -8,11 +8,14 @@ read, grep, edit, and commit alongside your code.
 .tickets/
 ├── config.yml
 ├── backlog/
+│   └── .stage.yml
 ├── prep/
+│   └── .stage.yml
 ├── execute/
+│   ├── .stage.yml        ← agent configured here
 │   └── TIC-001.md
 ├── review/
-│   └── TIC-002.md
+│   └── .stage.yml
 └── done/
 ```
 
@@ -20,7 +23,8 @@ The whole store lives under a single hidden `.tickets/` directory at
 the project root, the same way `.git/` works.
 
 Moving a ticket between stages is just `mv`, and `git log` is your
-audit trail.
+audit trail. When a stage has an agent configured, `tickets watch`
+automatically spawns the agent whenever a ticket arrives.
 
 ## Install
 
@@ -47,7 +51,7 @@ tickets init
 tickets new "Fix login bug on Safari"
 tickets new "Add dark mode toggle"
 tickets list
-tickets move TIC-001 in-progress
+tickets move TIC-001 execute
 tickets show TIC-001
 tickets edit TIC-001        # opens your editor (see "Editor" below)
 tickets rm TIC-002          # prompts for confirmation
@@ -61,15 +65,16 @@ tickets -C ~/work/acme list
 
 ## Commands
 
-| Command                       | What it does                                 |
-| ----------------------------- | -------------------------------------------- |
-| `tickets init`                | Create `.tickets/config.yml` + stage folders |
-| `tickets new <title...>`      | Create a ticket in the default stage         |
-| `tickets list [--stage X]`    | List tickets, grouped by stage (alias: `ls`) |
-| `tickets show <id>`           | Print a ticket's contents                    |
-| `tickets move <id> <stage>`   | Move a ticket to another stage (alias: `mv`) |
-| `tickets edit <id>`           | Open the ticket file in your editor          |
-| `tickets rm <id> [--force]`   | Delete a ticket                              |
+| Command                       | What it does                                   |
+| ----------------------------- | ---------------------------------------------- |
+| `tickets init`                | Create `.tickets/config.yml` + stage folders   |
+| `tickets new <title...>`      | Create a ticket in the default stage           |
+| `tickets list [--stage X]`    | List tickets, grouped by stage (alias: `ls`)   |
+| `tickets show <id>`           | Print a ticket's contents                      |
+| `tickets move <id> <stage>`   | Move a ticket to another stage (alias: `mv`)   |
+| `tickets edit <id>`           | Open the ticket file in your editor            |
+| `tickets rm <id> [--force]`   | Delete a ticket                                |
+| `tickets watch`               | Watch for ticket movements and spawn agents    |
 
 `init` accepts `--prefix` and `--stages` to override the defaults at
 creation time. When run interactively without `--stages`, it walks
@@ -96,6 +101,90 @@ default for new tickets. Submit a blank line when done.
 
 Pass `--stages new,doing,done` (or pipe stdin from a script) to skip
 the wizard.
+
+## Agents
+
+Stages can be configured to automatically spawn a CLI agent (Claude
+Code, Codex, Aider, etc.) when a ticket arrives. This turns your
+ticket board into an orchestration layer: move a ticket to `execute`
+and an AI agent picks it up.
+
+### Setup
+
+`tickets init` scaffolds a `.stage.yml` in every stage directory with
+a commented-out example. To activate an agent, open the file and
+uncomment:
+
+```yaml
+# .tickets/execute/.stage.yml
+agent:
+  command: claude
+  args: ["--print"]
+  prompt: |
+    Read the ticket at {{path}} and implement what it describes.
+    Update the ticket with your progress when done.
+```
+
+- **command** — the CLI binary to invoke (`claude`, `codex`, `aider`,
+  etc.)
+- **args** — extra flags placed before the prompt (e.g. `["--print"]`
+  for non-interactive mode)
+- **prompt** — a template string rendered with ticket metadata and
+  passed as the final argument
+
+Template variables available in the prompt:
+
+| Variable      | Value                                       |
+| ------------- | ------------------------------------------- |
+| `{{path}}`    | Absolute path to the ticket file            |
+| `{{id}}`      | Ticket ID (e.g. `TIC-001`)                  |
+| `{{title}}`   | Ticket title from frontmatter               |
+| `{{stage}}`   | Destination stage name                      |
+| `{{body}}`    | Ticket body (markdown after frontmatter)    |
+
+### Running the watcher
+
+Start the watcher in a dedicated terminal:
+
+```sh
+tickets watch
+```
+
+```
+2026/04/09 18:15:20 watching backlog/ (no agent)
+2026/04/09 18:15:20 watching prep/ (no agent)
+2026/04/09 18:15:20 watching execute/ (agent: claude)
+2026/04/09 18:15:20 watching review/ (no agent)
+2026/04/09 18:15:20 watching done/ (no agent)
+2026/04/09 18:15:20 ready — move tickets between stages to trigger agents (ctrl+c to stop)
+```
+
+Then in another terminal:
+
+```sh
+tickets move TIC-001 execute
+```
+
+The watcher detects the arrival, spawns the agent in the background,
+and appends the agent's output to the ticket file when it finishes:
+
+```
+2026/04/09 18:15:21 TIC-001 → execute: spawning claude (pid 4821)
+2026/04/09 18:15:45 TIC-001: agent claude finished
+2026/04/09 18:15:45 TIC-001: output appended to TIC-001.md
+```
+
+The ticket file will have a new section at the end:
+
+```markdown
+## Agent Output (claude, 2026-04-09 18:15:45)
+
+<agent's response here>
+```
+
+Multiple agents can run concurrently for different tickets. The
+watcher also picks up manual file moves (`mv`, Finder, git) — it
+watches the filesystem directly, not just the `tickets move` command.
 
 ## Editor
 
@@ -176,6 +265,8 @@ desync a counter.
 ```
 cmd/tickets/main.go           # CLI entry point
 internal/config/              # config.yml loader
+internal/stage/               # per-stage .stage.yml loader
+internal/userconfig/          # per-user ~/.config/tickets/config.yml
 internal/ticket/
   ├── ticket.go               # Ticket struct + frontmatter (de)serialize
   └── store.go                # FS-backed CRUD: List/Get/Create/Move/Save/Delete
