@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -15,6 +17,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/cobra"
 
+	"tickets-md/internal/agent"
 	"tickets-md/internal/config"
 	"tickets-md/internal/stage"
 	"tickets-md/internal/ticket"
@@ -97,6 +100,29 @@ func runWatch(s *ticket.Store) error {
 	}
 	defer w.Close()
 
+	// Start the agent status monitor.
+	mon := agent.NewMonitor(s.Root, agent.TmuxSessionExists)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Reconcile stale statuses from a previous watcher run.
+	alive, err := mon.Reconcile()
+	if err != nil {
+		log.Printf("monitor: startup reconciliation failed: %v", err)
+	}
+	for _, as := range alive {
+		t, terr := s.Get(as.TicketID)
+		if terr != nil {
+			log.Printf("monitor: cannot re-attach %s: %v", as.TicketID, terr)
+			continue
+		}
+		log.Printf("%s: re-attaching to running agent (session %s)", as.TicketID, as.Session)
+		mon.TrackSession(as.TicketID)
+		go waitForTmuxSession(t, as.Agent, as.Session, as.LogFile, s.Root, mon)
+	}
+
+	go mon.Run(ctx)
+
 	// Load stage configs and register directories.
 	stageConfigs := make(map[string]stage.Config)
 	for _, st := range s.Config.Stages {
@@ -128,6 +154,7 @@ func runWatch(s *ticket.Store) error {
 		select {
 		case <-sigCh:
 			log.Println("shutting down")
+			cancel()
 			return nil
 
 		case event, ok := <-w.Events:
@@ -142,7 +169,7 @@ func runWatch(s *ticket.Store) error {
 			}
 			seen[event.Name] = time.Now()
 
-			handleCreate(s, stageConfigs, event.Name)
+			handleCreate(s, stageConfigs, event.Name, mon)
 
 		case err, ok := <-w.Errors:
 			if !ok {
@@ -153,7 +180,7 @@ func runWatch(s *ticket.Store) error {
 	}
 }
 
-func handleCreate(s *ticket.Store, stageConfigs map[string]stage.Config, path string) {
+func handleCreate(s *ticket.Store, stageConfigs map[string]stage.Config, path string, mon *agent.Monitor) {
 	dir := filepath.Dir(path)
 	stageName := filepath.Base(dir)
 
@@ -174,7 +201,7 @@ func handleCreate(s *ticket.Store, stageConfigs map[string]stage.Config, path st
 		return
 	}
 
-	spawnAgentTmux(t, sc)
+	spawnAgentTmux(t, sc, s.Root, mon)
 }
 
 // buildAgentArgs returns the full argv (without the command itself)
@@ -201,17 +228,33 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
 
-func spawnAgentTmux(t ticket.Ticket, sc stage.Config) {
+func spawnAgentTmux(t ticket.Ticket, sc stage.Config, root string, mon *agent.Monitor) {
 	ac := sc.Agent
 	argv := buildAgentArgs(t, ac)
 
 	sessionName := t.ID
 	logFile := filepath.Join(os.TempDir(), fmt.Sprintf("tickets-%s.log", t.ID))
+	exitFile := filepath.Join(os.TempDir(), fmt.Sprintf("tickets-%s.exit", t.ID))
 
 	// Check for existing session (e.g. ticket moved twice quickly).
 	if exec.Command("tmux", "has-session", "-t", sessionName).Run() == nil {
 		log.Printf("%s: tmux session already exists, skipping", t.ID)
 		return
+	}
+
+	// Write "spawned" status before creating the tmux session.
+	now := time.Now().UTC().Truncate(time.Second)
+	as := agent.AgentStatus{
+		TicketID:  t.ID,
+		Stage:     t.Stage,
+		Agent:     ac.Command,
+		Session:   sessionName,
+		Status:    agent.StatusSpawned,
+		SpawnedAt: now,
+		LogFile:   logFile,
+	}
+	if err := agent.Write(root, as); err != nil {
+		log.Printf("%s: failed to write agent status: %v", t.ID, err)
 	}
 
 	// Build the agent command.
@@ -222,30 +265,37 @@ func spawnAgentTmux(t ticket.Ticket, sc stage.Config) {
 	agentCmd := strings.Join(parts, " ")
 
 	// The shell command sets up pipe-pane FIRST (to capture all output
-	// to the log file), then runs the agent. Because both happen inside
-	// the same session, there is no race — capture is active before the
-	// agent produces any output. The agent still gets a real TTY so it
-	// can render its UI normally.
+	// to the log file), then runs the agent. The exit code is written
+	// to a separate file so waitForTmuxSession can determine success
+	// vs failure. The agent still gets a real TTY.
 	shellCmd := fmt.Sprintf(
-		"tmux pipe-pane %s; %s",
+		"tmux pipe-pane %s; %s; echo $? > %s",
 		shellQuote(fmt.Sprintf("cat >> %s", logFile)),
 		agentCmd,
+		shellQuote(exitFile),
 	)
 
 	err := exec.Command("tmux", "new-session", "-d", "-s", sessionName, "sh", "-c", shellCmd).Run()
 	if err != nil {
 		log.Printf("%s → %s: failed to create tmux session: %v", t.ID, t.Stage, err)
+		as.Status = agent.StatusErrored
+		as.Error = err.Error()
+		agent.Write(root, as) // best-effort
 		return
 	}
 
 	log.Printf("%s → %s: agent running in tmux (attach with: tmux attach -t %s)", t.ID, t.Stage, sessionName)
 
-	go waitForTmuxSession(t, ac.Command, sessionName, logFile)
+	mon.TrackSession(t.ID)
+	go waitForTmuxSession(t, ac.Command, sessionName, logFile, root, mon)
 }
 
-// waitForTmuxSession polls until the tmux session ends, then reads
-// the log file and appends output to the ticket file.
-func waitForTmuxSession(t ticket.Ticket, agent, sessionName, logFile string) {
+// waitForTmuxSession polls until the tmux session ends, updates the
+// agent status, then reads the log file and appends output to the
+// ticket file.
+func waitForTmuxSession(t ticket.Ticket, agentName, sessionName, logFile, root string, mon *agent.Monitor) {
+	defer mon.UntrackSession(t.ID)
+
 	for {
 		time.Sleep(time.Second)
 		if exec.Command("tmux", "has-session", "-t", sessionName).Run() != nil {
@@ -253,7 +303,34 @@ func waitForTmuxSession(t ticket.Ticket, agent, sessionName, logFile string) {
 		}
 	}
 
-	log.Printf("%s: agent %s finished (session %s closed)", t.ID, agent, sessionName)
+	log.Printf("%s: agent %s finished (session %s closed)", t.ID, agentName, sessionName)
+
+	// Determine exit status from the .exit file written by the shell wrapper.
+	exitFile := filepath.Join(os.TempDir(), fmt.Sprintf("tickets-%s.exit", t.ID))
+	finalStatus := agent.StatusDone
+	var exitCode *int
+	var statusErr string
+
+	if exitData, err := os.ReadFile(exitFile); err == nil {
+		os.Remove(exitFile)
+		if code, err := strconv.Atoi(strings.TrimSpace(string(exitData))); err == nil {
+			exitCode = &code
+			if code != 0 {
+				finalStatus = agent.StatusFailed
+				statusErr = fmt.Sprintf("agent exited with code %d", code)
+			}
+		}
+	}
+
+	// Update status file.
+	if as, err := agent.Read(root, t.ID); err == nil {
+		as.Status = finalStatus
+		as.ExitCode = exitCode
+		as.Error = statusErr
+		if werr := agent.Write(root, as); werr != nil {
+			log.Printf("%s: failed to update agent status: %v", t.ID, werr)
+		}
+	}
 
 	data, err := os.ReadFile(logFile)
 	if err != nil {
@@ -268,7 +345,7 @@ func waitForTmuxSession(t ticket.Ticket, agent, sessionName, logFile string) {
 	if output == "" {
 		return
 	}
-	if err := appendAgentOutput(t.Path, agent, output); err != nil {
+	if err := appendAgentOutput(t.Path, agentName, output); err != nil {
 		log.Printf("%s: failed to append agent output: %v", t.ID, err)
 	} else {
 		log.Printf("%s: output appended to %s", t.ID, filepath.Base(t.Path))
