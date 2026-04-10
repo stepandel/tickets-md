@@ -47,12 +47,22 @@ type boardModel struct {
 	width     int
 	height    int
 	err       error
+
+	// Layout geometry — computed during View(), used for mouse hit-testing.
+	colWidth int // width of each rendered column (including border)
+	gap      int // horizontal gap between columns
+
+	// Drag state.
+	dragging   bool   // true while mouse button is held on a card
+	dragID     string // ticket ID being dragged
+	dragFromCol int   // column the drag started in
 }
 
 func newBoardModel(s *ticket.Store) (*boardModel, error) {
 	m := &boardModel{
 		store:  s,
 		stages: s.Config.Stages,
+		gap:    1,
 	}
 	if err := m.reload(); err != nil {
 		return nil, err
@@ -82,46 +92,146 @@ func (m *boardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyPressMsg:
-		switch msg.String() {
-		case "q", "ctrl+c":
-			return m, tea.Quit
+		return m.handleKey(msg)
 
-		// Navigate between columns.
-		case "h", "left":
-			if m.activeCol > 0 {
-				m.activeCol--
-				m.clampRow()
-			}
-		case "l", "right":
-			if m.activeCol < len(m.stages)-1 {
-				m.activeCol++
-				m.clampRow()
-			}
+	case tea.MouseClickMsg:
+		return m.handleMouseClick(msg)
 
-		// Navigate within a column.
-		case "j", "down":
-			if m.activeRow < len(m.columns[m.activeCol])-1 {
-				m.activeRow++
-			}
-		case "k", "up":
-			if m.activeRow > 0 {
-				m.activeRow--
-			}
+	case tea.MouseReleaseMsg:
+		return m.handleMouseRelease(msg)
+	}
+	return m, nil
+}
 
-		// Move card to the right (next stage).
-		case "L", "shift+right":
-			m.moveCard(1)
-		// Move card to the left (prev stage).
-		case "H", "shift+left":
-			m.moveCard(-1)
+func (m *boardModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q", "ctrl+c":
+		return m, tea.Quit
 
-		// Reload from disk.
-		case "r":
-			m.err = m.reload()
+	case "h", "left":
+		if m.activeCol > 0 {
+			m.activeCol--
 			m.clampRow()
+		}
+	case "l", "right":
+		if m.activeCol < len(m.stages)-1 {
+			m.activeCol++
+			m.clampRow()
+		}
+	case "j", "down":
+		if m.activeRow < len(m.columns[m.activeCol])-1 {
+			m.activeRow++
+		}
+	case "k", "up":
+		if m.activeRow > 0 {
+			m.activeRow--
+		}
+	case "L", "shift+right":
+		m.moveCard(1)
+	case "H", "shift+left":
+		m.moveCard(-1)
+	case "r":
+		m.err = m.reload()
+		m.clampRow()
+	}
+	return m, nil
+}
+
+func (m *boardModel) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
+	if msg.Button != tea.MouseLeft {
+		return m, nil
+	}
+	col, row, ok := m.hitTest(msg.X, msg.Y)
+	if !ok {
+		return m, nil
+	}
+	m.activeCol = col
+	m.activeRow = row
+	m.clampRow()
+
+	// Start drag if we clicked on an actual card.
+	if row < len(m.columns[col]) {
+		m.dragging = true
+		m.dragID = m.columns[col][row].ID
+		m.dragFromCol = col
+	}
+	return m, nil
+}
+
+func (m *boardModel) handleMouseRelease(msg tea.MouseReleaseMsg) (tea.Model, tea.Cmd) {
+	if !m.dragging {
+		return m, nil
+	}
+	m.dragging = false
+
+	// Determine which column the mouse was released over.
+	targetCol := m.xToCol(msg.X)
+	if targetCol < 0 || targetCol >= len(m.stages) || targetCol == m.dragFromCol {
+		return m, nil
+	}
+
+	// Move the dragged ticket to the target column.
+	_, err := m.store.Move(m.dragID, m.stages[targetCol])
+	if err != nil {
+		m.err = err
+		return m, nil
+	}
+	m.err = m.reload()
+	m.activeCol = targetCol
+	m.clampRow()
+	// Select the moved card.
+	for i, c := range m.columns[targetCol] {
+		if c.ID == m.dragID {
+			m.activeRow = i
+			break
 		}
 	}
 	return m, nil
+}
+
+// hitTest maps terminal coordinates to a (column, row) pair.
+// row is the card index within the column (may be >= len(cards)
+// if the click is in empty space below the last card).
+func (m *boardModel) hitTest(x, y int) (col, row int, ok bool) {
+	col = m.xToCol(x)
+	if col < 0 || col >= len(m.stages) {
+		return 0, 0, false
+	}
+
+	// Y layout within a column (approximate):
+	// row 0: top border
+	// row 1: header
+	// row 2+: cards — each card is ~4 rows (border + content + margin)
+	cardStartY := 2
+	cardHeight := 4 // border-top + id line + title line + border-bottom
+	if y < cardStartY {
+		return col, 0, true
+	}
+	row = (y - cardStartY) / cardHeight
+	maxRow := len(m.columns[col]) - 1
+	if maxRow < 0 {
+		maxRow = 0
+	}
+	if row > maxRow {
+		row = maxRow
+	}
+	return col, row, true
+}
+
+// xToCol maps an X coordinate to a column index.
+func (m *boardModel) xToCol(x int) int {
+	if m.colWidth <= 0 {
+		return -1
+	}
+	stride := m.colWidth + m.gap
+	col := x / stride
+	if col < 0 {
+		return 0
+	}
+	if col >= len(m.stages) {
+		return len(m.stages) - 1
+	}
+	return col
 }
 
 func (m *boardModel) moveCard(dir int) {
@@ -140,10 +250,8 @@ func (m *boardModel) moveCard(dir int) {
 		return
 	}
 	m.err = m.reload()
-	// Follow the card to the target column.
 	m.activeCol = target
 	m.clampRow()
-	// Try to keep the same card selected.
 	for i, c := range m.columns[target] {
 		if c.ID == t.ID {
 			m.activeRow = i
@@ -165,7 +273,6 @@ func (m *boardModel) clampRow() {
 // --- view ---
 
 var (
-	// Column styles.
 	colHeaderStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("#FFFFFF")).
@@ -184,7 +291,6 @@ var (
 	colActiveStyle = colStyle.
 			BorderForeground(lipgloss.Color("#FF5F87"))
 
-	// Card styles.
 	cardStyle = lipgloss.NewStyle().
 			Border(lipgloss.NormalBorder()).
 			BorderForeground(lipgloss.Color("#555555")).
@@ -195,13 +301,16 @@ var (
 			BorderForeground(lipgloss.Color("#FF5F87")).
 			Bold(true)
 
+	cardDraggingStyle = cardStyle.
+				BorderForeground(lipgloss.Color("#FFD700")).
+				Bold(true)
+
 	cardIDStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#888888"))
 
 	cardPriorityStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#FFD700"))
 
-	// Help bar.
 	helpStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#666666")).
 			Padding(1, 0, 0, 1)
@@ -221,19 +330,17 @@ func (m *boardModel) View() tea.View {
 		return tea.NewView("no stages configured")
 	}
 
-	// Calculate column width: distribute evenly, leave room for gaps.
-	gap := 1
-	colWidth := (m.width - gap*(numCols-1)) / numCols
+	colWidth := (m.width - m.gap*(numCols-1)) / numCols
 	if colWidth < 16 {
 		colWidth = 16
 	}
-	cardWidth := colWidth - 4 // account for column border + padding
+	m.colWidth = colWidth // store for mouse hit-testing
+	cardWidth := colWidth - 4
 
 	var renderedCols []string
 	for i, st := range m.stages {
 		isActiveCol := i == m.activeCol
 
-		// Header.
 		hStyle := colHeaderStyle
 		if isActiveCol {
 			hStyle = colHeaderActiveStyle
@@ -243,12 +350,15 @@ func (m *boardModel) View() tea.View {
 			fmt.Sprintf("%s (%d)", st, count),
 		)
 
-		// Cards.
 		var cards []string
 		for j, t := range m.columns[i] {
 			isActiveCard := isActiveCol && j == m.activeRow
+			isDragged := m.dragging && t.ID == m.dragID
+
 			cStyle := cardStyle
-			if isActiveCard {
+			if isDragged {
+				cStyle = cardDraggingStyle
+			} else if isActiveCard {
 				cStyle = cardActiveStyle
 			}
 			cStyle = cStyle.Width(cardWidth)
@@ -272,15 +382,12 @@ func (m *boardModel) View() tea.View {
 
 		body := lipgloss.JoinVertical(lipgloss.Left, cards...)
 
-		// Full column.
 		cs := colStyle
 		if isActiveCol {
 			cs = colActiveStyle
 		}
 		colContent := header + "\n" + body
-
-		// Set height so all columns are equal.
-		contentHeight := m.height - 5 // room for help bar + padding
+		contentHeight := m.height - 5
 		cs = cs.Width(colWidth - 2).Height(contentHeight)
 
 		renderedCols = append(renderedCols, cs.Render(colContent))
@@ -288,12 +395,12 @@ func (m *boardModel) View() tea.View {
 
 	board := lipgloss.JoinHorizontal(lipgloss.Top, renderedCols...)
 
-	// Help bar.
-	help := helpStyle.Render(
-		"h/l: columns  j/k: cards  H/L: move card  r: reload  q: quit",
-	)
+	helpText := "h/l: columns  j/k: cards  H/L: move card  mouse: drag & drop  r: reload  q: quit"
+	if m.dragging {
+		helpText = fmt.Sprintf("dragging %s — release over target column to move", m.dragID)
+	}
+	help := helpStyle.Render(helpText)
 
-	// Error display.
 	errMsg := ""
 	if m.err != nil {
 		errMsg = errStyle.Render("error: " + m.err.Error())
@@ -302,11 +409,11 @@ func (m *boardModel) View() tea.View {
 
 	v := tea.NewView(board + "\n" + help + errMsg)
 	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
 	return v
 }
 
 func truncate(s string, max int) string {
-	// Truncate by runes, not bytes.
 	runes := []rune(s)
 	if len(runes) <= max {
 		return s
@@ -317,17 +424,12 @@ func truncate(s string, max int) string {
 	return string(runes[:max-3]) + "..."
 }
 
-// viewTicketDetail could be added later for a detail pane on Enter.
-// For now we keep the board view simple.
-
-// Ensure boardModel satisfies the tea.Model interface.
 var _ tea.Model = (*boardModel)(nil)
 
 // stripForView removes all leading/trailing whitespace lines that
 // lipgloss sometimes adds.
 func stripForView(s string) string {
 	lines := strings.Split(s, "\n")
-	// Trim trailing empty lines.
 	for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
 		lines = lines[:len(lines)-1]
 	}
