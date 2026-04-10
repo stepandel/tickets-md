@@ -209,7 +209,7 @@ func (m *boardModel) handleInput(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				break
 			}
 		}
-	case "escape":
+	case "esc", "escape":
 		m.inputActive = false
 		m.inputBuf = ""
 	case "backspace":
