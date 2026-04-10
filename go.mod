@@ -4,6 +4,7 @@ go 1.25.8
 
 require (
 	charm.land/huh/v2 v2.0.3
+	github.com/fsnotify/fsnotify v1.9.0
 	github.com/spf13/cobra v1.8.1
 	gopkg.in/yaml.v3 v3.0.1
 )

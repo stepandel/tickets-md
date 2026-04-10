@@ -42,6 +42,7 @@ Move tickets between stages by renaming the file across folders.`,
 		newMoveCmd(),
 		newEditCmd(),
 		newRmCmd(),
+		newWatchCmd(),
 	)
 	return cmd
 }
