@@ -2,12 +2,15 @@ package cli
 
 import (
 	"fmt"
+	"os/exec"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/spf13/cobra"
 
+	"tickets-md/internal/agent"
 	"tickets-md/internal/ticket"
 )
 
@@ -36,37 +39,53 @@ func runBoard(s *ticket.Store) error {
 	return err
 }
 
+// --- tick message for periodic refresh ---
+
+type boardTickMsg time.Time
+
+func boardTickCmd() tea.Cmd {
+	return tea.Tick(3*time.Second, func(t time.Time) tea.Msg {
+		return boardTickMsg(t)
+	})
+}
+
 // --- model ---
 
 type boardModel struct {
 	store     *ticket.Store
 	stages    []string
-	columns   [][]ticket.Ticket // columns[stageIdx][cardIdx]
+	columns   [][]ticket.Ticket
 	activeCol int
 	activeRow int
 	width     int
 	height    int
 	err       error
 
-	// Layout geometry — computed during View(), used for mouse hit-testing.
-	colWidth int // width of each rendered column (including border)
-	gap      int // horizontal gap between columns
+	// Layout geometry for mouse hit-testing.
+	colWidth int
+	gap      int
 
 	// Drag state.
-	dragging   bool   // true while mouse button is held on a card
-	dragID     string // ticket ID being dragged
-	dragFromCol int   // column the drag started in
+	dragging    bool
+	dragID      string
+	dragFromCol int
+
+	// Live status.
+	watcherRunning bool
+	agentStatuses  map[string]agent.AgentStatus // ticketID → status
 }
 
 func newBoardModel(s *ticket.Store) (*boardModel, error) {
 	m := &boardModel{
-		store:  s,
-		stages: s.Config.Stages,
-		gap:    1,
+		store:         s,
+		stages:        s.Config.Stages,
+		gap:           1,
+		agentStatuses: make(map[string]agent.AgentStatus),
 	}
 	if err := m.reload(); err != nil {
 		return nil, err
 	}
+	m.refreshStatus()
 	return m, nil
 }
 
@@ -82,7 +101,23 @@ func (m *boardModel) reload() error {
 	return nil
 }
 
-func (m *boardModel) Init() tea.Cmd { return nil }
+func (m *boardModel) refreshStatus() {
+	m.watcherRunning = isWatcherRunning()
+	statuses, err := agent.List(m.store.Root)
+	if err != nil {
+		return
+	}
+	m.agentStatuses = make(map[string]agent.AgentStatus, len(statuses))
+	for _, as := range statuses {
+		m.agentStatuses[as.TicketID] = as
+	}
+}
+
+func isWatcherRunning() bool {
+	return exec.Command("pgrep", "-f", "tickets watch").Run() == nil
+}
+
+func (m *boardModel) Init() tea.Cmd { return boardTickCmd() }
 
 func (m *boardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -90,6 +125,10 @@ func (m *boardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		return m, nil
+
+	case boardTickMsg:
+		m.refreshStatus()
+		return m, boardTickCmd()
 
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
@@ -107,7 +146,6 @@ func (m *boardModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return m, tea.Quit
-
 	case "h", "left":
 		if m.activeCol > 0 {
 			m.activeCol--
@@ -132,6 +170,7 @@ func (m *boardModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.moveCard(-1)
 	case "r":
 		m.err = m.reload()
+		m.refreshStatus()
 		m.clampRow()
 	}
 	return m, nil
@@ -149,7 +188,6 @@ func (m *boardModel) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd
 	m.activeRow = row
 	m.clampRow()
 
-	// Start drag if we clicked on an actual card.
 	if row < len(m.columns[col]) {
 		m.dragging = true
 		m.dragID = m.columns[col][row].ID
@@ -164,13 +202,11 @@ func (m *boardModel) handleMouseRelease(msg tea.MouseReleaseMsg) (tea.Model, tea
 	}
 	m.dragging = false
 
-	// Determine which column the mouse was released over.
 	targetCol := m.xToCol(msg.X)
 	if targetCol < 0 || targetCol >= len(m.stages) || targetCol == m.dragFromCol {
 		return m, nil
 	}
 
-	// Move the dragged ticket to the target column.
 	_, err := m.store.Move(m.dragID, m.stages[targetCol])
 	if err != nil {
 		m.err = err
@@ -179,7 +215,6 @@ func (m *boardModel) handleMouseRelease(msg tea.MouseReleaseMsg) (tea.Model, tea
 	m.err = m.reload()
 	m.activeCol = targetCol
 	m.clampRow()
-	// Select the moved card.
 	for i, c := range m.columns[targetCol] {
 		if c.ID == m.dragID {
 			m.activeRow = i
@@ -189,21 +224,14 @@ func (m *boardModel) handleMouseRelease(msg tea.MouseReleaseMsg) (tea.Model, tea
 	return m, nil
 }
 
-// hitTest maps terminal coordinates to a (column, row) pair.
-// row is the card index within the column (may be >= len(cards)
-// if the click is in empty space below the last card).
 func (m *boardModel) hitTest(x, y int) (col, row int, ok bool) {
 	col = m.xToCol(x)
 	if col < 0 || col >= len(m.stages) {
 		return 0, 0, false
 	}
-
-	// Y layout within a column (approximate):
-	// row 0: top border
-	// row 1: header
-	// row 2+: cards — each card is ~4 rows (border + content + margin)
-	cardStartY := 2
-	cardHeight := 4 // border-top + id line + title line + border-bottom
+	// Y layout: row 0-1 = status bar, row 2 = border, row 3 = header, row 4+ = cards
+	cardStartY := 4
+	cardHeight := 4
 	if y < cardStartY {
 		return col, 0, true
 	}
@@ -218,7 +246,6 @@ func (m *boardModel) hitTest(x, y int) (col, row int, ok bool) {
 	return col, row, true
 }
 
-// xToCol maps an X coordinate to a column index.
 func (m *boardModel) xToCol(x int) int {
 	if m.colWidth <= 0 {
 		return -1
@@ -272,53 +299,13 @@ func (m *boardModel) clampRow() {
 
 // --- view ---
 
-var (
-	colHeaderStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#FFFFFF")).
-			Background(lipgloss.Color("#5A56E0")).
-			Padding(0, 1).
-			Align(lipgloss.Center)
-
-	colHeaderActiveStyle = colHeaderStyle.
-				Background(lipgloss.Color("#FF5F87"))
-
-	colStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#555555")).
-			Padding(0, 1)
-
-	colActiveStyle = colStyle.
-			BorderForeground(lipgloss.Color("#FF5F87"))
-
-	cardStyle = lipgloss.NewStyle().
-			Border(lipgloss.NormalBorder()).
-			BorderForeground(lipgloss.Color("#555555")).
-			Padding(0, 1).
-			MarginBottom(1)
-
-	cardActiveStyle = cardStyle.
-			BorderForeground(lipgloss.Color("#FF5F87")).
-			Bold(true)
-
-	cardDraggingStyle = cardStyle.
-				BorderForeground(lipgloss.Color("#FFD700")).
-				Bold(true)
-
-	cardIDStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#888888"))
-
-	cardPriorityStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#FFD700"))
-
-	helpStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#666666")).
-			Padding(1, 0, 0, 1)
-
-	errStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FF0000")).
-			Bold(true)
-)
+// accentColor returns green when the watcher is running, pink otherwise.
+func (m *boardModel) accentColor() string {
+	if m.watcherRunning {
+		return "#00D787"
+	}
+	return "#FF5F87"
+}
 
 func (m *boardModel) View() tea.View {
 	if m.width == 0 {
@@ -330,46 +317,90 @@ func (m *boardModel) View() tea.View {
 		return tea.NewView("no stages configured")
 	}
 
+	accentHex := m.accentColor()
+	accent := lipgloss.Color(accentHex)
+
+	// --- Status bar ---
+	var statusBar string
+	if m.watcherRunning {
+		statusBar = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#000000")).
+			Background(lipgloss.Color("#00D787")).
+			Padding(0, 1).
+			Width(m.width).
+			Render("● WATCHER RUNNING — agents will be spawned on ticket moves")
+	} else {
+		statusBar = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#FFFFFF")).
+			Background(lipgloss.Color("#555555")).
+			Padding(0, 1).
+			Width(m.width).
+			Render("○ WATCHER STOPPED — run `tickets watch` in another terminal")
+	}
+
+	// --- Columns ---
 	colWidth := (m.width - m.gap*(numCols-1)) / numCols
 	if colWidth < 16 {
 		colWidth = 16
 	}
-	m.colWidth = colWidth // store for mouse hit-testing
+	m.colWidth = colWidth
 	cardWidth := colWidth - 4
 
 	var renderedCols []string
 	for i, st := range m.stages {
 		isActiveCol := i == m.activeCol
 
-		hStyle := colHeaderStyle
+		// Header.
+		hStyle := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#FFFFFF")).
+			Background(lipgloss.Color("#5A56E0")).
+			Padding(0, 1).
+			Align(lipgloss.Center)
 		if isActiveCol {
-			hStyle = colHeaderActiveStyle
+			hStyle = hStyle.Background(accent)
 		}
 		count := len(m.columns[i])
 		header := hStyle.Width(colWidth - 4).Render(
 			fmt.Sprintf("%s (%d)", st, count),
 		)
 
+		// Cards.
 		var cards []string
 		for j, t := range m.columns[i] {
 			isActiveCard := isActiveCol && j == m.activeRow
 			isDragged := m.dragging && t.ID == m.dragID
 
-			cStyle := cardStyle
+			cStyle := lipgloss.NewStyle().
+				Border(lipgloss.NormalBorder()).
+				BorderForeground(lipgloss.Color("#555555")).
+				Padding(0, 1).
+				MarginBottom(1)
+
 			if isDragged {
-				cStyle = cardDraggingStyle
+				cStyle = cStyle.BorderForeground(lipgloss.Color("#FFD700")).Bold(true)
 			} else if isActiveCard {
-				cStyle = cardActiveStyle
+				cStyle = cStyle.BorderForeground(accent).Bold(true)
 			}
 			cStyle = cStyle.Width(cardWidth)
 
-			id := cardIDStyle.Render(t.ID)
-			title := truncate(t.Title, cardWidth-2)
+			// ID line.
+			id := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Render(t.ID)
 			priority := ""
 			if t.Priority != "" {
-				priority = " " + cardPriorityStyle.Render(t.Priority)
+				priority = " " + lipgloss.NewStyle().Foreground(lipgloss.Color("#FFD700")).Render(t.Priority)
 			}
-			cards = append(cards, cStyle.Render(id+priority+"\n"+title))
+
+			// Agent status badge.
+			badge := m.agentBadge(t.ID)
+
+			// Title.
+			title := truncate(t.Title, cardWidth-2)
+
+			cardContent := id + priority + badge + "\n" + title
+			cards = append(cards, cStyle.Render(cardContent))
 		}
 		if len(cards) == 0 {
 			empty := lipgloss.NewStyle().
@@ -382,12 +413,16 @@ func (m *boardModel) View() tea.View {
 
 		body := lipgloss.JoinVertical(lipgloss.Left, cards...)
 
-		cs := colStyle
+		// Column frame.
+		cs := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#555555")).
+			Padding(0, 1)
 		if isActiveCol {
-			cs = colActiveStyle
+			cs = cs.BorderForeground(accent)
 		}
 		colContent := header + "\n" + body
-		contentHeight := m.height - 5
+		contentHeight := m.height - 6 // room for status bar + help bar
 		cs = cs.Width(colWidth - 2).Height(contentHeight)
 
 		renderedCols = append(renderedCols, cs.Render(colContent))
@@ -395,22 +430,57 @@ func (m *boardModel) View() tea.View {
 
 	board := lipgloss.JoinHorizontal(lipgloss.Top, renderedCols...)
 
+	// --- Help bar ---
 	helpText := "h/l: columns  j/k: cards  H/L: move card  mouse: drag & drop  r: reload  q: quit"
 	if m.dragging {
 		helpText = fmt.Sprintf("dragging %s — release over target column to move", m.dragID)
 	}
-	help := helpStyle.Render(helpText)
+	help := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#666666")).
+		Padding(0, 0, 0, 1).
+		Render(helpText)
 
+	// Error display.
 	errMsg := ""
 	if m.err != nil {
-		errMsg = errStyle.Render("error: " + m.err.Error())
+		errMsg = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#FF0000")).
+			Bold(true).
+			Render(" error: " + m.err.Error())
 		m.err = nil
 	}
 
-	v := tea.NewView(board + "\n" + help + errMsg)
+	v := tea.NewView(statusBar + "\n" + board + "\n" + help + errMsg)
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeCellMotion
 	return v
+}
+
+// agentBadge returns a colored status indicator for a ticket's agent.
+func (m *boardModel) agentBadge(ticketID string) string {
+	as, ok := m.agentStatuses[ticketID]
+	if !ok {
+		return ""
+	}
+
+	var icon, color string
+	switch as.Status {
+	case agent.StatusSpawned:
+		icon, color = " ◐", "#FFD700" // yellow
+	case agent.StatusRunning:
+		icon, color = " ●", "#00D787" // green
+	case agent.StatusBlocked:
+		icon, color = " ⏸", "#FF8C00" // orange
+	case agent.StatusDone:
+		icon, color = " ✓", "#00D787" // green
+	case agent.StatusFailed:
+		icon, color = " ✗", "#FF5F5F" // red
+	case agent.StatusErrored:
+		icon, color = " ✗", "#FF5F5F" // red
+	default:
+		return ""
+	}
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render(icon)
 }
 
 func truncate(s string, max int) string {
@@ -426,8 +496,6 @@ func truncate(s string, max int) string {
 
 var _ tea.Model = (*boardModel)(nil)
 
-// stripForView removes all leading/trailing whitespace lines that
-// lipgloss sometimes adds.
 func stripForView(s string) string {
 	lines := strings.Split(s, "\n")
 	for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
