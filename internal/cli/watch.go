@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -213,12 +214,23 @@ func spawnAgentTmux(t ticket.Ticket, sc stage.Config) {
 		return
 	}
 
-	// Build a shell command: `<agent> <args> 2>&1 | tee <logfile>`
+	// Build the agent command.
 	parts := []string{shellQuote(ac.Command)}
 	for _, a := range argv {
 		parts = append(parts, shellQuote(a))
 	}
-	shellCmd := fmt.Sprintf("%s 2>&1 | tee %s", strings.Join(parts, " "), shellQuote(logFile))
+	agentCmd := strings.Join(parts, " ")
+
+	// The shell command sets up pipe-pane FIRST (to capture all output
+	// to the log file), then runs the agent. Because both happen inside
+	// the same session, there is no race — capture is active before the
+	// agent produces any output. The agent still gets a real TTY so it
+	// can render its UI normally.
+	shellCmd := fmt.Sprintf(
+		"tmux pipe-pane %s; %s",
+		shellQuote(fmt.Sprintf("cat >> %s", logFile)),
+		agentCmd,
+	)
 
 	err := exec.Command("tmux", "new-session", "-d", "-s", sessionName, "sh", "-c", shellCmd).Run()
 	if err != nil {
@@ -265,7 +277,16 @@ func waitForTmuxSession(t ticket.Ticket, agent, sessionName, logFile string) {
 
 // --- shared ---
 
+// ansiRegex matches ANSI escape sequences (colors, cursor movement,
+// etc.) that pipe-pane captures from the raw terminal output.
+var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?\x07|\x1b\[.*?[HJK]`)
+
+func stripAnsi(s string) string {
+	return ansiRegex.ReplaceAllString(s, "")
+}
+
 func appendAgentOutput(path, agent, output string) error {
+	output = stripAnsi(output)
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err
