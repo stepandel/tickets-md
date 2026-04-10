@@ -35,7 +35,7 @@ type Config struct {
 func Default() Config {
 	return Config{
 		Prefix: "TIC",
-		Stages: []string{"backlog", "todo", "in-progress", "done"},
+		Stages: []string{"backlog", "prep", "execute", "review", "done"},
 	}
 }
 

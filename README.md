@@ -8,10 +8,11 @@ read, grep, edit, and commit alongside your code.
 .tickets/
 ├── config.yml
 ├── backlog/
-├── todo/
-│   └── TIC-002.md
-├── in-progress/
+├── prep/
+├── execute/
 │   └── TIC-001.md
+├── review/
+│   └── TIC-002.md
 └── done/
 ```
 
@@ -77,7 +78,7 @@ you through naming the stage folders:
 ```
 $ tickets init
 Set up the stages for your ticket store.
-Defaults: backlog, todo, in-progress, done
+Defaults: backlog, prep, execute, review, done
 Use defaults? [Y/n]: n
 
 Enter stage names one at a time. The first stage is the
@@ -151,8 +152,9 @@ the CLI will see them in the right column on the next `list`.
 prefix: TIC
 stages:
   - backlog
-  - todo
-  - in-progress
+  - prep
+  - execute
+  - review
   - done
 ```
 
