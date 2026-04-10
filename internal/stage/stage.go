@@ -31,12 +31,20 @@ type AgentConfig struct {
 	Args []string `yaml:"args,omitempty"`
 	// Prompt is a template string rendered with ticket metadata and
 	// appended as the final argument. Supported placeholders:
-	//   {{path}}  — absolute path to the ticket file
-	//   {{id}}    — ticket ID (e.g. TIC-001)
-	//   {{title}} — ticket title from frontmatter
-	//   {{stage}} — destination stage name
-	//   {{body}}  — ticket body (markdown after frontmatter)
+	//   {{path}}      — absolute path to the ticket file
+	//   {{id}}        — ticket ID (e.g. TIC-001)
+	//   {{title}}     — ticket title from frontmatter
+	//   {{stage}}     — destination stage name
+	//   {{body}}      — ticket body (markdown after frontmatter)
+	//   {{worktree}}  — absolute path to the worktree (empty if worktree is off)
 	Prompt string `yaml:"prompt"`
+	// Worktree, when true, creates a git worktree per ticket so the
+	// agent works in an isolated checkout. The branch is named
+	// tickets/<ticket-id>.
+	Worktree bool `yaml:"worktree,omitempty"`
+	// BaseBranch is the branch to create the worktree from. Defaults
+	// to HEAD if empty.
+	BaseBranch string `yaml:"base_branch,omitempty"`
 }
 
 // HasAgent reports whether this stage is configured to spawn an
@@ -80,7 +88,10 @@ const defaultStageYML = `# Stage configuration — uncomment to enable an agent 
 # agent:
 #   command: claude          # CLI binary (claude, codex, aider, etc.)
 #   args: ["--print"]        # extra flags before the prompt
-#   prompt: |                # template with {{path}}, {{id}}, {{title}}, {{stage}}, {{body}}
+#   worktree: true           # isolate work in a git worktree per ticket
+#   base_branch: main        # branch to create worktree from (default: HEAD)
+#   prompt: |                # template with {{path}}, {{id}}, {{title}}, {{stage}}, {{body}}, {{worktree}}
+#     You are working in {{worktree}} on branch tickets/{{id}}.
 #     Read the ticket at {{path}} and implement what it describes.
 `
 
@@ -93,6 +104,7 @@ func RenderPrompt(prompt string, vars PromptVars) string {
 		"{{title}}", vars.Title,
 		"{{stage}}", vars.Stage,
 		"{{body}}", vars.Body,
+		"{{worktree}}", vars.Worktree,
 	)
 	return r.Replace(prompt)
 }
@@ -100,9 +112,10 @@ func RenderPrompt(prompt string, vars PromptVars) string {
 // PromptVars holds the values that can be interpolated into an agent
 // prompt template.
 type PromptVars struct {
-	Path  string
-	ID    string
-	Title string
-	Stage string
-	Body  string
+	Path     string
+	ID       string
+	Title    string
+	Stage    string
+	Body     string
+	Worktree string
 }

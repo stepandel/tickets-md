@@ -21,6 +21,7 @@ import (
 	"tickets-md/internal/config"
 	"tickets-md/internal/stage"
 	"tickets-md/internal/ticket"
+	"tickets-md/internal/worktree"
 )
 
 func newWatchCmd() *cobra.Command {
@@ -243,14 +244,16 @@ func handleRemove(root, path string) {
 }
 
 // buildAgentArgs returns the full argv (without the command itself)
-// for the agent invocation.
-func buildAgentArgs(t ticket.Ticket, ac *stage.AgentConfig) []string {
+// for the agent invocation. worktreePath is the absolute path to the
+// worktree (empty string if worktrees are disabled for this stage).
+func buildAgentArgs(t ticket.Ticket, ac *stage.AgentConfig, worktreePath string) []string {
 	prompt := stage.RenderPrompt(ac.Prompt, stage.PromptVars{
-		Path:  t.Path,
-		ID:    t.ID,
-		Title: t.Title,
-		Stage: t.Stage,
-		Body:  t.Body,
+		Path:     t.Path,
+		ID:       t.ID,
+		Title:    t.Title,
+		Stage:    t.Stage,
+		Body:     t.Body,
+		Worktree: worktreePath,
 	})
 	argv := make([]string, 0, len(ac.Args)+1)
 	argv = append(argv, ac.Args...)
@@ -268,7 +271,6 @@ func shellQuote(s string) string {
 
 func spawnAgentTmux(t ticket.Ticket, sc stage.Config, root string, mon *agent.Monitor) {
 	ac := sc.Agent
-	argv := buildAgentArgs(t, ac)
 
 	sessionName := t.ID
 	logFile := filepath.Join(os.TempDir(), fmt.Sprintf("tickets-%s.log", t.ID))
@@ -279,6 +281,21 @@ func spawnAgentTmux(t ticket.Ticket, sc stage.Config, root string, mon *agent.Mo
 		log.Printf("%s: tmux session already exists, skipping", t.ID)
 		return
 	}
+
+	// Create a git worktree if configured.
+	var wtPath string
+	if ac.Worktree {
+		var err error
+		wtPath, err = worktree.Create(root, t.ID, ac.BaseBranch)
+		if err != nil {
+			log.Printf("%s: failed to create worktree: %v", t.ID, err)
+			return
+		}
+		worktree.EnsureGitignored(root)
+		log.Printf("%s: created worktree at %s (branch %s)", t.ID, wtPath, worktree.BranchPrefix+t.ID)
+	}
+
+	argv := buildAgentArgs(t, ac, wtPath)
 
 	// Write "spawned" status before creating the tmux session.
 	now := time.Now().UTC().Truncate(time.Second)
@@ -313,7 +330,15 @@ func spawnAgentTmux(t ticket.Ticket, sc stage.Config, root string, mon *agent.Mo
 		shellQuote(exitFile),
 	)
 
-	err := exec.Command("tmux", "new-session", "-d", "-s", sessionName, "sh", "-c", shellCmd).Run()
+	// Start the tmux session. If worktree is active, set the starting
+	// directory so the agent's cwd is the isolated checkout.
+	tmuxArgs := []string{"new-session", "-d", "-s", sessionName}
+	if wtPath != "" {
+		tmuxArgs = append(tmuxArgs, "-c", wtPath)
+	}
+	tmuxArgs = append(tmuxArgs, "sh", "-c", shellCmd)
+
+	err := exec.Command("tmux", tmuxArgs...).Run()
 	if err != nil {
 		log.Printf("%s → %s: failed to create tmux session: %v", t.ID, t.Stage, err)
 		as.Status = agent.StatusErrored
@@ -322,7 +347,11 @@ func spawnAgentTmux(t ticket.Ticket, sc stage.Config, root string, mon *agent.Mo
 		return
 	}
 
-	log.Printf("%s → %s: agent running in tmux (attach with: tmux attach -t %s)", t.ID, t.Stage, sessionName)
+	wtInfo := ""
+	if wtPath != "" {
+		wtInfo = fmt.Sprintf(" [worktree: %s]", worktree.BranchPrefix+t.ID)
+	}
+	log.Printf("%s → %s: agent running in tmux (attach with: tmux attach -t %s)%s", t.ID, t.Stage, sessionName, wtInfo)
 
 	mon.TrackSession(t.ID)
 	go waitForTmuxSession(t, ac.Command, sessionName, logFile, root, mon)
