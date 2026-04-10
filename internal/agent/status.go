@@ -84,13 +84,16 @@ func statusPath(root, ticketID string) string {
 
 // Write persists an AgentStatus to disk. If a status file already
 // exists for the ticket, the transition is validated against the
-// current state. Writes are atomic (temp file + rename) to prevent
-// partial reads by concurrent processes.
+// current state. Writing "spawned" always succeeds (it starts a
+// fresh run, overwriting any previous terminal state). Writes are
+// atomic (temp file + rename) to prevent partial reads.
 func Write(root string, as AgentStatus) error {
-	existing, err := Read(root, as.TicketID)
-	if err == nil {
-		if err := Transition(existing.Status, as.Status); err != nil {
-			return fmt.Errorf("status transition for %s: %w", as.TicketID, err)
+	if as.Status != StatusSpawned {
+		existing, err := Read(root, as.TicketID)
+		if err == nil {
+			if err := Transition(existing.Status, as.Status); err != nil {
+				return fmt.Errorf("status transition for %s: %w", as.TicketID, err)
+			}
 		}
 	}
 

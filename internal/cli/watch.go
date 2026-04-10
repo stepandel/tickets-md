@@ -312,7 +312,6 @@ func waitForTmuxSession(t ticket.Ticket, agentName, sessionName, logFile, root s
 	var statusErr string
 
 	if exitData, err := os.ReadFile(exitFile); err == nil {
-		os.Remove(exitFile)
 		if code, err := strconv.Atoi(strings.TrimSpace(string(exitData))); err == nil {
 			exitCode = &code
 			if code != 0 {
@@ -339,7 +338,7 @@ func waitForTmuxSession(t ticket.Ticket, agentName, sessionName, logFile, root s
 		}
 		return
 	}
-	os.Remove(logFile)
+	// Keep the log file around for post-mortem debugging.
 
 	output := strings.TrimSpace(string(data))
 	if output == "" {
