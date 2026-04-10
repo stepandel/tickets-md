@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/spf13/cobra"
@@ -75,8 +76,10 @@ type boardModel struct {
 	agentStatuses  map[string]agent.AgentStatus // ticketID → status
 
 	// New ticket input mode.
-	inputActive bool   // true when the title input is shown
-	inputBuf    string // text typed so far
+	// inputStep: 0=off, 1=typing title, 2=typing description
+	inputStep  int
+	inputTitle string
+	descInput  textarea.Model
 }
 
 func newBoardModel(s *ticket.Store) (*boardModel, error) {
@@ -135,7 +138,7 @@ func (m *boardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, boardTickCmd()
 
 	case tea.KeyPressMsg:
-		if m.inputActive {
+		if m.inputStep > 0 {
 			return m.handleInput(msg)
 		}
 		return m.handleKey(msg)
@@ -180,50 +183,101 @@ func (m *boardModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.refreshStatus()
 		m.clampRow()
 	case "n", "+":
-		m.inputActive = true
-		m.inputBuf = ""
+		m.inputStep = 1
+		m.inputTitle = ""
 	}
 	return m, nil
 }
 
 func (m *boardModel) handleInput(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
+	case "esc", "escape":
+		m.inputStep = 0
+		m.inputTitle = ""
+		return m, nil
+	}
+
+	if m.inputStep == 1 {
+		return m.handleTitleInput(msg)
+	}
+	return m.handleDescInput(msg)
+}
+
+func (m *boardModel) handleTitleInput(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
 	case "enter":
-		title := strings.TrimSpace(m.inputBuf)
-		m.inputActive = false
-		m.inputBuf = ""
+		title := strings.TrimSpace(m.inputTitle)
 		if title == "" {
 			return m, nil
 		}
-		t, err := m.store.Create(title)
-		if err != nil {
-			m.err = err
-			return m, nil
-		}
-		m.err = m.reload()
-		// Select the new ticket in the default stage (first column).
-		m.activeCol = 0
-		for i, c := range m.columns[0] {
-			if c.ID == t.ID {
-				m.activeRow = i
-				break
-			}
-		}
-	case "esc", "escape":
-		m.inputActive = false
-		m.inputBuf = ""
+		// Move to description step.
+		m.inputStep = 2
+		ta := textarea.New()
+		ta.Placeholder = "Describe the ticket... (ctrl+s to save, esc to cancel)"
+		ta.SetWidth(40)
+		ta.SetHeight(6)
+		ta.MaxHeight = 12
+		m.descInput = ta
+		return m, m.descInput.Focus()
 	case "backspace":
-		if len(m.inputBuf) > 0 {
-			m.inputBuf = m.inputBuf[:len(m.inputBuf)-1]
+		if len(m.inputTitle) > 0 {
+			m.inputTitle = m.inputTitle[:len(m.inputTitle)-1]
 		}
 	case "space":
-		m.inputBuf += " "
+		m.inputTitle += " "
 	default:
-		// Append printable single-rune keys.
 		s := msg.String()
 		runes := []rune(s)
 		if len(runes) == 1 && runes[0] >= 32 {
-			m.inputBuf += s
+			m.inputTitle += s
+		}
+	}
+	return m, nil
+}
+
+func (m *boardModel) handleDescInput(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	// Ctrl+S submits.
+	if msg.String() == "ctrl+s" {
+		return m.submitTicket()
+	}
+
+	// Forward everything else to the textarea.
+	var cmd tea.Cmd
+	m.descInput, cmd = m.descInput.Update(msg)
+	return m, cmd
+}
+
+func (m *boardModel) submitTicket() (tea.Model, tea.Cmd) {
+	title := strings.TrimSpace(m.inputTitle)
+	desc := strings.TrimSpace(m.descInput.Value())
+
+	m.inputStep = 0
+	m.inputTitle = ""
+
+	if title == "" {
+		return m, nil
+	}
+
+	t, err := m.store.Create(title)
+	if err != nil {
+		m.err = err
+		return m, nil
+	}
+
+	// If description was provided, update the ticket body.
+	if desc != "" {
+		t.Body = "## Description\n\n" + desc + "\n"
+		if serr := m.store.Save(t); serr != nil {
+			m.err = serr
+		}
+	}
+
+	m.err = m.reload()
+	m.activeCol = 0
+	for i, c := range m.columns[0] {
+		if c.ID == t.ID {
+			m.activeRow = i
+			break
 		}
 	}
 	return m, nil
@@ -457,7 +511,8 @@ func (m *boardModel) View() tea.View {
 		}
 		// Show inline input or [+] button at the bottom of the first column.
 		if i == 0 {
-			if m.inputActive {
+			if m.inputStep == 1 {
+				// Title input.
 				cursor := "█"
 				inputStyle := lipgloss.NewStyle().
 					Border(lipgloss.NormalBorder()).
@@ -465,9 +520,19 @@ func (m *boardModel) View() tea.View {
 					Padding(0, 1).
 					Width(cardWidth)
 				inputLabel := lipgloss.NewStyle().
-					Foreground(lipgloss.Color("#888888")).Render("new ticket")
-				inputText := m.inputBuf + cursor
+					Foreground(lipgloss.Color("#888888")).Render("title")
+				inputText := m.inputTitle + cursor
 				cards = append(cards, inputStyle.Render(inputLabel+"\n"+inputText))
+			} else if m.inputStep == 2 {
+				// Title (locked) + description textarea.
+				formStyle := lipgloss.NewStyle().
+					Border(lipgloss.NormalBorder()).
+					BorderForeground(accent).
+					Padding(0, 1).
+					Width(cardWidth)
+				titleLine := lipgloss.NewStyle().Bold(true).Render(m.inputTitle)
+				descView := m.descInput.View()
+				cards = append(cards, formStyle.Render(titleLine+"\n"+descView))
 			} else {
 				addBtn := lipgloss.NewStyle().
 					Foreground(lipgloss.Color("#888888")).
@@ -508,8 +573,10 @@ func (m *boardModel) View() tea.View {
 
 	// --- Help bar ---
 	helpText := "h/l: columns  j/k: cards  H/L: move card  n: new ticket  mouse: drag & drop  r: reload  q: quit"
-	if m.inputActive {
-		helpText = "type a title, then enter to create • escape to cancel"
+	if m.inputStep == 1 {
+		helpText = "type a title, then enter to continue • esc to cancel"
+	} else if m.inputStep == 2 {
+		helpText = "type a description • ctrl+s to save • esc to cancel"
 	} else if m.dragging {
 		helpText = fmt.Sprintf("dragging %s — release over target column to move", m.dragID)
 	}
