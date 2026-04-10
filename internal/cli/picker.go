@@ -25,9 +25,6 @@ func runPicker(title string, options []string) (int, error) {
 	}
 	defer term.Restore(fd, oldState)
 
-	// Restore the terminal on SIGINT/SIGTERM so the user doesn't end
-	// up with a broken shell if they kill the process while the
-	// picker is open.
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 	go func() {
@@ -38,10 +35,11 @@ func runPicker(title string, options []string) (int, error) {
 	defer signal.Stop(sigCh)
 
 	cur := 0
+	n := len(options)
 
-	// draw renders the full option list. In raw mode the carriage
-	// return (\r) is needed because the terminal won't translate \n
-	// into \r\n for us.
+	// draw overwrites lines 0..N-1 with the current option list,
+	// then moves the cursor back to line 0 so the next draw cycle
+	// starts in the right place.
 	draw := func() {
 		for i, opt := range options {
 			if i == cur {
@@ -50,50 +48,53 @@ func runPicker(title string, options []string) (int, error) {
 				fmt.Printf("\r\033[K    %s\r\n", opt)
 			}
 		}
-		// Move cursor back up to the top of the list so the next
-		// draw cycle overwrites cleanly.
-		fmt.Printf("\033[%dA", len(options))
+		fmt.Printf("\033[%dA", n) // back to line 0
 	}
 
-	// Print title, then hint line below the options.
+	// --- Screen layout (cursor "line 0" = first option) ---
+	//
+	//   <title>                              ← printed once, never redrawn
+	//   ❯ option 0          ← line 0        ← cursor rests here
+	//     option 1          ← line 1
+	//     ...
+	//     option N-1        ← line N-1
+	//   ↑/↓ navigate …     ← line N (hint)  ← printed once
+
+	// Title
 	fmt.Printf("  %s\r\n", title)
+
+	// Draw options (cursor ends on line 0)
 	draw()
-	fmt.Printf("\r\033[K\r\n  \033[2m↑/↓ navigate • enter select • ctrl+c cancel\033[0m")
-	// Move back up past the hint and the options to redraw position.
-	fmt.Printf("\033[%dA", len(options)+1)
-	draw()
+
+	// Jump past options to print the hint, then jump back.
+	fmt.Printf("\033[%dB", n)                                                              // → line N
+	fmt.Printf("\r\033[K  \033[2m↑/↓ navigate • enter select • ctrl+c cancel\033[0m") // hint
+	fmt.Printf("\033[%dA", n)                                                              // → line 0
 
 	buf := make([]byte, 3)
 	for {
-		n, err := os.Stdin.Read(buf[:])
+		nr, err := os.Stdin.Read(buf[:])
 		if err != nil {
 			return -1, err
 		}
 
 		switch {
-		// Enter — accept selection.
-		case n == 1 && buf[0] == 13:
-			// Move cursor below the list + hint line.
-			fmt.Printf("\033[%dB", len(options)-cur+1)
-			fmt.Printf("\r\n")
+		case nr == 1 && buf[0] == 13: // Enter
+			fmt.Printf("\033[%dB\r\n", n) // move past hint, clean line
 			return cur, nil
 
-		// Ctrl+C or Ctrl+D — cancel.
-		case n == 1 && (buf[0] == 3 || buf[0] == 4):
-			fmt.Printf("\033[%dB", len(options)-cur+1)
-			fmt.Printf("\r\n")
+		case nr == 1 && (buf[0] == 3 || buf[0] == 4): // Ctrl+C / Ctrl+D
+			fmt.Printf("\033[%dB\r\n", n)
 			return -1, fmt.Errorf("cancelled")
 
-		// j or Down arrow — move down.
-		case n == 1 && buf[0] == 'j',
-			n == 3 && buf[0] == 27 && buf[1] == 91 && buf[2] == 66:
-			if cur < len(options)-1 {
+		case nr == 1 && buf[0] == 'j',
+			nr == 3 && buf[0] == 27 && buf[1] == 91 && buf[2] == 66: // Down
+			if cur < n-1 {
 				cur++
 			}
 
-		// k or Up arrow — move up.
-		case n == 1 && buf[0] == 'k',
-			n == 3 && buf[0] == 27 && buf[1] == 91 && buf[2] == 65:
+		case nr == 1 && buf[0] == 'k',
+			nr == 3 && buf[0] == 27 && buf[1] == 91 && buf[2] == 65: // Up
 			if cur > 0 {
 				cur--
 			}
