@@ -125,8 +125,13 @@ func runWatch(s *ticket.Store) error {
 
 	go mon.Run(ctx)
 
-	// Load stage configs and register directories.
+	// Load stage configs and register directories. knownPaths tracks
+	// every ticket file we've already observed at its current path.
+	// It's what lets us distinguish a real cross-directory move (which
+	// empties the source path) from an agent's atomic in-place rewrite
+	// (rename(tmp, foo.md), which leaves the path alive at a new inode).
 	stageConfigs := make(map[string]stage.Config)
+	knownPaths := make(map[string]bool)
 	for _, st := range s.Config.Stages {
 		dir := filepath.Join(s.Root, config.ConfigDir, st)
 		sc, err := stage.Load(dir)
@@ -136,6 +141,17 @@ func runWatch(s *ticket.Store) error {
 		stageConfigs[st] = sc
 		if err := w.Add(dir); err != nil {
 			return fmt.Errorf("watching %s: %w", dir, err)
+		}
+
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return fmt.Errorf("scanning %s: %w", dir, err)
+		}
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+				continue
+			}
+			knownPaths[filepath.Join(dir, e.Name())] = true
 		}
 
 		status := "no agent"
@@ -150,8 +166,6 @@ func runWatch(s *ticket.Store) error {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 
-	seen := make(map[string]time.Time)
-
 	for {
 		select {
 		case <-sigCh:
@@ -165,6 +179,12 @@ func runWatch(s *ticket.Store) error {
 			}
 
 			if event.Has(fsnotify.Rename) || event.Has(fsnotify.Remove) {
+				// If the file still exists at this path, it was an
+				// atomic in-place rewrite — the ticket didn't leave.
+				if _, err := os.Stat(event.Name); err == nil {
+					continue
+				}
+				delete(knownPaths, event.Name)
 				handleRemove(s, event.Name)
 				continue
 			}
@@ -172,10 +192,13 @@ func runWatch(s *ticket.Store) error {
 			if !event.Has(fsnotify.Create) {
 				continue
 			}
-			if t, ok := seen[event.Name]; ok && time.Since(t) < time.Second {
+			// Already tracked at this path → this Create is the
+			// second half of an atomic rewrite (or a spurious
+			// re-registration). The ticket was already here.
+			if knownPaths[event.Name] {
 				continue
 			}
-			seen[event.Name] = time.Now()
+			knownPaths[event.Name] = true
 
 			handleCreate(s, stageConfigs, event.Name, mon)
 
