@@ -329,6 +329,29 @@ func ListAll(root string) ([]AgentStatus, error) {
 	return all, nil
 }
 
+// SetPlanFile overwrites the plan_file field on an existing run
+// without running a transition check, so it can be used to backfill
+// terminal runs whose capture missed the plan path at session end.
+func SetPlanFile(root, ticketID, runID, planFile string) error {
+	as, err := ReadRun(root, ticketID, runID)
+	if err != nil {
+		return err
+	}
+	as.PlanFile = planFile
+	as.UpdatedAt = time.Now().UTC().Truncate(time.Second)
+
+	data, err := yaml.Marshal(as)
+	if err != nil {
+		return err
+	}
+	target := runPath(root, ticketID, runID)
+	tmp := target + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, target)
+}
+
 // RemoveRun deletes a single run's yml/log/exit files.
 func RemoveRun(root, ticketID, runID string) error {
 	os.Remove(LogPath(root, ticketID, runID))

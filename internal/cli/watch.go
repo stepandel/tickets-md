@@ -112,6 +112,11 @@ func runWatch(s *ticket.Store) error {
 	if err != nil {
 		log.Printf("monitor: startup reconciliation failed: %v", err)
 	}
+
+	// Backfill plan_file for any terminal runs whose session-end
+	// capture missed it. Self-heals runs that finished under an
+	// older binary or raced transcript flushes.
+	backfillPlanFiles(s.Root)
 	for _, as := range alive {
 		t, terr := s.Get(as.TicketID)
 		if terr != nil {
@@ -468,6 +473,32 @@ func waitForTmuxSession(t ticket.Ticket, runID, agentName, sessionName, root str
 		if werr := agent.Write(root, as); werr != nil {
 			log.Printf("%s/%s: failed to update agent status: %v", t.ID, runID, werr)
 		}
+	}
+}
+
+// backfillPlanFiles walks every recorded run and, for runs that have
+// a session id but no recorded plan path, re-runs the transcript
+// lookup and persists whatever it finds. Runs with a plan path
+// already set are left alone.
+func backfillPlanFiles(root string) {
+	runs, err := agent.ListAll(root)
+	if err != nil {
+		log.Printf("backfill plans: list runs: %v", err)
+		return
+	}
+	for _, as := range runs {
+		if as.SessionUUID == "" || as.PlanFile != "" {
+			continue
+		}
+		path := lookupPlanFile(as, root)
+		if path == "" {
+			continue
+		}
+		if err := agent.SetPlanFile(root, as.TicketID, as.RunID, path); err != nil {
+			log.Printf("backfill plans: %s/%s: %v", as.TicketID, as.RunID, err)
+			continue
+		}
+		log.Printf("backfill plans: %s/%s → %s", as.TicketID, as.RunID, path)
 	}
 }
 
