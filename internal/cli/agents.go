@@ -28,9 +28,6 @@ latest per ticket.`,
 			if err != nil {
 				return err
 			}
-			if err := agent.MigrateFlat(s.Root); err != nil {
-				return err
-			}
 
 			var statuses []agent.AgentStatus
 			if history {
@@ -77,9 +74,6 @@ With just a ticket id, prints the latest run. Pass an explicit run id
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := openStore()
 			if err != nil {
-				return err
-			}
-			if err := agent.MigrateFlat(s.Root); err != nil {
 				return err
 			}
 

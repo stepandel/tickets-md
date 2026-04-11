@@ -96,10 +96,6 @@ func runWatch(s *ticket.Store) error {
 		return err
 	}
 
-	if err := agent.MigrateFlat(s.Root); err != nil {
-		log.Printf("agent migrate: %v", err)
-	}
-
 	w, err := fsnotify.NewWatcher()
 	if err != nil {
 		return fmt.Errorf("creating watcher: %w", err)
