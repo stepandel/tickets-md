@@ -314,6 +314,7 @@ func spawnAgentTmux(t ticket.Ticket, sc stage.Config, root string, mon *agent.Mo
 		Status:    agent.StatusSpawned,
 		SpawnedAt: now,
 		LogFile:   logFile,
+		Worktree:  wtPath,
 	}
 	if err := agent.Write(root, as); err != nil {
 		log.Printf("%s: failed to write agent status: %v", t.ID, err)

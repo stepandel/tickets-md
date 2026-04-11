@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"text/tabwriter"
 
@@ -19,6 +20,7 @@ func newWorktreeCmd() *cobra.Command {
 	}
 	cmd.AddCommand(
 		newWorktreeListCmd(),
+		newWorktreeOpenCmd(),
 		newWorktreeCleanCmd(),
 	)
 	return cmd
@@ -49,6 +51,34 @@ func newWorktreeListCmd() *cobra.Command {
 				fmt.Fprintf(tw, "%s\t%s\t%s\n", ticket, info.Branch, info.Path)
 			}
 			return tw.Flush()
+		},
+	}
+}
+
+func newWorktreeOpenCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "open <ticket-id>",
+		Short: "Open a ticket's worktree in your editor/IDE",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := openStore()
+			if err != nil {
+				return err
+			}
+			wtDir := filepath.Join(s.Root, worktree.Dir, args[0])
+			if _, err := os.Stat(wtDir); err != nil {
+				return fmt.Errorf("no worktree for %s (expected %s)", args[0], wtDir)
+			}
+			name, editorArgs, err := resolveEditor()
+			if err != nil {
+				return err
+			}
+			argv := append(editorArgs, wtDir)
+			c := exec.Command(name, argv...)
+			c.Stdin = os.Stdin
+			c.Stdout = os.Stdout
+			c.Stderr = os.Stderr
+			return c.Run()
 		},
 	}
 }
