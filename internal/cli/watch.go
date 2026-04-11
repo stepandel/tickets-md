@@ -35,7 +35,8 @@ a named tmux session. Attach to watch or interact:
 
   tmux attach -t <ticket-id>
 
-Agent output is appended to the ticket file when the agent exits.
+Agent output is stored in .tickets/.agents/<id>.log and can be
+viewed with: tickets agents log <id>
 Requires tmux (brew install tmux).
 
 Create a .stage.yml in any stage directory to configure an agent:
@@ -119,7 +120,7 @@ func runWatch(s *ticket.Store) error {
 		}
 		log.Printf("%s: re-attaching to running agent (session %s)", as.TicketID, as.Session)
 		mon.TrackSession(as.TicketID)
-		go waitForTmuxSession(t, as.Agent, as.Session, as.LogFile, s.Root, mon)
+		go waitForTmuxSession(t, as.Agent, as.Session, s.Root, mon)
 	}
 
 	go mon.Run(ctx)
@@ -280,8 +281,9 @@ func spawnAgentTmux(t ticket.Ticket, sc stage.Config, root string, mon *agent.Mo
 	ac := sc.Agent
 
 	sessionName := t.ID
-	logFile := filepath.Join(os.TempDir(), fmt.Sprintf("tickets-%s.log", t.ID))
-	exitFile := filepath.Join(os.TempDir(), fmt.Sprintf("tickets-%s.exit", t.ID))
+	agentsDir := agent.Dir(root)
+	logFile := filepath.Join(agentsDir, t.ID+".log")
+	exitFile := filepath.Join(agentsDir, t.ID+".exit")
 
 	// Check for existing session (e.g. ticket moved twice quickly).
 	if exec.Command("tmux", "has-session", "-t", sessionName).Run() == nil {
@@ -362,13 +364,12 @@ func spawnAgentTmux(t ticket.Ticket, sc stage.Config, root string, mon *agent.Mo
 	log.Printf("%s → %s: agent running in tmux (attach with: tmux attach -t %s)%s", t.ID, t.Stage, sessionName, wtInfo)
 
 	mon.TrackSession(t.ID)
-	go waitForTmuxSession(t, ac.Command, sessionName, logFile, root, mon)
+	go waitForTmuxSession(t, ac.Command, sessionName, root, mon)
 }
 
-// waitForTmuxSession polls until the tmux session ends, updates the
-// agent status, then reads the log file and appends output to the
-// ticket file.
-func waitForTmuxSession(t ticket.Ticket, agentName, sessionName, logFile, root string, mon *agent.Monitor) {
+// waitForTmuxSession polls until the tmux session ends and updates
+// the agent status.
+func waitForTmuxSession(t ticket.Ticket, agentName, sessionName, root string, mon *agent.Monitor) {
 	defer mon.UntrackSession(t.ID)
 
 	for {
@@ -381,7 +382,7 @@ func waitForTmuxSession(t ticket.Ticket, agentName, sessionName, logFile, root s
 	log.Printf("%s: agent %s finished (session %s closed)", t.ID, agentName, sessionName)
 
 	// Determine exit status from the .exit file written by the shell wrapper.
-	exitFile := filepath.Join(os.TempDir(), fmt.Sprintf("tickets-%s.exit", t.ID))
+	exitFile := filepath.Join(agent.Dir(root), t.ID+".exit")
 	finalStatus := agent.StatusDone
 	var exitCode *int
 	var statusErr string
@@ -407,25 +408,6 @@ func waitForTmuxSession(t ticket.Ticket, agentName, sessionName, logFile, root s
 			log.Printf("%s: failed to update agent status: %v", t.ID, werr)
 		}
 	}
-
-	data, err := os.ReadFile(logFile)
-	if err != nil {
-		if !os.IsNotExist(err) {
-			log.Printf("%s: failed to read agent output: %v", t.ID, err)
-		}
-		return
-	}
-	// Keep the log file around for post-mortem debugging.
-
-	output := strings.TrimSpace(string(data))
-	if output == "" {
-		return
-	}
-	if err := appendAgentOutput(t.Path, agentName, output); err != nil {
-		log.Printf("%s: failed to append agent output: %v", t.ID, err)
-	} else {
-		log.Printf("%s: output appended to %s", t.ID, filepath.Base(t.Path))
-	}
 }
 
 // --- shared ---
@@ -438,15 +420,3 @@ func stripAnsi(s string) string {
 	return ansiRegex.ReplaceAllString(s, "")
 }
 
-func appendAgentOutput(path, agent, output string) error {
-	output = stripAnsi(output)
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	now := time.Now().Format("2006-01-02 15:04:05")
-	_, err = fmt.Fprintf(f, "\n## Agent Output (%s, %s)\n\n%s\n", agent, now, output)
-	return err
-}
