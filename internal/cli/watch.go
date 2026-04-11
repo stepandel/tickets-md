@@ -164,7 +164,7 @@ func runWatch(s *ticket.Store) error {
 			}
 
 			if event.Has(fsnotify.Rename) || event.Has(fsnotify.Remove) {
-				handleRemove(s.Root, event.Name)
+				handleRemove(s, event.Name)
 				continue
 			}
 
@@ -214,7 +214,7 @@ func handleCreate(s *ticket.Store, stageConfigs map[string]stage.Config, path st
 // handleRemove is called when a ticket file disappears from a stage
 // directory (Rename or Remove event). If the ticket has an active tmux
 // session, it is killed and the status is updated.
-func handleRemove(root, path string) {
+func handleRemove(s *ticket.Store, path string) {
 	base := filepath.Base(path)
 	if !strings.HasSuffix(base, ".md") {
 		return
@@ -226,7 +226,14 @@ func handleRemove(root, path string) {
 		return
 	}
 
-	log.Printf("%s: ticket moved, killing agent session", ticketID)
+	// If the ticket still exists in another stage, it was moved — not
+	// deleted. The Rename event fires for the old path, but the file
+	// already lives at the new location. Don't kill the agent.
+	if _, err := s.Get(ticketID); err == nil {
+		return
+	}
+
+	log.Printf("%s: ticket removed, killing agent session", ticketID)
 	if err := exec.Command("tmux", "kill-session", "-t", ticketID).Run(); err != nil {
 		log.Printf("%s: failed to kill tmux session: %v", ticketID, err)
 	}
@@ -234,10 +241,10 @@ func handleRemove(root, path string) {
 	// The waitForTmuxSession goroutine will detect the session is gone
 	// and handle the status update. But the exit code file won't exist
 	// (agent didn't exit normally), so set the status explicitly.
-	if as, err := agent.Read(root, ticketID); err == nil && !as.Status.IsTerminal() {
+	if as, err := agent.Read(s.Root, ticketID); err == nil && !as.Status.IsTerminal() {
 		as.Status = agent.StatusFailed
-		as.Error = "ticket moved, agent terminated"
-		if err := agent.Write(root, as); err != nil {
+		as.Error = "ticket removed, agent terminated"
+		if err := agent.Write(s.Root, as); err != nil {
 			log.Printf("%s: failed to update status: %v", ticketID, err)
 		}
 	}
