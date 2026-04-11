@@ -404,10 +404,34 @@ func waitForTmuxSession(t ticket.Ticket, agentName, sessionName, root string, mo
 		as.Status = finalStatus
 		as.ExitCode = exitCode
 		as.Error = statusErr
+		as.PlanFile = scanLogForPlanFile(as.LogFile)
 		if werr := agent.Write(root, as); werr != nil {
 			log.Printf("%s: failed to update agent status: %v", t.ID, werr)
 		}
 	}
+}
+
+// planFileRegex matches the announcement Claude Code prints when
+// plan mode persists a plan to ~/.claude/plans/<slug>.md.
+var planFileRegex = regexp.MustCompile(`Plan ready for review at (\S+\.md)\.`)
+
+func scanLogForPlanFile(logFile string) string {
+	if logFile == "" {
+		return ""
+	}
+	data, err := os.ReadFile(logFile)
+	if err != nil {
+		return ""
+	}
+	matches := planFileRegex.FindAllStringSubmatch(stripAnsi(string(data)), -1)
+	if len(matches) == 0 {
+		return ""
+	}
+	path := matches[len(matches)-1][1]
+	if _, err := os.Stat(path); err != nil {
+		return ""
+	}
+	return path
 }
 
 // --- shared ---
