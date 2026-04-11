@@ -135,7 +135,9 @@ func (m *boardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case boardTickMsg:
+		m.err = m.reload()
 		m.refreshStatus()
+		m.clampRow()
 		return m, boardTickCmd()
 
 	case tea.KeyPressMsg:
