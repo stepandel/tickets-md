@@ -36,7 +36,7 @@ a named tmux session. Attach to watch or interact:
   tmux attach -t <ticket-id>
 
 Each agent run is recorded under .tickets/.agents/<id>/<run>.yml
-along with a matching .log and .exit. View with: tickets agents log <id>
+with .log and .exit siblings under runs/. View with: tickets agents log <id>
 Requires tmux (brew install tmux).
 
 Create a .stage.yml in any stage directory to configure an agent:
@@ -331,6 +331,10 @@ func spawnAgentTmux(t ticket.Ticket, sc stage.Config, root string, mon *agent.Mo
 	}
 	if err := agent.Write(root, as); err != nil {
 		log.Printf("%s/%s: failed to write agent status: %v", t.ID, runID, err)
+		return
+	}
+	if err := os.MkdirAll(agent.RunsDir(root, t.ID), 0o755); err != nil {
+		log.Printf("%s/%s: failed to create runs dir: %v", t.ID, runID, err)
 		return
 	}
 

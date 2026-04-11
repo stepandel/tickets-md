@@ -1,9 +1,10 @@
 // Package agent provides persistent, filesystem-backed status tracking
 // for AI agents spawned by `tickets watch`. Each ticket gets its own
-// directory under .tickets/.agents/<ticket-id>/, with one .yml/.log/.exit
-// triple per agent run. Run ids are <NNN>-<stage> where NNN is a
-// per-ticket monotonic sequence — so a ticket that revisits "execute"
-// gets a fresh run with a higher sequence number.
+// directory under .tickets/.agents/<ticket-id>/, holding one <run>.yml
+// per agent run and a runs/ subdirectory with the matching .log and
+// .exit files. Run ids are <NNN>-<stage> where NNN is a per-ticket
+// monotonic sequence — so a ticket that revisits "execute" gets a
+// fresh run with a higher sequence number.
 package agent
 
 import (
@@ -95,18 +96,24 @@ func TicketDir(root, ticketID string) string {
 	return filepath.Join(Dir(root), ticketID)
 }
 
+// RunsDir returns the absolute path to .tickets/.agents/<ticket-id>/runs/,
+// which holds the .log and .exit artifacts for every run.
+func RunsDir(root, ticketID string) string {
+	return filepath.Join(TicketDir(root, ticketID), "runs")
+}
+
 func runPath(root, ticketID, runID string) string {
 	return filepath.Join(TicketDir(root, ticketID), runID+".yml")
 }
 
 // LogPath returns the canonical log file path for a run.
 func LogPath(root, ticketID, runID string) string {
-	return filepath.Join(TicketDir(root, ticketID), runID+".log")
+	return filepath.Join(RunsDir(root, ticketID), runID+".log")
 }
 
 // ExitPath returns the canonical exit-code file path for a run.
 func ExitPath(root, ticketID, runID string) string {
-	return filepath.Join(TicketDir(root, ticketID), runID+".exit")
+	return filepath.Join(RunsDir(root, ticketID), runID+".exit")
 }
 
 // runIDRegex matches "<seq>-<stage>" with a 3+ digit zero-padded seq.
