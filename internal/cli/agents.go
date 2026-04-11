@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -59,7 +60,58 @@ latest per ticket.`,
 	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "show log file paths")
 	cmd.Flags().BoolVar(&history, "history", false, "show every run, not just the latest per ticket")
 	cmd.AddCommand(newAgentsLogCmd())
+	cmd.AddCommand(newAgentsPlanCmd())
 	return cmd
+}
+
+func newAgentsPlanCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "plan <ticket-id> [run-id]",
+		Short: "Open the plan file produced by an agent run",
+		Long: `Open the plan file Claude Code wrote during an agent run.
+
+With just a ticket id, uses the latest run. Pass an explicit run id
+(e.g. "002-prep") to inspect an earlier run. Errors if the run did
+not produce a plan (agent wasn't in plan mode, or wasn't Claude Code).`,
+		Args: cobra.RangeArgs(1, 2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := openStore()
+			if err != nil {
+				return err
+			}
+
+			ticketID := args[0]
+			var as agent.AgentStatus
+			if len(args) == 2 {
+				as, err = agent.ReadRun(s.Root, ticketID, args[1])
+				if err != nil {
+					return fmt.Errorf("no run %s for %s: %w", args[1], ticketID, err)
+				}
+			} else {
+				as, err = agent.Latest(s.Root, ticketID)
+				if err != nil {
+					return fmt.Errorf("no agent runs for %s: %w", ticketID, err)
+				}
+			}
+			if as.PlanFile == "" {
+				return fmt.Errorf("no plan recorded for %s/%s", ticketID, as.RunID)
+			}
+			if _, err := os.Stat(as.PlanFile); err != nil {
+				return fmt.Errorf("plan file missing: %w", err)
+			}
+
+			name, editorArgs, err := resolveEditor()
+			if err != nil {
+				return err
+			}
+			argv := append(editorArgs, as.PlanFile)
+			c := exec.Command(name, argv...)
+			c.Stdin = os.Stdin
+			c.Stdout = os.Stdout
+			c.Stderr = os.Stderr
+			return c.Run()
+		},
+	}
 }
 
 func newAgentsLogCmd() *cobra.Command {
