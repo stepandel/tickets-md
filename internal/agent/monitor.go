@@ -43,9 +43,9 @@ func TmuxPaneIdle(sessionName string) int {
 // the monitor considers it blocked (likely waiting for user input).
 const blockedThreshold = 30 // seconds
 
-// Monitor periodically reconciles agent status files against tmux
-// reality. It catches crashes, stale statuses from a previous watcher
-// run, promotes spawned → running, and detects blocked agents.
+// Monitor periodically reconciles agent run files against tmux reality.
+// It catches crashes, stale runs from a previous watcher process,
+// promotes spawned → running, and detects blocked agents.
 type Monitor struct {
 	root      string
 	interval  time.Duration
@@ -53,7 +53,7 @@ type Monitor struct {
 	idleCheck IdleChecker
 
 	mu       sync.Mutex
-	watching map[string]struct{} // ticket IDs with active wait goroutines
+	watching map[string]struct{} // "<ticket>/<run>" with active wait goroutines
 }
 
 // NewMonitor creates a monitor that checks tmux state every interval.
@@ -67,26 +67,30 @@ func NewMonitor(root string, check SessionChecker, idle IdleChecker) *Monitor {
 	}
 }
 
-// TrackSession registers a ticket ID as having an active
+func runKey(ticketID, runID string) string {
+	return ticketID + "/" + runID
+}
+
+// TrackRun registers a (ticket, run) pair as having an active
 // waitForTmuxSession goroutine. The monitor will not mark tracked
-// sessions as failed (that's the wait goroutine's job).
-func (m *Monitor) TrackSession(ticketID string) {
+// runs as failed (that's the wait goroutine's job).
+func (m *Monitor) TrackRun(ticketID, runID string) {
 	m.mu.Lock()
-	m.watching[ticketID] = struct{}{}
+	m.watching[runKey(ticketID, runID)] = struct{}{}
 	m.mu.Unlock()
 }
 
-// UntrackSession removes a ticket ID from the tracked set.
-func (m *Monitor) UntrackSession(ticketID string) {
+// UntrackRun removes a (ticket, run) pair from the tracked set.
+func (m *Monitor) UntrackRun(ticketID, runID string) {
 	m.mu.Lock()
-	delete(m.watching, ticketID)
+	delete(m.watching, runKey(ticketID, runID))
 	m.mu.Unlock()
 }
 
-func (m *Monitor) isTracked(ticketID string) bool {
+func (m *Monitor) isTracked(ticketID, runID string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	_, ok := m.watching[ticketID]
+	_, ok := m.watching[runKey(ticketID, runID)]
 	return ok
 }
 
@@ -96,12 +100,12 @@ type AliveStatus struct {
 	AgentStatus
 }
 
-// Reconcile checks all non-terminal status files against tmux state.
+// Reconcile checks all non-terminal run files against tmux state.
 // Sessions that are still alive are returned so the caller can spawn
 // new wait goroutines for them. Sessions that are gone are marked
 // failed.
 func (m *Monitor) Reconcile() ([]AliveStatus, error) {
-	statuses, err := List(m.root)
+	statuses, err := ListAll(m.root)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +118,7 @@ func (m *Monitor) Reconcile() ([]AliveStatus, error) {
 			if as.Status == StatusSpawned {
 				as.Status = StatusRunning
 				if err := Write(m.root, as); err != nil {
-					log.Printf("monitor: failed to promote %s to running: %v", as.TicketID, err)
+					log.Printf("monitor: failed to promote %s/%s to running: %v", as.TicketID, as.RunID, err)
 				}
 			}
 			alive = append(alive, AliveStatus{as})
@@ -122,9 +126,9 @@ func (m *Monitor) Reconcile() ([]AliveStatus, error) {
 			as.Status = StatusFailed
 			as.Error = "tmux session not found on watcher restart"
 			if err := Write(m.root, as); err != nil {
-				log.Printf("monitor: failed to mark %s as failed: %v", as.TicketID, err)
+				log.Printf("monitor: failed to mark %s/%s failed: %v", as.TicketID, as.RunID, err)
 			} else {
-				log.Printf("monitor: reconciled %s as failed (stale status)", as.TicketID)
+				log.Printf("monitor: reconciled %s/%s as failed (stale status)", as.TicketID, as.RunID)
 			}
 		}
 	}
@@ -151,19 +155,24 @@ func (m *Monitor) Run(ctx context.Context) {
 const staleAge = 24 * time.Hour
 
 func (m *Monitor) poll() {
-	statuses, err := List(m.root)
+	statuses, err := ListAll(m.root)
 	if err != nil {
 		log.Printf("monitor: failed to list statuses: %v", err)
 		return
 	}
+
+	// Track which tickets have any non-stale runs left so we can prune
+	// fully-stale ticket directories at the end.
+	ticketsWithLiveRuns := make(map[string]bool)
+
 	for _, as := range statuses {
-		// Auto-cleanup old terminal statuses.
 		if as.Status.IsTerminal() {
-			if time.Since(as.UpdatedAt) > staleAge {
-				os.Remove(statusPath(m.root, as.TicketID))
+			if time.Since(as.UpdatedAt) <= staleAge {
+				ticketsWithLiveRuns[as.TicketID] = true
 			}
 			continue
 		}
+		ticketsWithLiveRuns[as.TicketID] = true
 
 		if m.check(as.Session) {
 			idle := m.idleCheck(as.Session)
@@ -172,16 +181,16 @@ func (m *Monitor) poll() {
 			case StatusSpawned:
 				as.Status = StatusRunning
 				if err := Write(m.root, as); err != nil {
-					log.Printf("monitor: failed to promote %s to running: %v", as.TicketID, err)
+					log.Printf("monitor: failed to promote %s/%s to running: %v", as.TicketID, as.RunID, err)
 				}
 			case StatusRunning:
 				if idle >= blockedThreshold {
 					as.Status = StatusBlocked
 					as.Error = fmt.Sprintf("pane idle for %ds, likely waiting for input", idle)
 					if err := Write(m.root, as); err != nil {
-						log.Printf("monitor: failed to mark %s as blocked: %v", as.TicketID, err)
+						log.Printf("monitor: failed to mark %s/%s blocked: %v", as.TicketID, as.RunID, err)
 					} else {
-						log.Printf("monitor: %s marked blocked (idle %ds)", as.TicketID, idle)
+						log.Printf("monitor: %s/%s marked blocked (idle %ds)", as.TicketID, as.RunID, idle)
 					}
 				}
 			case StatusBlocked:
@@ -189,22 +198,37 @@ func (m *Monitor) poll() {
 					as.Status = StatusRunning
 					as.Error = ""
 					if err := Write(m.root, as); err != nil {
-						log.Printf("monitor: failed to unblock %s: %v", as.TicketID, err)
+						log.Printf("monitor: failed to unblock %s/%s: %v", as.TicketID, as.RunID, err)
 					} else {
-						log.Printf("monitor: %s resumed (no longer idle)", as.TicketID)
+						log.Printf("monitor: %s/%s resumed (no longer idle)", as.TicketID, as.RunID)
 					}
 				}
 			}
-		} else if !m.isTracked(as.TicketID) {
-			// Session gone and no wait goroutine watching it — mark failed.
+		} else if !m.isTracked(as.TicketID, as.RunID) {
 			as.Status = StatusFailed
 			as.Error = "tmux session disappeared"
 			if err := Write(m.root, as); err != nil {
-				log.Printf("monitor: failed to mark %s as failed: %v", as.TicketID, err)
+				log.Printf("monitor: failed to mark %s/%s failed: %v", as.TicketID, as.RunID, err)
 			} else {
-				log.Printf("monitor: %s marked failed (session gone, no watcher)", as.TicketID)
+				log.Printf("monitor: %s/%s marked failed (session gone, no watcher)", as.TicketID, as.RunID)
 			}
 		}
-		// Session gone but tracked — the wait goroutine will handle it.
+	}
+
+	// Prune ticket directories whose every run is terminal and old.
+	dirEntries, err := os.ReadDir(Dir(m.root))
+	if err != nil {
+		return
+	}
+	for _, e := range dirEntries {
+		if !e.IsDir() {
+			continue
+		}
+		if ticketsWithLiveRuns[e.Name()] {
+			continue
+		}
+		if err := RemoveTicket(m.root, e.Name()); err != nil {
+			log.Printf("monitor: failed to prune %s: %v", e.Name(), err)
+		}
 	}
 }
