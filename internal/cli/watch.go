@@ -313,21 +313,36 @@ func spawnAgentTmux(t ticket.Ticket, sc stage.Config, root string, mon *agent.Mo
 
 	argv := buildAgentArgs(t, ac, wtPath)
 
+	// Give Claude Code a deterministic session id so we can find its
+	// transcript at ~/.claude/projects/<encoded-cwd>/<uuid>.jsonl
+	// after the run and pull the plan file path out of it.
+	var sessionUUID string
+	if ac.Command == "claude" {
+		id, err := agent.NewSessionID()
+		if err != nil {
+			log.Printf("%s/%s: failed to generate session id: %v", t.ID, runID, err)
+		} else {
+			sessionUUID = id
+			argv = append([]string{"--session-id", sessionUUID}, argv...)
+		}
+	}
+
 	// Write "spawned" status before creating the tmux session.
 	now := time.Now().UTC().Truncate(time.Second)
 	as := agent.AgentStatus{
-		TicketID:  t.ID,
-		RunID:     runID,
-		Seq:       seq,
-		Attempt:   attempt,
-		Stage:     t.Stage,
-		Agent:     ac.Command,
-		Session:   sessionName,
-		Status:    agent.StatusSpawned,
-		SpawnedAt: now,
-		LogFile:   logFile,
-		ExitFile:  exitFile,
-		Worktree:  wtPath,
+		TicketID:    t.ID,
+		RunID:       runID,
+		Seq:         seq,
+		Attempt:     attempt,
+		Stage:       t.Stage,
+		Agent:       ac.Command,
+		Session:     sessionName,
+		Status:      agent.StatusSpawned,
+		SpawnedAt:   now,
+		LogFile:     logFile,
+		ExitFile:    exitFile,
+		Worktree:    wtPath,
+		SessionUUID: sessionUUID,
 	}
 	if err := agent.Write(root, as); err != nil {
 		log.Printf("%s/%s: failed to write agent status: %v", t.ID, runID, err)
@@ -356,12 +371,15 @@ func spawnAgentTmux(t ticket.Ticket, sc stage.Config, root string, mon *agent.Mo
 		shellQuote(exitFile),
 	)
 
-	// Start the tmux session. If worktree is active, set the starting
-	// directory so the agent's cwd is the isolated checkout.
-	tmuxArgs := []string{"new-session", "-d", "-s", sessionName}
-	if wtPath != "" {
-		tmuxArgs = append(tmuxArgs, "-c", wtPath)
+	// Always pin the starting directory: worktree if configured,
+	// otherwise the repo root. This keeps Claude Code's transcript
+	// path (~/.claude/projects/<encoded-cwd>/…) deterministic so
+	// waitForTmuxSession can find it after the run.
+	cwd := wtPath
+	if cwd == "" {
+		cwd = root
 	}
+	tmuxArgs := []string{"new-session", "-d", "-s", sessionName, "-c", cwd}
 	tmuxArgs = append(tmuxArgs, "sh", "-c", shellCmd)
 
 	if err := exec.Command("tmux", tmuxArgs...).Run(); err != nil {
@@ -423,34 +441,34 @@ func waitForTmuxSession(t ticket.Ticket, runID, agentName, sessionName, root str
 		as.Status = finalStatus
 		as.ExitCode = exitCode
 		as.Error = statusErr
-		as.PlanFile = scanLogForPlanFile(as.LogFile)
+		as.PlanFile = lookupPlanFile(as, root)
 		if werr := agent.Write(root, as); werr != nil {
 			log.Printf("%s/%s: failed to update agent status: %v", t.ID, runID, werr)
 		}
 	}
 }
 
-// planFileRegex matches the announcement Claude Code prints when
-// plan mode persists a plan to ~/.claude/plans/<slug>.md.
-var planFileRegex = regexp.MustCompile(`Plan ready for review at (\S+\.md)\.`)
-
-func scanLogForPlanFile(logFile string) string {
-	if logFile == "" {
+// lookupPlanFile returns the path of the plan file Claude Code wrote
+// during this run (if any) by parsing its session transcript. An empty
+// string means no plan was produced, no Claude session id was recorded,
+// or the transcript could not be read.
+func lookupPlanFile(as agent.AgentStatus, root string) string {
+	if as.SessionUUID == "" {
 		return ""
 	}
-	data, err := os.ReadFile(logFile)
+	cwd := as.Worktree
+	if cwd == "" {
+		cwd = root
+	}
+	transcript, err := agent.ClaudeTranscriptPath(as.SessionUUID, cwd)
 	if err != nil {
 		return ""
 	}
-	matches := planFileRegex.FindAllStringSubmatch(stripAnsi(string(data)), -1)
-	if len(matches) == 0 {
+	planFile, err := agent.ExtractPlanFromTranscript(transcript)
+	if err != nil {
 		return ""
 	}
-	path := matches[len(matches)-1][1]
-	if _, err := os.Stat(path); err != nil {
-		return ""
-	}
-	return path
+	return planFile
 }
 
 // --- shared ---

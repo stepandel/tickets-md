@@ -80,8 +80,9 @@ type AgentStatus struct {
 	Error     string    `yaml:"error,omitempty"`
 	LogFile   string    `yaml:"log_file"`
 	ExitFile  string    `yaml:"exit_file,omitempty"`
-	Worktree  string    `yaml:"worktree,omitempty"`
-	PlanFile  string    `yaml:"plan_file,omitempty"`
+	Worktree    string `yaml:"worktree,omitempty"`
+	SessionUUID string `yaml:"session_uuid,omitempty"`
+	PlanFile    string `yaml:"plan_file,omitempty"`
 }
 
 const agentsDir = ".agents"
