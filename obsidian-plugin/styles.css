@@ -106,6 +106,24 @@
 	padding: 16px 8px;
 }
 
+.tb-add-ticket-btn {
+	width: 100%;
+	padding: 4px;
+	margin-top: 2px;
+	border: none;
+	border-radius: 4px;
+	background: none;
+	color: var(--text-faint);
+	font-size: 0.8em;
+	cursor: pointer;
+	transition: color 0.12s ease, background 0.12s ease;
+}
+
+.tb-add-ticket-btn:hover {
+	color: var(--text-muted);
+	background: var(--background-modifier-hover);
+}
+
 /* ── Cards ──────────────────────────────────────────────────────────── */
 
 .tb-card {

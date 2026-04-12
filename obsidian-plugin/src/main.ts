@@ -29,14 +29,6 @@ interface Ticket {
 	stage: string;
 }
 
-interface NewTicketOpts {
-	title: string;
-	stage: string;
-	priority: string;
-	labels: string;
-	assignee: string;
-}
-
 interface StageAgentConfig {
 	command: string;
 	args: string;
@@ -207,16 +199,6 @@ class BoardView extends ItemView {
 		menuBtn.addEventListener("click", (e) => {
 			const menu = new Menu();
 			menu.addItem((item) =>
-				item.setTitle("New ticket").setIcon("file-plus").onClick(() => {
-					new NewTicketModal(
-						this.app,
-						this.stages,
-						(ticket) => this.createTicket(ticket),
-					).open();
-				}),
-			);
-			menu.addSeparator();
-			menu.addItem((item) =>
 				item.setTitle("Add stage").setIcon("plus").onClick(() => {
 					new TextInputModal(
 						this.app,
@@ -313,6 +295,13 @@ class BoardView extends ItemView {
 		if (tickets.length === 0) {
 			cardList.createDiv({ cls: "tb-empty", text: "No tickets" });
 		}
+
+		// Add ticket button
+		const addBtn = cardList.createEl("button", {
+			text: "+ New ticket",
+			cls: "tb-add-ticket-btn",
+		});
+		addBtn.addEventListener("click", () => this.createTicket(stage));
 	}
 
 	private renderCard(parent: HTMLElement, ticket: Ticket) {
@@ -472,32 +461,26 @@ class BoardView extends ItemView {
 		return `${prefix}-${String(next).padStart(3, "0")}`;
 	}
 
-	private async createTicket(opts: NewTicketOpts) {
+	private async createTicket(stage: string) {
 		const id = await this.nextTicketId();
 		const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
 
-		const lines = ["---"];
-		lines.push(`id: ${id}`);
-		lines.push(`title: ${opts.title}`);
-		if (opts.priority) lines.push(`priority: ${opts.priority}`);
-		if (opts.labels) {
-			const arr = opts.labels.split(",").map((s) => s.trim()).filter(Boolean);
-			if (arr.length > 0) lines.push(`labels: [${arr.join(", ")}]`);
-		}
-		if (opts.assignee) lines.push(`assignee: ${opts.assignee}`);
-		lines.push(`created_at: ${now}`);
-		lines.push(`updated_at: ${now}`);
-		lines.push("---");
-		lines.push("");
-		lines.push("## Description");
-		lines.push("");
-		lines.push("_Describe the ticket here._");
-		lines.push("");
+		const content = [
+			"---",
+			`id: ${id}`,
+			`title: ${id}`,
+			`created_at: ${now}`,
+			`updated_at: ${now}`,
+			"---",
+			"",
+			"## Description",
+			"",
+			"_Describe the ticket here._",
+			"",
+		].join("\n");
 
-		const filePath = `${opts.stage}/${id}.md`;
-		const file = await this.app.vault.create(filePath, lines.join("\n"));
+		const file = await this.app.vault.create(`${stage}/${id}.md`, content);
 
-		// Open the new ticket for editing
 		if (!this.previewLeaf || !this.previewLeaf.view?.containerEl?.isConnected) {
 			this.previewLeaf = this.app.workspace.getLeaf("split");
 		}
@@ -621,90 +604,6 @@ class StageConfigModal extends Modal {
 		new Setting(contentEl).addButton((btn) =>
 			btn.setButtonText("Save").setCta().onClick(async () => {
 				await this.onSave(this.config);
-				this.close();
-			}),
-		).addButton((btn) =>
-			btn.setButtonText("Cancel").onClick(() => this.close()),
-		);
-	}
-
-	onClose() {
-		this.contentEl.empty();
-	}
-}
-
-class NewTicketModal extends Modal {
-	private opts: NewTicketOpts;
-	private readonly stages: string[];
-	private readonly onSubmit: (opts: NewTicketOpts) => Promise<void>;
-
-	constructor(
-		app: import("obsidian").App,
-		stages: string[],
-		onSubmit: (opts: NewTicketOpts) => Promise<void>,
-	) {
-		super(app);
-		this.stages = stages;
-		this.opts = {
-			title: "",
-			stage: stages[0] ?? "",
-			priority: "",
-			labels: "",
-			assignee: "",
-		};
-		this.onSubmit = onSubmit;
-	}
-
-	onOpen() {
-		const { contentEl } = this;
-
-		contentEl.createEl("h3", { text: "New Ticket" });
-
-		new Setting(contentEl)
-			.setName("Title")
-			.addText((text) => {
-				text.setPlaceholder("Ticket title")
-					.onChange((v) => (this.opts.title = v));
-				setTimeout(() => text.inputEl.focus(), 10);
-			});
-
-		new Setting(contentEl)
-			.setName("Stage")
-			.addDropdown((dropdown) => {
-				for (const s of this.stages) {
-					dropdown.addOption(s, s);
-				}
-				dropdown.setValue(this.opts.stage);
-				dropdown.onChange((v) => (this.opts.stage = v));
-			});
-
-		new Setting(contentEl)
-			.setName("Priority")
-			.addDropdown((dropdown) => {
-				dropdown.addOption("", "None");
-				for (const p of ["low", "medium", "high", "critical"]) {
-					dropdown.addOption(p, p);
-				}
-				dropdown.onChange((v) => (this.opts.priority = v));
-			});
-
-		new Setting(contentEl)
-			.setName("Labels")
-			.setDesc("Comma-separated")
-			.addText((text) =>
-				text.setPlaceholder("bug, frontend").onChange((v) => (this.opts.labels = v)),
-			);
-
-		new Setting(contentEl)
-			.setName("Assignee")
-			.addText((text) =>
-				text.setPlaceholder("name").onChange((v) => (this.opts.assignee = v)),
-			);
-
-		new Setting(contentEl).addButton((btn) =>
-			btn.setButtonText("Create").setCta().onClick(async () => {
-				if (!this.opts.title.trim()) return;
-				await this.onSubmit(this.opts);
 				this.close();
 			}),
 		).addButton((btn) =>
