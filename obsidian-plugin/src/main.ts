@@ -495,13 +495,26 @@ class StageConfigModal extends Modal {
 					.onChange((v) => (this.config.args = v)),
 			);
 
+		const promptVarsBase = "{{path}}, {{id}}, {{title}}, {{stage}}, {{body}}";
+		const promptDescEl = contentEl.createEl("span");
+		const updatePromptDesc = () => {
+			const vars = this.config.worktree
+				? `${promptVarsBase}, {{worktree}}`
+				: promptVarsBase;
+			promptDescEl.textContent = `Template with ${vars}`;
+		};
+		updatePromptDesc();
+
 		new Setting(contentEl)
 			.setName("Worktree")
 			.setDesc("Isolate work in a git worktree per ticket")
 			.addToggle((toggle) =>
 				toggle
 					.setValue(this.config.worktree)
-					.onChange((v) => (this.config.worktree = v)),
+					.onChange((v) => {
+						this.config.worktree = v;
+						updatePromptDesc();
+					}),
 			);
 
 		new Setting(contentEl)
@@ -519,10 +532,10 @@ class StageConfigModal extends Modal {
 			text: "Prompt",
 			cls: "setting-item-name tb-prompt-label",
 		});
-		contentEl.createEl("div", {
-			text: "Template with {{path}}, {{id}}, {{title}}, {{stage}}, {{body}}, {{worktree}}",
+		const descWrapper = contentEl.createEl("div", {
 			cls: "setting-item-description tb-prompt-desc",
 		});
+		descWrapper.appendChild(promptDescEl);
 		const promptArea = contentEl.createEl("textarea", {
 			cls: "tb-config-editor",
 		});
