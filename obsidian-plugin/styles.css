@@ -67,6 +67,16 @@
 	border-bottom: 1px solid var(--background-modifier-border);
 }
 
+.tb-column-title {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+
+.tb-agent-icon {
+	font-size: 0.75em;
+}
+
 .tb-stage-name {
 	font-weight: 600;
 	font-size: 0.85em;

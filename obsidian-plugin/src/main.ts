@@ -77,6 +77,7 @@ export default class TicketsBoardPlugin extends Plugin {
 class BoardView extends ItemView {
 	private stages: string[] = [];
 	private tickets: Ticket[] = [];
+	private agentStages: Set<string> = new Set();
 	private previewLeaf: WorkspaceLeaf | null = null;
 
 	getViewType(): string {
@@ -157,6 +158,24 @@ class BoardView extends ItemView {
 		}
 	}
 
+	private async loadAgentStages(stages: string[]): Promise<Set<string>> {
+		const result = new Set<string>();
+		const adapter = this.app.vault.adapter;
+		for (const stage of stages) {
+			const configPath = `${stage}/.stage.yml`;
+			if (await adapter.exists(configPath)) {
+				try {
+					const raw = await adapter.read(configPath);
+					const parsed = parseYaml(raw) as { agent?: { command?: string } } | null;
+					if (parsed?.agent?.command) {
+						result.add(stage);
+					}
+				} catch { /* ignore malformed config */ }
+			}
+		}
+		return result;
+	}
+
 	// ── Rendering ──────────────────────────────────────────────────────
 
 	private async refresh() {
@@ -172,6 +191,7 @@ class BoardView extends ItemView {
 
 		this.stages = config.stages;
 		this.tickets = await this.loadTickets(this.stages);
+		this.agentStages = await this.loadAgentStages(this.stages);
 		this.render();
 	}
 
@@ -227,7 +247,11 @@ class BoardView extends ItemView {
 
 		// Column header with right-click context menu
 		const colHeader = column.createDiv({ cls: "tb-column-header" });
-		colHeader.createEl("span", { text: stage, cls: "tb-stage-name" });
+		const colTitle = colHeader.createDiv({ cls: "tb-column-title" });
+		colTitle.createEl("span", { text: stage, cls: "tb-stage-name" });
+		if (this.agentStages.has(stage)) {
+			colTitle.createEl("span", { text: "\uD83E\uDD16", cls: "tb-agent-icon", attr: { "aria-label": "Agent configured" } });
+		}
 		colHeader.createEl("span", {
 			text: String(tickets.length),
 			cls: "tb-count",
