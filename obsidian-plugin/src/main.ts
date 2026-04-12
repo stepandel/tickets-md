@@ -472,9 +472,15 @@ class BoardView extends ItemView {
 	private runCli(cwd: string, args: string[]): Promise<string | null> {
 		return new Promise((resolve) => {
 			const { execFile } = require("child_process");
-			execFile("tickets", args, { cwd }, (err: any, stdout: string) => {
+			// Obsidian (Electron) doesn't inherit the shell PATH, so
+			// resolve the binary through a login shell.
+			const cmd = process.platform === "win32" ? "tickets" : "/bin/sh";
+			const fullArgs = process.platform === "win32"
+				? args
+				: ["-lc", `tickets ${args.map((a) => `'${a}'`).join(" ")}`];
+			execFile(cmd, fullArgs, { cwd }, (err: any, stdout: string, stderr: string) => {
 				if (err) {
-					console.error("tickets CLI error:", err);
+					console.error("tickets CLI error:", err, stderr);
 					resolve(null);
 					return;
 				}
