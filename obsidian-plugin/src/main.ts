@@ -66,6 +66,7 @@ export default class TicketsBoardPlugin extends Plugin {
 class BoardView extends ItemView {
 	private stages: string[] = [];
 	private tickets: Ticket[] = [];
+	private previewLeaf: WorkspaceLeaf | null = null;
 
 	getViewType(): string {
 		return VIEW_TYPE;
@@ -255,9 +256,13 @@ class BoardView extends ItemView {
 			card.removeClass("tb-dragging");
 		});
 
-		// Click to open the ticket file
-		card.addEventListener("click", () => {
-			this.app.workspace.openLinkText(ticket.file.path, "", false);
+		// Click to open the ticket file in a split to the right
+		card.addEventListener("click", async () => {
+			// Reuse existing preview leaf if it's still around
+			if (!this.previewLeaf || !this.app.workspace.getLeavesOfType("markdown").includes(this.previewLeaf)) {
+				this.previewLeaf = this.app.workspace.getLeaf("split");
+			}
+			await this.previewLeaf.openFile(ticket.file);
 		});
 
 		// Card header: ID + priority
