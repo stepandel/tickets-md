@@ -162,11 +162,36 @@
 	margin-bottom: 4px;
 }
 
+.tb-card-header-left {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+
 .tb-ticket-id {
 	font-size: 0.75em;
 	font-weight: 600;
 	color: var(--text-muted);
 	font-family: var(--font-monospace);
+}
+
+/* Agent status badges */
+.tb-agent-badge {
+	font-size: 0.7em;
+	font-weight: 700;
+	line-height: 1;
+}
+
+.tb-agent-spawned { color: #FFD700; }
+.tb-agent-running { color: #00b368; animation: tb-pulse 2s ease-in-out infinite; }
+.tb-agent-blocked { color: #FF8C00; }
+.tb-agent-done    { color: #00b368; }
+.tb-agent-failed  { color: #e5534b; }
+.tb-agent-errored { color: #e5534b; }
+
+@keyframes tb-pulse {
+	0%, 100% { opacity: 1; }
+	50% { opacity: 0.4; }
 }
 
 /* Priority badge */

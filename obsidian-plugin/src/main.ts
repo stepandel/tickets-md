@@ -25,9 +25,19 @@ interface Ticket {
 	assignee?: string;
 	created_at?: string;
 	updated_at?: string;
+	agent_status?: string;
 	file: TFile;
 	stage: string;
 }
+
+const AGENT_BADGES: Record<string, { icon: string; cls: string }> = {
+	spawned:  { icon: "\u25D0", cls: "tb-agent-spawned" },
+	running:  { icon: "\u25CF", cls: "tb-agent-running" },
+	blocked:  { icon: "\u23F8", cls: "tb-agent-blocked" },
+	done:     { icon: "\u2713", cls: "tb-agent-done" },
+	failed:   { icon: "\u2717", cls: "tb-agent-failed" },
+	errored:  { icon: "\u2717", cls: "tb-agent-errored" },
+};
 
 interface StageAgentConfig {
 	command: string;
@@ -150,6 +160,7 @@ class BoardView extends ItemView {
 				assignee: fm.assignee,
 				created_at: fm.created_at,
 				updated_at: fm.updated_at,
+				agent_status: fm.agent_status,
 				file,
 				stage,
 			};
@@ -365,9 +376,19 @@ class BoardView extends ItemView {
 			await this.previewLeaf.openFile(ticket.file);
 		});
 
-		// Card header: ID + priority
+		// Card header: ID + agent badge + priority
 		const cardHeader = card.createDiv({ cls: "tb-card-header" });
-		cardHeader.createEl("span", { text: ticket.id, cls: "tb-ticket-id" });
+		const headerLeft = cardHeader.createDiv({ cls: "tb-card-header-left" });
+		headerLeft.createEl("span", { text: ticket.id, cls: "tb-ticket-id" });
+
+		if (ticket.agent_status && AGENT_BADGES[ticket.agent_status]) {
+			const badge = AGENT_BADGES[ticket.agent_status];
+			headerLeft.createEl("span", {
+				text: badge.icon,
+				cls: `tb-agent-badge ${badge.cls}`,
+				attr: { "aria-label": ticket.agent_status },
+			});
+		}
 
 		if (ticket.priority) {
 			cardHeader.createEl("span", {
