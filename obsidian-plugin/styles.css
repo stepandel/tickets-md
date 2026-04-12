@@ -59,33 +59,6 @@
 	max-height: 100%;
 }
 
-.tb-column-title {
-	display: flex;
-	align-items: center;
-	gap: 4px;
-}
-
-.tb-rename-btn {
-	background: none;
-	border: none;
-	cursor: pointer;
-	font-size: 0.8em;
-	color: var(--text-faint);
-	padding: 2px 4px;
-	border-radius: 3px;
-	opacity: 0;
-	transition: opacity 0.15s ease;
-}
-
-.tb-column-header:hover .tb-rename-btn {
-	opacity: 1;
-}
-
-.tb-rename-btn:hover {
-	background: var(--background-modifier-hover);
-	color: var(--text-normal);
-}
-
 .tb-column-header {
 	display: flex;
 	align-items: center;

@@ -217,28 +217,34 @@ class BoardView extends ItemView {
 	private renderColumn(board: HTMLElement, stage: string, tickets: Ticket[]) {
 		const column = board.createDiv({ cls: "tb-column" });
 
-		// Column header
+		// Column header with right-click context menu
 		const colHeader = column.createDiv({ cls: "tb-column-header" });
-		const colTitle = colHeader.createDiv({ cls: "tb-column-title" });
-		colTitle.createEl("span", { text: stage, cls: "tb-stage-name" });
-		const renameBtn = colTitle.createEl("button", {
-			cls: "tb-rename-btn",
-			attr: { "aria-label": "Rename stage" },
-		});
-		renameBtn.textContent = "\u270E";
-		renameBtn.addEventListener("click", (e) => {
-			e.stopPropagation();
-			new TextInputModal(
-				this.app,
-				"Rename Stage",
-				"New name",
-				stage,
-				(name) => this.renameStage(stage, name),
-			).open();
-		});
+		colHeader.createEl("span", { text: stage, cls: "tb-stage-name" });
 		colHeader.createEl("span", {
 			text: String(tickets.length),
 			cls: "tb-count",
+		});
+
+		colHeader.addEventListener("contextmenu", (e) => {
+			e.preventDefault();
+			const menu = new Menu();
+			menu.addItem((item) =>
+				item.setTitle("Rename stage").setIcon("pencil").onClick(() => {
+					new TextInputModal(
+						this.app,
+						"Rename Stage",
+						"New name",
+						stage,
+						(name) => this.renameStage(stage, name),
+					).open();
+				}),
+			);
+			menu.addItem((item) =>
+				item.setTitle("Edit stage config").setIcon("settings").onClick(() => {
+					this.openStageConfig(stage);
+				}),
+			);
+			menu.showAtMouseEvent(e);
 		});
 
 		// Drop zone
@@ -347,6 +353,34 @@ class BoardView extends ItemView {
 		const file = this.app.vault.getAbstractFileByPath(CONFIG_PATH);
 		if (file instanceof TFile) {
 			await this.app.vault.modify(file, lines.join("\n") + "\n");
+		}
+	}
+
+	// ── Open Stage Config ──────────────────────────────────────────────
+
+	private async openStageConfig(stage: string) {
+		const configPath = `${stage}/.stage.yml`;
+		let file = this.app.vault.getAbstractFileByPath(configPath);
+
+		if (!(file instanceof TFile)) {
+			// Create a starter template
+			const template = [
+				"agent:",
+				"    command: claude",
+				'    args: ["--print"]',
+				"    prompt: |",
+				`        You are the ${stage} agent for {{id}}: "{{title}}".`,
+				"        Read {{path}} and follow the instructions.",
+				"",
+			].join("\n");
+			file = await this.app.vault.create(configPath, template);
+		}
+
+		if (file instanceof TFile) {
+			if (!this.previewLeaf || !this.app.workspace.getLeavesOfType("markdown").includes(this.previewLeaf)) {
+				this.previewLeaf = this.app.workspace.getLeaf("split");
+			}
+			await this.previewLeaf.openFile(file);
 		}
 	}
 
