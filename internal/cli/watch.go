@@ -376,6 +376,18 @@ func spawnAgentTmux(t ticket.Ticket, sc stage.Config, root string, mon *agent.Mo
 		log.Printf("%s/%s: failed to write agent status: %v", t.ID, runID, err)
 		return
 	}
+
+	// Write agent info into the ticket frontmatter so Obsidian users
+	// can see it. This happens before the tmux session starts, so
+	// there is no concurrent write with the agent.
+	t.AgentStatus = string(agent.StatusRunning)
+	t.AgentRun = runID
+	t.AgentSession = sessionName
+	t.UpdatedAt = time.Now().UTC().Truncate(time.Second)
+	if err := t.WriteFile(); err != nil {
+		log.Printf("%s/%s: failed to update ticket frontmatter: %v", t.ID, runID, err)
+	}
+
 	if err := os.MkdirAll(agent.RunsDir(root, t.ID), 0o755); err != nil {
 		log.Printf("%s/%s: failed to create runs dir: %v", t.ID, runID, err)
 		return
@@ -415,6 +427,9 @@ func spawnAgentTmux(t ticket.Ticket, sc stage.Config, root string, mon *agent.Mo
 		as.Status = agent.StatusErrored
 		as.Error = err.Error()
 		agent.Write(root, as) // best-effort
+		t.AgentStatus = string(agent.StatusErrored)
+		t.AgentSession = ""
+		t.WriteFile() // best-effort
 		return
 	}
 
@@ -472,6 +487,20 @@ func waitForTmuxSession(t ticket.Ticket, runID, agentName, sessionName, root str
 		as.PlanFile = lookupPlanFile(as, root)
 		if werr := agent.Write(root, as); werr != nil {
 			log.Printf("%s/%s: failed to update agent status: %v", t.ID, runID, werr)
+		}
+	}
+
+	// Update ticket frontmatter with the final agent status. The agent
+	// has exited so there is no concurrent write risk. Reload the
+	// ticket fresh because the agent likely modified its body.
+	if store, err := ticket.Open(root); err == nil {
+		if fresh, err := store.Get(t.ID); err == nil {
+			fresh.AgentStatus = string(finalStatus)
+			fresh.AgentRun = runID
+			fresh.AgentSession = ""
+			if err := store.Save(fresh); err != nil {
+				log.Printf("%s/%s: failed to update ticket frontmatter: %v", t.ID, runID, err)
+			}
 		}
 	}
 }
