@@ -216,9 +216,18 @@
 	max-width: 90vw;
 }
 
+.tb-prompt-label {
+	margin-top: 12px;
+	font-weight: 600;
+}
+
+.tb-prompt-desc {
+	margin-bottom: 6px;
+}
+
 .tb-config-editor {
 	width: 100%;
-	min-height: 300px;
+	min-height: 150px;
 	font-family: var(--font-monospace);
 	font-size: 0.85em;
 	line-height: 1.5;

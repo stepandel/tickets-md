@@ -29,6 +29,14 @@ interface Ticket {
 	stage: string;
 }
 
+interface StageAgentConfig {
+	command: string;
+	args: string;
+	worktree: boolean;
+	baseBranch: string;
+	prompt: string;
+}
+
 // ── Constants ──────────────────────────────────────────────────────────
 
 const VIEW_TYPE = "tickets-board";
@@ -362,23 +370,51 @@ class BoardView extends ItemView {
 		const configPath = `${stage}/.stage.yml`;
 		const adapter = this.app.vault.adapter;
 
-		const defaultTemplate = [
-			"agent:",
-			"    command: claude",
-			'    args: ["--print"]',
-			"    prompt: |",
-			`        You are the ${stage} agent for {{id}}: "{{title}}".`,
-			"        Read {{path}} and follow the instructions.",
-			"",
-		].join("\n");
+		let config: StageAgentConfig = {
+			command: "",
+			args: "",
+			worktree: false,
+			baseBranch: "",
+			prompt: "",
+		};
 
-		let content = defaultTemplate;
 		if (await adapter.exists(configPath)) {
-			content = await adapter.read(configPath);
+			const raw = await adapter.read(configPath);
+			const parsed = parseYaml(raw) as { agent?: Record<string, unknown> } | null;
+			if (parsed?.agent) {
+				const a = parsed.agent;
+				config.command = String(a.command ?? "");
+				config.args = Array.isArray(a.args) ? a.args.join(", ") : String(a.args ?? "");
+				config.worktree = Boolean(a.worktree);
+				config.baseBranch = String(a.base_branch ?? "");
+				config.prompt = String(a.prompt ?? "");
+			}
 		}
 
-		new StageConfigModal(this.app, stage, content, async (updated) => {
-			await adapter.write(configPath, updated);
+		new StageConfigModal(this.app, stage, config, async (updated) => {
+			const argsArray = updated.args
+				.split(",")
+				.map((s) => s.trim())
+				.filter(Boolean);
+			const lines: string[] = ["agent:"];
+			lines.push(`    command: ${updated.command}`);
+			if (argsArray.length > 0) {
+				lines.push(`    args: [${argsArray.map((a) => `"${a}"`).join(", ")}]`);
+			}
+			if (updated.worktree) {
+				lines.push("    worktree: true");
+			}
+			if (updated.baseBranch) {
+				lines.push(`    base_branch: ${updated.baseBranch}`);
+			}
+			if (updated.prompt) {
+				lines.push("    prompt: |");
+				for (const line of updated.prompt.split("\n")) {
+					lines.push(`        ${line}`);
+				}
+			}
+			lines.push("");
+			await adapter.write(configPath, lines.join("\n"));
 		}).open();
 	}
 
@@ -417,19 +453,19 @@ class BoardView extends ItemView {
 // ── Text Input Modal ───────────────────────────────────────────────────
 
 class StageConfigModal extends Modal {
-	private content: string;
+	private config: StageAgentConfig;
 	private readonly stageName: string;
-	private readonly onSave: (content: string) => Promise<void>;
+	private readonly onSave: (config: StageAgentConfig) => Promise<void>;
 
 	constructor(
 		app: import("obsidian").App,
 		stageName: string,
-		content: string,
-		onSave: (content: string) => Promise<void>,
+		config: StageAgentConfig,
+		onSave: (config: StageAgentConfig) => Promise<void>,
 	) {
 		super(app);
 		this.stageName = stageName;
-		this.content = content;
+		this.config = { ...config };
 		this.onSave = onSave;
 	}
 
@@ -437,22 +473,69 @@ class StageConfigModal extends Modal {
 		const { contentEl } = this;
 		this.modalEl.addClass("tb-config-modal");
 
-		contentEl.createEl("h3", { text: `${this.stageName}/.stage.yml` });
+		contentEl.createEl("h3", { text: `${this.stageName} — Stage Config` });
 
-		const textarea = contentEl.createEl("textarea", {
+		new Setting(contentEl)
+			.setName("Command")
+			.setDesc("CLI binary to invoke (e.g. claude, codex, aider)")
+			.addText((text) =>
+				text
+					.setPlaceholder("claude")
+					.setValue(this.config.command)
+					.onChange((v) => (this.config.command = v)),
+			);
+
+		new Setting(contentEl)
+			.setName("Args")
+			.setDesc("Extra CLI flags, comma-separated")
+			.addText((text) =>
+				text
+					.setPlaceholder("--print, --dangerously-skip-permissions")
+					.setValue(this.config.args)
+					.onChange((v) => (this.config.args = v)),
+			);
+
+		new Setting(contentEl)
+			.setName("Worktree")
+			.setDesc("Isolate work in a git worktree per ticket")
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.config.worktree)
+					.onChange((v) => (this.config.worktree = v)),
+			);
+
+		new Setting(contentEl)
+			.setName("Base branch")
+			.setDesc("Branch to create worktree from (default: HEAD)")
+			.addText((text) =>
+				text
+					.setPlaceholder("main")
+					.setValue(this.config.baseBranch)
+					.onChange((v) => (this.config.baseBranch = v)),
+			);
+
+		// Prompt gets a full-width textarea
+		contentEl.createEl("div", {
+			text: "Prompt",
+			cls: "setting-item-name tb-prompt-label",
+		});
+		contentEl.createEl("div", {
+			text: "Template with {{path}}, {{id}}, {{title}}, {{stage}}, {{body}}, {{worktree}}",
+			cls: "setting-item-description tb-prompt-desc",
+		});
+		const promptArea = contentEl.createEl("textarea", {
 			cls: "tb-config-editor",
 		});
-		textarea.value = this.content;
-		textarea.spellcheck = false;
-		textarea.addEventListener("input", () => {
-			this.content = textarea.value;
+		promptArea.value = this.config.prompt;
+		promptArea.spellcheck = false;
+		promptArea.placeholder = 'You are the agent for {{id}}: "{{title}}".\nRead {{path}} and follow the instructions.';
+		promptArea.addEventListener("input", () => {
+			this.config.prompt = promptArea.value;
 		});
-
-		setTimeout(() => textarea.focus(), 10);
 
 		new Setting(contentEl).addButton((btn) =>
 			btn.setButtonText("Save").setCta().onClick(async () => {
-				await this.onSave(this.content);
+				await this.onSave(this.config);
 				this.close();
 			}),
 		).addButton((btn) =>
