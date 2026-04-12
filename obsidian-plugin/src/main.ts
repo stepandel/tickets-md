@@ -4,6 +4,8 @@ import {
 	WorkspaceLeaf,
 	TFile,
 	TFolder,
+	Modal,
+	Setting,
 	parseYaml,
 } from "obsidian";
 
@@ -185,6 +187,22 @@ class BoardView extends ItemView {
 			const stageTickets = this.tickets.filter((t) => t.stage === stage);
 			this.renderColumn(board, stage, stageTickets);
 		}
+
+		// Add stage button
+		const addColumn = board.createDiv({ cls: "tb-add-column" });
+		const addBtn = addColumn.createEl("button", {
+			text: "+ Add Stage",
+			cls: "tb-add-stage-btn",
+		});
+		addBtn.addEventListener("click", () => {
+			new TextInputModal(
+				this.app,
+				"New Stage",
+				"e.g. testing",
+				"",
+				(name) => this.createStage(name),
+			).open();
+		});
 	}
 
 	private renderColumn(board: HTMLElement, stage: string, tickets: Ticket[]) {
@@ -192,7 +210,23 @@ class BoardView extends ItemView {
 
 		// Column header
 		const colHeader = column.createDiv({ cls: "tb-column-header" });
-		colHeader.createEl("span", { text: stage, cls: "tb-stage-name" });
+		const colTitle = colHeader.createDiv({ cls: "tb-column-title" });
+		colTitle.createEl("span", { text: stage, cls: "tb-stage-name" });
+		const renameBtn = colTitle.createEl("button", {
+			cls: "tb-rename-btn",
+			attr: { "aria-label": "Rename stage" },
+		});
+		renameBtn.textContent = "\u270E";
+		renameBtn.addEventListener("click", (e) => {
+			e.stopPropagation();
+			new TextInputModal(
+				this.app,
+				"Rename Stage",
+				"New name",
+				stage,
+				(name) => this.renameStage(stage, name),
+			).open();
+		});
 		colHeader.createEl("span", {
 			text: String(tickets.length),
 			cls: "tb-count",
@@ -294,5 +328,102 @@ class BoardView extends ItemView {
 		}
 	}
 
+	// ── Config Writing ─────────────────────────────────────────────────
+
+	private async saveConfig(config: TicketsConfig) {
+		const lines = [`prefix: ${config.prefix}`, "stages:"];
+		for (const s of config.stages) {
+			lines.push(`    - ${s}`);
+		}
+		const file = this.app.vault.getAbstractFileByPath(CONFIG_PATH);
+		if (file instanceof TFile) {
+			await this.app.vault.modify(file, lines.join("\n") + "\n");
+		}
+	}
+
+	// ── Stage Operations ───────────────────────────────────────────────
+
+	private async createStage(name: string) {
+		const config = await this.loadConfig();
+		if (!config) return;
+
+		const slug = name.toLowerCase().replace(/[^a-z0-9_-]/g, "-");
+		if (config.stages.includes(slug)) return;
+
+		await this.app.vault.createFolder(slug);
+		config.stages.push(slug);
+		await this.saveConfig(config);
+	}
+
+	private async renameStage(oldName: string, newName: string) {
+		const config = await this.loadConfig();
+		if (!config) return;
+
+		const slug = newName.toLowerCase().replace(/[^a-z0-9_-]/g, "-");
+		if (slug === oldName || config.stages.includes(slug)) return;
+
+		const folder = this.app.vault.getAbstractFileByPath(oldName);
+		if (!(folder instanceof TFolder)) return;
+
+		await this.app.vault.rename(folder, slug);
+		config.stages = config.stages.map((s) => (s === oldName ? slug : s));
+		await this.saveConfig(config);
+	}
+
 	async onClose() {}
+}
+
+// ── Text Input Modal ───────────────────────────────────────────────────
+
+class TextInputModal extends Modal {
+	private result: string;
+	private readonly title: string;
+	private readonly placeholder: string;
+	private readonly defaultValue: string;
+	private readonly onSubmit: (value: string) => void;
+
+	constructor(
+		app: import("obsidian").App,
+		title: string,
+		placeholder: string,
+		defaultValue: string,
+		onSubmit: (value: string) => void,
+	) {
+		super(app);
+		this.title = title;
+		this.placeholder = placeholder;
+		this.defaultValue = defaultValue;
+		this.result = defaultValue;
+		this.onSubmit = onSubmit;
+	}
+
+	onOpen() {
+		const { contentEl } = this;
+		contentEl.createEl("h3", { text: this.title });
+
+		new Setting(contentEl).setName("Name").addText((text) => {
+			text.setPlaceholder(this.placeholder)
+				.setValue(this.defaultValue)
+				.onChange((value) => (this.result = value));
+			// Focus and select on open
+			setTimeout(() => {
+				text.inputEl.focus();
+				text.inputEl.select();
+			}, 10);
+		});
+
+		new Setting(contentEl).addButton((btn) =>
+			btn.setButtonText("Confirm").setCta().onClick(() => {
+				const trimmed = this.result.trim();
+				if (trimmed) {
+					this.onSubmit(trimmed);
+				}
+				this.close();
+			}),
+		);
+	}
+
+	onClose() {
+		this.contentEl.empty();
+	}
 }

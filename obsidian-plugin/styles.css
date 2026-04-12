@@ -54,6 +54,33 @@
 	max-height: 100%;
 }
 
+.tb-column-title {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+
+.tb-rename-btn {
+	background: none;
+	border: none;
+	cursor: pointer;
+	font-size: 0.8em;
+	color: var(--text-faint);
+	padding: 2px 4px;
+	border-radius: 3px;
+	opacity: 0;
+	transition: opacity 0.15s ease;
+}
+
+.tb-column-header:hover .tb-rename-btn {
+	opacity: 1;
+}
+
+.tb-rename-btn:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
 .tb-column-header {
 	display: flex;
 	align-items: center;
@@ -202,4 +229,30 @@
 	font-size: 0.7em;
 	color: var(--text-muted);
 	margin-left: auto;
+}
+
+/* ── Add Stage ──────────────────────────────────────────────────────── */
+
+.tb-add-column {
+	flex: 0 0 220px;
+	display: flex;
+	align-items: flex-start;
+	padding-top: 10px;
+}
+
+.tb-add-stage-btn {
+	width: 100%;
+	padding: 10px;
+	border: 2px dashed var(--background-modifier-border);
+	border-radius: 8px;
+	background: none;
+	color: var(--text-muted);
+	cursor: pointer;
+	font-size: 0.85em;
+	transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.tb-add-stage-btn:hover {
+	border-color: var(--interactive-accent);
+	color: var(--text-normal);
 }
