@@ -320,6 +320,18 @@ class BoardView extends ItemView {
 			card.removeClass("tb-dragging");
 		});
 
+		// Right-click context menu
+		card.addEventListener("contextmenu", (e) => {
+			e.preventDefault();
+			const menu = new Menu();
+			menu.addItem((item) =>
+				item.setTitle("Delete ticket").setIcon("trash").onClick(async () => {
+					await this.app.vault.trash(ticket.file, true);
+				}),
+			);
+			menu.showAtMouseEvent(e);
+		});
+
 		// Click to open the ticket file in a split to the right
 		card.addEventListener("click", async () => {
 			// Reuse existing preview leaf if it's still around
