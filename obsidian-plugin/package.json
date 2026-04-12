@@ -1,0 +1,16 @@
+{
+	"name": "obsidian-tickets-board",
+	"version": "0.1.0",
+	"private": true,
+	"scripts": {
+		"dev": "node esbuild.config.mjs",
+		"build": "node esbuild.config.mjs production",
+		"install-plugin": "node esbuild.config.mjs production && cp main.js manifest.json styles.css ../.tickets/.obsidian/plugins/tickets-board/"
+	},
+	"devDependencies": {
+		"@types/node": "^20.0.0",
+		"esbuild": "^0.21.0",
+		"obsidian": "^1.5.0",
+		"typescript": "^5.4.0"
+	}
+}
