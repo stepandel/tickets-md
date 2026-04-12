@@ -52,9 +52,7 @@ export default class TicketsBoardPlugin extends Plugin {
 		// Reuse existing leaf if one is open
 		let leaf = workspace.getLeavesOfType(VIEW_TYPE)[0];
 		if (!leaf) {
-			const rightLeaf = workspace.getRightLeaf(false);
-			if (!rightLeaf) return;
-			leaf = rightLeaf;
+			leaf = workspace.getLeaf("tab");
 			await leaf.setViewState({ type: VIEW_TYPE, active: true });
 		}
 		workspace.revealLeaf(leaf);
