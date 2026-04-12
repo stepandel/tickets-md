@@ -6,6 +6,7 @@ import {
 	TFolder,
 	Menu,
 	Modal,
+	Notice,
 	Setting,
 	parseYaml,
 } from "obsidian";
@@ -442,51 +443,67 @@ class BoardView extends ItemView {
 	// ── Ticket Creation ────────────────────────────────────────────────
 
 	private async createTicket(stage: string) {
-		const basePath = (this.app.vault.adapter as any).getBasePath() as string;
-		// basePath is the .tickets/ dir; the CLI expects the project root (parent)
-		const projectRoot = require("path").resolve(basePath, "..");
-
-		const id = await this.runCli(projectRoot, ["new", "New ticket"]);
-		if (!id) return;
-
-		// CLI creates in the default stage; move if needed
-		const config = await this.loadConfig();
-		const defaultStage = config?.stages[0] ?? "backlog";
-		if (stage !== defaultStage) {
-			await this.runCli(projectRoot, ["move", id, stage]);
-		}
-
-		// Open the new ticket file
-		const filePath = `${stage}/${id}.md`;
-		// Wait briefly for vault to pick up the new file
-		await new Promise((r) => setTimeout(r, 200));
-		const file = this.app.vault.getAbstractFileByPath(filePath);
-		if (file instanceof TFile) {
-			if (!this.previewLeaf || !this.previewLeaf.view?.containerEl?.isConnected) {
-				this.previewLeaf = this.app.workspace.getLeaf("split");
+		try {
+			const basePath = (this.app.vault.adapter as any).getBasePath?.() as string;
+			if (!basePath) {
+				new Notice("Could not determine vault path");
+				return;
 			}
-			await this.previewLeaf.openFile(file);
+			// basePath is the .tickets/ dir; the CLI expects the project root (parent)
+			const projectRoot = require("path").resolve(basePath, "..");
+
+			const result = await this.runCli(projectRoot, ["new", "New ticket"]);
+			if (!result.ok) {
+				new Notice(`Failed to create ticket: ${result.error}`);
+				return;
+			}
+
+			// CLI creates in the default stage; move if needed
+			const config = await this.loadConfig();
+			const defaultStage = config?.stages[0] ?? "backlog";
+			if (stage !== defaultStage) {
+				const moveResult = await this.runCli(projectRoot, ["move", result.id, stage]);
+				if (!moveResult.ok) {
+					new Notice(`Ticket created but failed to move: ${moveResult.error}`);
+				}
+			}
+
+			// Open the new ticket file
+			const filePath = `${stage}/${result.id}.md`;
+			// Wait briefly for vault to pick up the new file
+			await new Promise((r) => setTimeout(r, 300));
+			const file = this.app.vault.getAbstractFileByPath(filePath);
+			if (file instanceof TFile) {
+				if (!this.previewLeaf || !this.previewLeaf.view?.containerEl?.isConnected) {
+					this.previewLeaf = this.app.workspace.getLeaf("split");
+				}
+				await this.previewLeaf.openFile(file);
+			} else {
+				new Notice(`Created ${result.id} but could not open file`);
+			}
+		} catch (e) {
+			new Notice(`Error: ${e}`);
 		}
 	}
 
-	private runCli(cwd: string, args: string[]): Promise<string | null> {
+	private runCli(cwd: string, args: string[]): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
 		return new Promise((resolve) => {
-			const { execFile } = require("child_process");
-			// Obsidian (Electron) doesn't inherit the shell PATH, so
-			// resolve the binary through a login shell.
-			const cmd = process.platform === "win32" ? "tickets" : "/bin/sh";
-			const fullArgs = process.platform === "win32"
-				? args
-				: ["-lc", `tickets ${args.map((a) => `'${a}'`).join(" ")}`];
-			execFile(cmd, fullArgs, { cwd }, (err: any, stdout: string, stderr: string) => {
+			const { exec } = require("child_process");
+			const escaped = args.map((a) => `'${a.replace(/'/g, "'\\''")}'`).join(" ");
+			const command = `tickets ${escaped}`;
+			// Use exec with shell so the user's PATH is available
+			exec(command, { cwd, shell: "/bin/zsh", env: { ...process.env, HOME: require("os").homedir() } },
+				(err: any, stdout: string, stderr: string) => {
 				if (err) {
-					console.error("tickets CLI error:", err, stderr);
-					resolve(null);
+					resolve({ ok: false, error: stderr || err.message });
 					return;
 				}
-				// Output: "Created TIC-008 in backlog\n  .tickets/backlog/TIC-008.md\n"
 				const match = stdout.match(/Created (\S+)/);
-				resolve(match ? match[1] : null);
+				if (match) {
+					resolve({ ok: true, id: match[1] });
+				} else {
+					resolve({ ok: false, error: `Unexpected output: ${stdout}` });
+				}
 			});
 		});
 	}
