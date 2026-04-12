@@ -4,6 +4,7 @@ import {
 	WorkspaceLeaf,
 	TFile,
 	TFolder,
+	Menu,
 	Modal,
 	Setting,
 	parseYaml,
@@ -173,12 +174,35 @@ class BoardView extends ItemView {
 		// Header
 		const header = container.createDiv({ cls: "tb-header" });
 		header.createEl("h2", { text: "Tickets Board" });
-		const refreshBtn = header.createEl("button", {
-			cls: "tb-refresh-btn",
+		const headerActions = header.createDiv({ cls: "tb-header-actions" });
+
+		const refreshBtn = headerActions.createEl("button", {
+			cls: "tb-header-btn",
 			attr: { "aria-label": "Refresh board" },
 		});
 		refreshBtn.textContent = "\u21BB";
 		refreshBtn.addEventListener("click", () => this.refresh());
+
+		const menuBtn = headerActions.createEl("button", {
+			cls: "tb-header-btn",
+			attr: { "aria-label": "Board menu" },
+		});
+		menuBtn.textContent = "\u22EF";
+		menuBtn.addEventListener("click", (e) => {
+			const menu = new Menu();
+			menu.addItem((item) =>
+				item.setTitle("Add stage").setIcon("plus").onClick(() => {
+					new TextInputModal(
+						this.app,
+						"New Stage",
+						"e.g. testing",
+						"",
+						(name) => this.createStage(name),
+					).open();
+				}),
+			);
+			menu.showAtMouseEvent(e);
+		});
 
 		// Board
 		const board = container.createDiv({ cls: "tb-board" });
@@ -188,21 +212,6 @@ class BoardView extends ItemView {
 			this.renderColumn(board, stage, stageTickets);
 		}
 
-		// Add stage button
-		const addColumn = board.createDiv({ cls: "tb-add-column" });
-		const addBtn = addColumn.createEl("button", {
-			text: "+ Add Stage",
-			cls: "tb-add-stage-btn",
-		});
-		addBtn.addEventListener("click", () => {
-			new TextInputModal(
-				this.app,
-				"New Stage",
-				"e.g. testing",
-				"",
-				(name) => this.createStage(name),
-			).open();
-		});
 	}
 
 	private renderColumn(board: HTMLElement, stage: string, tickets: Ticket[]) {

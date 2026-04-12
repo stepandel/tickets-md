@@ -14,7 +14,12 @@
 	font-weight: 600;
 }
 
-.tb-refresh-btn {
+.tb-header-actions {
+	display: flex;
+	gap: 2px;
+}
+
+.tb-header-btn {
 	background: none;
 	border: none;
 	cursor: pointer;
@@ -24,7 +29,7 @@
 	border-radius: 4px;
 }
 
-.tb-refresh-btn:hover {
+.tb-header-btn:hover {
 	background: var(--background-modifier-hover);
 	color: var(--text-normal);
 }
@@ -231,28 +236,3 @@
 	margin-left: auto;
 }
 
-/* ── Add Stage ──────────────────────────────────────────────────────── */
-
-.tb-add-column {
-	flex: 0 0 220px;
-	display: flex;
-	align-items: flex-start;
-	padding-top: 10px;
-}
-
-.tb-add-stage-btn {
-	width: 100%;
-	padding: 10px;
-	border: 2px dashed var(--background-modifier-border);
-	border-radius: 8px;
-	background: none;
-	color: var(--text-muted);
-	cursor: pointer;
-	font-size: 0.85em;
-	transition: border-color 0.15s ease, color 0.15s ease;
-}
-
-.tb-add-stage-btn:hover {
-	border-color: var(--interactive-accent);
-	color: var(--text-normal);
-}
