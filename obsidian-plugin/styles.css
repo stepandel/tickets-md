@@ -8,10 +8,18 @@
 	border-bottom: 1px solid var(--background-modifier-border);
 }
 
-.tb-header h2 {
+.tb-board-title {
 	margin: 0;
 	font-size: 1.1em;
 	font-weight: 600;
+	cursor: pointer;
+	border-radius: 4px;
+	padding: 2px 6px;
+	margin: -2px -6px;
+}
+
+.tb-board-title:hover {
+	background: var(--background-modifier-hover);
 }
 
 .tb-header-actions {

@@ -24,6 +24,8 @@ const ConfigFile = "config.yml"
 // under `<root>/.tickets/`, so the only things worth configuring are
 // the ID prefix and the stage list.
 type Config struct {
+	// Name is an optional display name for the board.
+	Name string `yaml:"name,omitempty"`
 	// Prefix is the alphabetic prefix used in ticket IDs, e.g. "TIC".
 	Prefix string `yaml:"prefix"`
 	// Stages is the ordered list of stage folder names. The first

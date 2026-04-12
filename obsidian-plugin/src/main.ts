@@ -13,6 +13,7 @@ import {
 // ── Types ──────────────────────────────────────────────────────────────
 
 interface TicketsConfig {
+	name?: string;
 	prefix: string;
 	stages: string[];
 }
@@ -85,6 +86,7 @@ export default class TicketsBoardPlugin extends Plugin {
 // ── Board View ─────────────────────────────────────────────────────────
 
 class BoardView extends ItemView {
+	private config: TicketsConfig | null = null;
 	private stages: string[] = [];
 	private tickets: Ticket[] = [];
 	private agentStages: Set<string> = new Set();
@@ -200,6 +202,7 @@ class BoardView extends ItemView {
 			return;
 		}
 
+		this.config = config;
 		this.stages = config.stages;
 		this.tickets = await this.loadTickets(this.stages);
 		this.agentStages = await this.loadAgentStages(this.stages);
@@ -212,7 +215,22 @@ class BoardView extends ItemView {
 
 		// Header
 		const header = container.createDiv({ cls: "tb-header" });
-		header.createEl("h2", { text: "Tickets Board" });
+		const boardName = this.config?.name || "Tickets Board";
+		const titleEl = header.createEl("h2", { text: boardName, cls: "tb-board-title" });
+		titleEl.addEventListener("click", () => {
+			new TextInputModal(
+				this.app,
+				"Board Name",
+				"e.g. My Project",
+				boardName,
+				async (name) => {
+					if (this.config) {
+						this.config.name = name;
+						await this.saveConfig(this.config);
+					}
+				},
+			).open();
+		});
 		const headerActions = header.createDiv({ cls: "tb-header-actions" });
 
 		const refreshBtn = headerActions.createEl("button", {
@@ -418,7 +436,12 @@ class BoardView extends ItemView {
 	// ── Config Writing ─────────────────────────────────────────────────
 
 	private async saveConfig(config: TicketsConfig) {
-		const lines = [`prefix: ${config.prefix}`, "stages:"];
+		const lines: string[] = [];
+		if (config.name) {
+			lines.push(`name: ${config.name}`);
+		}
+		lines.push(`prefix: ${config.prefix}`);
+		lines.push("stages:");
 		for (const s of config.stages) {
 			lines.push(`    - ${s}`);
 		}
