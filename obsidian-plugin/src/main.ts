@@ -6,7 +6,6 @@ import {
 	TFolder,
 	Menu,
 	Modal,
-	Notice,
 	Setting,
 	parseYaml,
 } from "obsidian";
@@ -442,70 +441,49 @@ class BoardView extends ItemView {
 
 	// ── Ticket Creation ────────────────────────────────────────────────
 
-	private async createTicket(stage: string) {
-		try {
-			const basePath = (this.app.vault.adapter as any).getBasePath?.() as string;
-			if (!basePath) {
-				new Notice("Could not determine vault path");
-				return;
-			}
-			// basePath is the .tickets/ dir; the CLI expects the project root (parent)
-			const projectRoot = require("path").resolve(basePath, "..");
+	private async nextTicketId(): Promise<string> {
+		const config = await this.loadConfig();
+		if (!config) return "TIC-001";
 
-			const result = await this.runCli(projectRoot, ["new", "New ticket"]);
-			if (!result.ok) {
-				new Notice(`Failed to create ticket: ${result.error}`);
-				return;
-			}
+		const prefix = config.prefix ?? "TIC";
+		const pattern = new RegExp(`^${prefix}-(\\d+)$`);
+		let max = 0;
 
-			// CLI creates in the default stage; move if needed
-			const config = await this.loadConfig();
-			const defaultStage = config?.stages[0] ?? "backlog";
-			if (stage !== defaultStage) {
-				const moveResult = await this.runCli(projectRoot, ["move", result.id, stage]);
-				if (!moveResult.ok) {
-					new Notice(`Ticket created but failed to move: ${moveResult.error}`);
-				}
+		for (const ticket of this.tickets) {
+			const match = ticket.id.match(pattern);
+			if (match) {
+				const num = parseInt(match[1], 10);
+				if (num > max) max = num;
 			}
-
-			// Open the new ticket file
-			const filePath = `${stage}/${result.id}.md`;
-			// Wait briefly for vault to pick up the new file
-			await new Promise((r) => setTimeout(r, 300));
-			const file = this.app.vault.getAbstractFileByPath(filePath);
-			if (file instanceof TFile) {
-				if (!this.previewLeaf || !this.previewLeaf.view?.containerEl?.isConnected) {
-					this.previewLeaf = this.app.workspace.getLeaf("split");
-				}
-				await this.previewLeaf.openFile(file);
-			} else {
-				new Notice(`Created ${result.id} but could not open file`);
-			}
-		} catch (e) {
-			new Notice(`Error: ${e}`);
 		}
+
+		const next = max + 1;
+		return `${prefix}-${String(next).padStart(3, "0")}`;
 	}
 
-	private runCli(cwd: string, args: string[]): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
-		return new Promise((resolve) => {
-			const { exec } = require("child_process");
-			const escaped = args.map((a) => `'${a.replace(/'/g, "'\\''")}'`).join(" ");
-			const command = `tickets ${escaped}`;
-			// Use exec with shell so the user's PATH is available
-			exec(command, { cwd, shell: "/bin/zsh", env: { ...process.env, HOME: require("os").homedir() } },
-				(err: any, stdout: string, stderr: string) => {
-				if (err) {
-					resolve({ ok: false, error: stderr || err.message });
-					return;
-				}
-				const match = stdout.match(/Created (\S+)/);
-				if (match) {
-					resolve({ ok: true, id: match[1] });
-				} else {
-					resolve({ ok: false, error: `Unexpected output: ${stdout}` });
-				}
-			});
-		});
+	private async createTicket(stage: string) {
+		const id = await this.nextTicketId();
+		const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+
+		const content = [
+			"---",
+			`id: ${id}`,
+			`title: ${id}`,
+			`created_at: ${now}`,
+			`updated_at: ${now}`,
+			"---",
+			"## Description",
+			"",
+			"_Describe the ticket here._",
+			"",
+		].join("\n");
+
+		const file = await this.app.vault.create(`${stage}/${id}.md`, content);
+
+		if (!this.previewLeaf || !this.previewLeaf.view?.containerEl?.isConnected) {
+			this.previewLeaf = this.app.workspace.getLeaf("split");
+		}
+		await this.previewLeaf.openFile(file);
 	}
 
 	private async renameStage(oldName: string, newName: string) {
