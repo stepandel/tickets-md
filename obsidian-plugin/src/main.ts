@@ -308,7 +308,7 @@ class BoardView extends ItemView {
 		// Click to open the ticket file in a split to the right
 		card.addEventListener("click", async () => {
 			// Reuse existing preview leaf if it's still around
-			if (!this.previewLeaf || !this.app.workspace.getLeavesOfType("markdown").includes(this.previewLeaf)) {
+			if (!this.previewLeaf || !this.previewLeaf.view?.containerEl?.isConnected) {
 				this.previewLeaf = this.app.workspace.getLeaf("split");
 			}
 			await this.previewLeaf.openFile(ticket.file);
@@ -377,7 +377,7 @@ class BoardView extends ItemView {
 		}
 
 		if (file instanceof TFile) {
-			if (!this.previewLeaf || !this.app.workspace.getLeavesOfType("markdown").includes(this.previewLeaf)) {
+			if (!this.previewLeaf || !this.previewLeaf.view?.containerEl?.isConnected) {
 				this.previewLeaf = this.app.workspace.getLeaf("split");
 			}
 			await this.previewLeaf.openFile(file);
