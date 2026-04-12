@@ -29,6 +29,14 @@ interface Ticket {
 	stage: string;
 }
 
+interface NewTicketOpts {
+	title: string;
+	stage: string;
+	priority: string;
+	labels: string;
+	assignee: string;
+}
+
 interface StageAgentConfig {
 	command: string;
 	args: string;
@@ -198,6 +206,16 @@ class BoardView extends ItemView {
 		menuBtn.textContent = "\u22EF";
 		menuBtn.addEventListener("click", (e) => {
 			const menu = new Menu();
+			menu.addItem((item) =>
+				item.setTitle("New ticket").setIcon("file-plus").onClick(() => {
+					new NewTicketModal(
+						this.app,
+						this.stages,
+						(ticket) => this.createTicket(ticket),
+					).open();
+				}),
+			);
+			menu.addSeparator();
 			menu.addItem((item) =>
 				item.setTitle("Add stage").setIcon("plus").onClick(() => {
 					new TextInputModal(
@@ -432,6 +450,60 @@ class BoardView extends ItemView {
 		await this.saveConfig(config);
 	}
 
+	// ── Ticket Creation ────────────────────────────────────────────────
+
+	private async nextTicketId(): Promise<string> {
+		const config = await this.loadConfig();
+		if (!config) return "TIC-001";
+
+		const prefix = config.prefix ?? "TIC";
+		const pattern = new RegExp(`^${prefix}-(\\d+)$`);
+		let max = 0;
+
+		for (const ticket of this.tickets) {
+			const match = ticket.id.match(pattern);
+			if (match) {
+				const num = parseInt(match[1], 10);
+				if (num > max) max = num;
+			}
+		}
+
+		const next = max + 1;
+		return `${prefix}-${String(next).padStart(3, "0")}`;
+	}
+
+	private async createTicket(opts: NewTicketOpts) {
+		const id = await this.nextTicketId();
+		const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+
+		const lines = ["---"];
+		lines.push(`id: ${id}`);
+		lines.push(`title: ${opts.title}`);
+		if (opts.priority) lines.push(`priority: ${opts.priority}`);
+		if (opts.labels) {
+			const arr = opts.labels.split(",").map((s) => s.trim()).filter(Boolean);
+			if (arr.length > 0) lines.push(`labels: [${arr.join(", ")}]`);
+		}
+		if (opts.assignee) lines.push(`assignee: ${opts.assignee}`);
+		lines.push(`created_at: ${now}`);
+		lines.push(`updated_at: ${now}`);
+		lines.push("---");
+		lines.push("");
+		lines.push("## Description");
+		lines.push("");
+		lines.push("_Describe the ticket here._");
+		lines.push("");
+
+		const filePath = `${opts.stage}/${id}.md`;
+		const file = await this.app.vault.create(filePath, lines.join("\n"));
+
+		// Open the new ticket for editing
+		if (!this.previewLeaf || !this.previewLeaf.view?.containerEl?.isConnected) {
+			this.previewLeaf = this.app.workspace.getLeaf("split");
+		}
+		await this.previewLeaf.openFile(file);
+	}
+
 	private async renameStage(oldName: string, newName: string) {
 		const config = await this.loadConfig();
 		if (!config) return;
@@ -549,6 +621,90 @@ class StageConfigModal extends Modal {
 		new Setting(contentEl).addButton((btn) =>
 			btn.setButtonText("Save").setCta().onClick(async () => {
 				await this.onSave(this.config);
+				this.close();
+			}),
+		).addButton((btn) =>
+			btn.setButtonText("Cancel").onClick(() => this.close()),
+		);
+	}
+
+	onClose() {
+		this.contentEl.empty();
+	}
+}
+
+class NewTicketModal extends Modal {
+	private opts: NewTicketOpts;
+	private readonly stages: string[];
+	private readonly onSubmit: (opts: NewTicketOpts) => Promise<void>;
+
+	constructor(
+		app: import("obsidian").App,
+		stages: string[],
+		onSubmit: (opts: NewTicketOpts) => Promise<void>,
+	) {
+		super(app);
+		this.stages = stages;
+		this.opts = {
+			title: "",
+			stage: stages[0] ?? "",
+			priority: "",
+			labels: "",
+			assignee: "",
+		};
+		this.onSubmit = onSubmit;
+	}
+
+	onOpen() {
+		const { contentEl } = this;
+
+		contentEl.createEl("h3", { text: "New Ticket" });
+
+		new Setting(contentEl)
+			.setName("Title")
+			.addText((text) => {
+				text.setPlaceholder("Ticket title")
+					.onChange((v) => (this.opts.title = v));
+				setTimeout(() => text.inputEl.focus(), 10);
+			});
+
+		new Setting(contentEl)
+			.setName("Stage")
+			.addDropdown((dropdown) => {
+				for (const s of this.stages) {
+					dropdown.addOption(s, s);
+				}
+				dropdown.setValue(this.opts.stage);
+				dropdown.onChange((v) => (this.opts.stage = v));
+			});
+
+		new Setting(contentEl)
+			.setName("Priority")
+			.addDropdown((dropdown) => {
+				dropdown.addOption("", "None");
+				for (const p of ["low", "medium", "high", "critical"]) {
+					dropdown.addOption(p, p);
+				}
+				dropdown.onChange((v) => (this.opts.priority = v));
+			});
+
+		new Setting(contentEl)
+			.setName("Labels")
+			.setDesc("Comma-separated")
+			.addText((text) =>
+				text.setPlaceholder("bug, frontend").onChange((v) => (this.opts.labels = v)),
+			);
+
+		new Setting(contentEl)
+			.setName("Assignee")
+			.addText((text) =>
+				text.setPlaceholder("name").onChange((v) => (this.opts.assignee = v)),
+			);
+
+		new Setting(contentEl).addButton((btn) =>
+			btn.setButtonText("Create").setCta().onClick(async () => {
+				if (!this.opts.title.trim()) return;
+				await this.onSubmit(this.opts);
 				this.close();
 			}),
 		).addButton((btn) =>
