@@ -360,28 +360,26 @@ class BoardView extends ItemView {
 
 	private async openStageConfig(stage: string) {
 		const configPath = `${stage}/.stage.yml`;
-		let file = this.app.vault.getAbstractFileByPath(configPath);
+		const adapter = this.app.vault.adapter;
 
-		if (!(file instanceof TFile)) {
-			// Create a starter template
-			const template = [
-				"agent:",
-				"    command: claude",
-				'    args: ["--print"]',
-				"    prompt: |",
-				`        You are the ${stage} agent for {{id}}: "{{title}}".`,
-				"        Read {{path}} and follow the instructions.",
-				"",
-			].join("\n");
-			file = await this.app.vault.create(configPath, template);
+		const defaultTemplate = [
+			"agent:",
+			"    command: claude",
+			'    args: ["--print"]',
+			"    prompt: |",
+			`        You are the ${stage} agent for {{id}}: "{{title}}".`,
+			"        Read {{path}} and follow the instructions.",
+			"",
+		].join("\n");
+
+		let content = defaultTemplate;
+		if (await adapter.exists(configPath)) {
+			content = await adapter.read(configPath);
 		}
 
-		if (file instanceof TFile) {
-			if (!this.previewLeaf || !this.previewLeaf.view?.containerEl?.isConnected) {
-				this.previewLeaf = this.app.workspace.getLeaf("split");
-			}
-			await this.previewLeaf.openFile(file);
-		}
+		new StageConfigModal(this.app, stage, content, async (updated) => {
+			await adapter.write(configPath, updated);
+		}).open();
 	}
 
 	// ── Stage Operations ───────────────────────────────────────────────
@@ -417,6 +415,55 @@ class BoardView extends ItemView {
 }
 
 // ── Text Input Modal ───────────────────────────────────────────────────
+
+class StageConfigModal extends Modal {
+	private content: string;
+	private readonly stageName: string;
+	private readonly onSave: (content: string) => Promise<void>;
+
+	constructor(
+		app: import("obsidian").App,
+		stageName: string,
+		content: string,
+		onSave: (content: string) => Promise<void>,
+	) {
+		super(app);
+		this.stageName = stageName;
+		this.content = content;
+		this.onSave = onSave;
+	}
+
+	onOpen() {
+		const { contentEl } = this;
+		this.modalEl.addClass("tb-config-modal");
+
+		contentEl.createEl("h3", { text: `${this.stageName}/.stage.yml` });
+
+		const textarea = contentEl.createEl("textarea", {
+			cls: "tb-config-editor",
+		});
+		textarea.value = this.content;
+		textarea.spellcheck = false;
+		textarea.addEventListener("input", () => {
+			this.content = textarea.value;
+		});
+
+		setTimeout(() => textarea.focus(), 10);
+
+		new Setting(contentEl).addButton((btn) =>
+			btn.setButtonText("Save").setCta().onClick(async () => {
+				await this.onSave(this.content);
+				this.close();
+			}),
+		).addButton((btn) =>
+			btn.setButtonText("Cancel").onClick(() => this.close()),
+		);
+	}
+
+	onClose() {
+		this.contentEl.empty();
+	}
+}
 
 class TextInputModal extends Modal {
 	private result: string;

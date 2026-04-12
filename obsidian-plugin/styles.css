@@ -209,3 +209,25 @@
 	margin-left: auto;
 }
 
+/* ── Stage Config Modal ─────────────────────────────────────────────── */
+
+.tb-config-modal {
+	width: 600px;
+	max-width: 90vw;
+}
+
+.tb-config-editor {
+	width: 100%;
+	min-height: 300px;
+	font-family: var(--font-monospace);
+	font-size: 0.85em;
+	line-height: 1.5;
+	padding: 10px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	background: var(--background-primary);
+	color: var(--text-normal);
+	resize: vertical;
+	tab-size: 4;
+}
+
