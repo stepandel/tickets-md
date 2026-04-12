@@ -472,7 +472,6 @@ class BoardView extends ItemView {
 			`created_at: ${now}`,
 			`updated_at: ${now}`,
 			"---",
-			"",
 			"## Description",
 			"",
 			"_Describe the ticket here._",
