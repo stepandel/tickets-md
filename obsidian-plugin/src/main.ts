@@ -441,49 +441,48 @@ class BoardView extends ItemView {
 
 	// ── Ticket Creation ────────────────────────────────────────────────
 
-	private async nextTicketId(): Promise<string> {
+	private async createTicket(stage: string) {
+		const basePath = (this.app.vault.adapter as any).getBasePath() as string;
+		// basePath is the .tickets/ dir; the CLI expects the project root (parent)
+		const projectRoot = require("path").resolve(basePath, "..");
+
+		const id = await this.runCli(projectRoot, ["new", "New ticket"]);
+		if (!id) return;
+
+		// CLI creates in the default stage; move if needed
 		const config = await this.loadConfig();
-		if (!config) return "TIC-001";
-
-		const prefix = config.prefix ?? "TIC";
-		const pattern = new RegExp(`^${prefix}-(\\d+)$`);
-		let max = 0;
-
-		for (const ticket of this.tickets) {
-			const match = ticket.id.match(pattern);
-			if (match) {
-				const num = parseInt(match[1], 10);
-				if (num > max) max = num;
-			}
+		const defaultStage = config?.stages[0] ?? "backlog";
+		if (stage !== defaultStage) {
+			await this.runCli(projectRoot, ["move", id, stage]);
 		}
 
-		const next = max + 1;
-		return `${prefix}-${String(next).padStart(3, "0")}`;
+		// Open the new ticket file
+		const filePath = `${stage}/${id}.md`;
+		// Wait briefly for vault to pick up the new file
+		await new Promise((r) => setTimeout(r, 200));
+		const file = this.app.vault.getAbstractFileByPath(filePath);
+		if (file instanceof TFile) {
+			if (!this.previewLeaf || !this.previewLeaf.view?.containerEl?.isConnected) {
+				this.previewLeaf = this.app.workspace.getLeaf("split");
+			}
+			await this.previewLeaf.openFile(file);
+		}
 	}
 
-	private async createTicket(stage: string) {
-		const id = await this.nextTicketId();
-		const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
-
-		const content = [
-			"---",
-			`id: ${id}`,
-			`title: ${id}`,
-			`created_at: ${now}`,
-			`updated_at: ${now}`,
-			"---",
-			"## Description",
-			"",
-			"_Describe the ticket here._",
-			"",
-		].join("\n");
-
-		const file = await this.app.vault.create(`${stage}/${id}.md`, content);
-
-		if (!this.previewLeaf || !this.previewLeaf.view?.containerEl?.isConnected) {
-			this.previewLeaf = this.app.workspace.getLeaf("split");
-		}
-		await this.previewLeaf.openFile(file);
+	private runCli(cwd: string, args: string[]): Promise<string | null> {
+		return new Promise((resolve) => {
+			const { execFile } = require("child_process");
+			execFile("tickets", args, { cwd }, (err: any, stdout: string) => {
+				if (err) {
+					console.error("tickets CLI error:", err);
+					resolve(null);
+					return;
+				}
+				// Output: "Created TIC-008 in backlog\n  .tickets/backlog/TIC-008.md\n"
+				const match = stdout.match(/Created (\S+)/);
+				resolve(match ? match[1] : null);
+			});
+		});
 	}
 
 	private async renameStage(oldName: string, newName: string) {
