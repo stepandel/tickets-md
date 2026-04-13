@@ -377,6 +377,11 @@
 	padding: 0 8px;
 }
 
+.tb-diff-container .d2h-code-line-ctn {
+	white-space: pre;
+	tab-size: 4;
+}
+
 .tb-diff-container .d2h-ins {
 	background: rgba(0, 179, 104, 0.15);
 }
