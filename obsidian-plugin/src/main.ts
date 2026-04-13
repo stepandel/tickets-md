@@ -1157,18 +1157,31 @@ class DiffView extends ItemView {
 		}
 
 		const basePath = (this.app.vault.adapter as any).getBasePath();
-		const branch = `tickets/${this.ticketId}`;
+		const repoRoot = basePath.replace(/\/\.tickets$/, "");
+		const worktreePath = `${repoRoot}/.worktrees/${this.ticketId}`;
 		let output: string;
 
 		try {
 			const { execFileSync } = require("child_process");
-			output = execFileSync("git", ["diff", `main...${branch}`], {
-				cwd: basePath,
-				encoding: "utf-8",
-				maxBuffer: 10 * 1024 * 1024,
-			});
+			const fs = require("fs");
+			if (fs.existsSync(worktreePath)) {
+				// Diff worktree working tree (including uncommitted changes) against main
+				output = execFileSync("git", ["diff", "main"], {
+					cwd: worktreePath,
+					encoding: "utf-8",
+					maxBuffer: 10 * 1024 * 1024,
+				});
+			} else {
+				// No worktree — diff the branch ref against main
+				const branch = `tickets/${this.ticketId}`;
+				output = execFileSync("git", ["diff", "main", branch], {
+					cwd: basePath,
+					encoding: "utf-8",
+					maxBuffer: 10 * 1024 * 1024,
+				});
+			}
 		} catch {
-			this.showMessage(`Branch "${branch}" not found or git error.`);
+			this.showMessage(`Could not compute diff for ${this.ticketId}.`);
 			return;
 		}
 
