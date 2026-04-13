@@ -2,7 +2,7 @@
 	"id": "tickets-board",
 	"name": "Tickets Board",
 	"version": "0.1.0",
-	"minAppVersion": "1.0.0",
+	"minAppVersion": "1.1.0",
 	"description": "Kanban board view for tickets-md stages and tickets",
 	"author": "tickets-md",
 	"isDesktopOnly": false

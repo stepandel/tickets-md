@@ -346,6 +346,124 @@
 	text-align: center;
 }
 
+/* ── Agent Log Viewer ──────────────────────────────────────────────── */
+
+.tb-log-header {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 8px 12px;
+	border-bottom: 1px solid var(--background-modifier-border);
+	background: var(--background-secondary);
+	flex-wrap: wrap;
+}
+
+.tb-log-status {
+	font-size: 0.85em;
+	font-weight: 600;
+	text-transform: uppercase;
+}
+
+.tb-log-run-id {
+	font-size: 0.8em;
+	color: var(--text-muted);
+	font-family: var(--font-monospace);
+}
+
+.tb-log-notice {
+	font-size: 0.75em;
+	color: var(--text-faint);
+	font-style: italic;
+}
+
+.tb-log-viewer {
+	height: calc(100% - 44px);
+	overflow-y: auto;
+	-webkit-overflow-scrolling: touch;
+}
+
+.tb-log-viewer pre {
+	margin: 0;
+	padding: 12px;
+	font-family: var(--font-monospace), monospace;
+	font-size: 0.8em;
+	line-height: 1.45;
+	white-space: pre-wrap;
+	word-break: break-all;
+	color: var(--text-normal);
+}
+
+.tb-show-more-btn {
+	display: block;
+	width: 100%;
+	padding: 8px;
+	border: none;
+	background: var(--background-secondary);
+	color: var(--text-accent);
+	font-size: 0.8em;
+	cursor: pointer;
+	text-align: center;
+}
+
+.tb-show-more-btn:hover {
+	background: var(--background-modifier-hover);
+}
+
+/* ── Drag Ghost ────────────────────────────────────────────────────── */
+
+.tb-drag-ghost {
+	pointer-events: none;
+	opacity: 0.85;
+	transform: rotate(2deg);
+	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+	z-index: 9999;
+	border-radius: 6px;
+}
+
+/* ── Mobile Adaptations ────────────────────────────────────────────── */
+
+/* Larger touch targets */
+body.is-mobile .tb-card {
+	padding: 12px 14px;
+}
+
+body.is-mobile .tb-add-ticket-btn {
+	padding: 10px 4px;
+	min-height: 44px;
+}
+
+body.is-mobile .tb-header-btn {
+	padding: 8px 12px;
+	min-height: 44px;
+	min-width: 44px;
+}
+
+/* Phone: wider columns with scroll snap */
+body.is-phone .tb-column {
+	flex: 0 0 75vw;
+	max-width: 280px;
+	scroll-snap-align: start;
+}
+
+body.is-phone .tb-board {
+	scroll-snap-type: x mandatory;
+	-webkit-overflow-scrolling: touch;
+}
+
+/* Prevent iOS auto-zoom on inputs (triggers at font-size < 16px) */
+body.is-mobile .tb-config-editor {
+	font-size: 16px;
+}
+
+/* Disable cursor: pointer hover effect for board title on mobile */
+body.is-mobile .tb-board-title {
+	cursor: default;
+}
+
+body.is-mobile .tb-board-title:hover {
+	background: none;
+}
+
 /* ── xterm.js base styles ──────────────────────────────────────────── */
 
 .xterm {
