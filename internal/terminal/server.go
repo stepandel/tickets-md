@@ -9,6 +9,8 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/coder/websocket"
@@ -19,13 +21,15 @@ import (
 // Server exposes PTY sessions over WebSocket.
 type Server struct {
 	runner *agent.PTYRunner
+	root   string // project root for on-demand agent spawning
 	srv    *http.Server
 	ln     net.Listener
 }
 
 // New creates a terminal server backed by the given PTYRunner.
-func New(runner *agent.PTYRunner) *Server {
-	return &Server{runner: runner}
+// root is the project root, used to spawn on-demand agent sessions.
+func New(runner *agent.PTYRunner, root string) *Server {
+	return &Server{runner: runner, root: root}
 }
 
 // Start listens on a random localhost port and begins serving.
@@ -40,6 +44,7 @@ func (s *Server) Start() (int, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/terminal/", s.handleTerminal)
 	mux.HandleFunc("/sessions", s.handleSessions)
+	mux.HandleFunc("/spawn", s.handleSpawn)
 
 	s.srv = &http.Server{Handler: mux}
 	go s.srv.Serve(ln)
@@ -144,4 +149,69 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(s.runner.Sessions())
+}
+
+// spawnRequest is the JSON body for POST /spawn.
+type spawnRequest struct {
+	TicketID string `json:"ticket_id"`
+}
+
+// spawnResponse is returned by POST /spawn.
+type spawnResponse struct {
+	Session string `json:"session"`
+}
+
+// handleSpawn creates an on-demand interactive agent PTY session
+// by running `tickets agents run <ticket-id>`.
+func (s *Server) handleSpawn(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req spawnRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.TicketID == "" {
+		http.Error(w, "ticket_id is required", http.StatusBadRequest)
+		return
+	}
+
+	sessionName := "run-" + req.TicketID
+
+	// If a session with this name is already alive, return it.
+	if s.runner.Alive(sessionName) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(spawnResponse{Session: sessionName})
+		return
+	}
+
+	// Resolve the tickets binary path from the running process.
+	self, err := os.Executable()
+	if err != nil {
+		http.Error(w, "cannot resolve executable: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	argv := []string{self, "agents", "run", "--root", s.root, req.TicketID}
+
+	// Log to a temp file — the user interacts via the terminal, but
+	// we need a path for PTYRunner.Start.
+	logDir := filepath.Join(s.root, ".tickets", ".agents", req.TicketID, "runs")
+	if err := os.MkdirAll(logDir, 0o755); err != nil {
+		http.Error(w, "creating log dir: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	logPath := filepath.Join(logDir, sessionName+".log")
+
+	if err := s.runner.Start(sessionName, s.root, argv, logPath); err != nil {
+		http.Error(w, "spawn failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("spawned interactive agent session %s for %s", sessionName, req.TicketID)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(spawnResponse{Session: sessionName})
 }

@@ -66,7 +66,7 @@ func runWatch(s *ticket.Store) error {
 	runner := agent.NewPTYRunner()
 
 	// Start the terminal WebSocket server for live PTY access.
-	termSrv := terminal.New(runner)
+	termSrv := terminal.New(runner, s.Root)
 	port, termErr := termSrv.Start()
 	if termErr != nil {
 		log.Printf("terminal server: %v (live terminal access disabled)", termErr)

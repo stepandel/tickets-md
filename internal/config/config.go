@@ -20,6 +20,13 @@ const ConfigDir = ".tickets"
 // ConfigFile is the filename of the config inside ConfigDir.
 const ConfigFile = "config.yml"
 
+// DefaultAgentConfig describes the agent command used by `agents run`
+// for interactive, on-demand sessions.
+type DefaultAgentConfig struct {
+	Command string   `yaml:"command"`
+	Args    []string `yaml:"args,omitempty"`
+}
+
 // Config describes a ticket store layout. The store always lives
 // under `<root>/.tickets/`, so the only things worth configuring are
 // the ID prefix and the stage list.
@@ -31,6 +38,13 @@ type Config struct {
 	// Stages is the ordered list of stage folder names. The first
 	// entry is treated as the default stage for new tickets.
 	Stages []string `yaml:"stages"`
+	// DefaultAgent is the agent command used by `tickets agents run`.
+	DefaultAgent *DefaultAgentConfig `yaml:"default_agent,omitempty"`
+}
+
+// HasDefaultAgent reports whether a default agent is configured.
+func (c Config) HasDefaultAgent() bool {
+	return c.DefaultAgent != nil && c.DefaultAgent.Command != ""
 }
 
 // Default returns the out-of-the-box configuration used by `tickets init`.

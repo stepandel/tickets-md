@@ -62,6 +62,7 @@ latest per ticket.`,
 	cmd.AddCommand(newAgentsLogCmd())
 	cmd.AddCommand(newAgentsPlanCmd())
 	cmd.AddCommand(newAgentsFollowupCmd())
+	cmd.AddCommand(newAgentsRunCmd())
 	return cmd
 }
 

@@ -22,6 +22,7 @@ interface TicketsConfig {
 	name?: string;
 	prefix: string;
 	stages: string[];
+	default_agent?: { command: string; args?: string[] };
 }
 
 interface Ticket {
@@ -645,6 +646,18 @@ class BoardView extends ItemView {
 				}),
 			);
 		}
+		// "Run agent" — spawn an on-demand interactive session via the terminal server.
+		// Visible on desktop when default_agent is configured and no agent is active.
+		if (!Platform.isMobile && this.config?.default_agent?.command) {
+			const activeStatuses = ["spawned", "running", "blocked"];
+			if (!ticket.agent_status || !activeStatuses.includes(ticket.agent_status)) {
+				menu.addItem((item) =>
+					item.setTitle("Run agent").setIcon("bot").onClick(() => {
+						this.spawnAgentRun(ticket);
+					}),
+				);
+			}
+		}
 		if (ticket.agent_status) {
 			menu.addItem((item) =>
 				item.setTitle("View diff").setIcon("git-compare").onClick(() => {
@@ -698,6 +711,36 @@ class BoardView extends ItemView {
 			},
 		});
 		this.app.workspace.revealLeaf(leaf);
+	}
+
+	private async spawnAgentRun(ticket: Ticket) {
+		const serverInfo = await this.readServerFile();
+		if (!serverInfo) {
+			return; // terminal server not running
+		}
+
+		try {
+			const resp = await fetch(`http://127.0.0.1:${serverInfo.port}/spawn`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ ticket_id: ticket.id }),
+			});
+			if (!resp.ok) {
+				const text = await resp.text();
+				console.error("spawn failed:", text);
+				return;
+			}
+			const { session } = (await resp.json()) as { session: string };
+
+			const leaf = this.app.workspace.getLeaf("split");
+			await leaf.setViewState({
+				type: TERMINAL_VIEW_TYPE,
+				state: { sessionName: session, ticketId: ticket.id },
+			});
+			this.app.workspace.revealLeaf(leaf);
+		} catch (e) {
+			console.error("spawn agent run:", e);
+		}
 	}
 
 	// ── Diff ──────────────────────────────────────────────────────────
@@ -857,6 +900,17 @@ class BoardView extends ItemView {
 		await this.app.vault.rename(folder, slug);
 		config.stages = config.stages.map((s) => (s === oldName ? slug : s));
 		await this.saveConfig(config);
+	}
+
+	private async readServerFile(): Promise<{ port: number; pid: number } | null> {
+		const adapter = this.app.vault.adapter;
+		if (!(await adapter.exists(TERMINAL_SERVER_PATH))) return null;
+		try {
+			const raw = await adapter.read(TERMINAL_SERVER_PATH);
+			return JSON.parse(raw);
+		} catch {
+			return null;
+		}
 	}
 
 	async onClose() {}
