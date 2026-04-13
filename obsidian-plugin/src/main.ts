@@ -14,6 +14,8 @@ import {
 
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { html as diff2html } from "diff2html";
+import { execFileSync } from "child_process";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -61,6 +63,7 @@ interface StageAgentConfig {
 
 const VIEW_TYPE = "tickets-board";
 const TERMINAL_VIEW_TYPE = "tickets-terminal";
+const DIFF_VIEW_TYPE = "tickets-diff";
 const CONFIG_PATH = "config.yml";
 const TERMINAL_SERVER_PATH = ".terminal-server";
 
@@ -70,6 +73,7 @@ export default class TicketsBoardPlugin extends Plugin {
 	async onload() {
 		this.registerView(VIEW_TYPE, (leaf) => new BoardView(leaf));
 		this.registerView(TERMINAL_VIEW_TYPE, (leaf) => new TerminalView(leaf));
+		this.registerView(DIFF_VIEW_TYPE, (leaf) => new DiffView(leaf));
 
 		this.addRibbonIcon("kanban", "Tickets Board", () => this.activateView());
 
@@ -642,6 +646,13 @@ class BoardView extends ItemView {
 				}),
 			);
 		}
+		if (ticket.agent_status) {
+			menu.addItem((item) =>
+				item.setTitle("View diff").setIcon("git-compare").onClick(() => {
+					this.openDiff(ticket);
+				}),
+			);
+		}
 		menu.addItem((item) =>
 			item.setTitle("Delete ticket").setIcon("trash").onClick(async () => {
 				await this.app.vault.trash(ticket.file, true);
@@ -681,6 +692,17 @@ class BoardView extends ItemView {
 				sessionName: ticket.agent_session,
 				ticketId: ticket.id,
 			},
+		});
+		this.app.workspace.revealLeaf(leaf);
+	}
+
+	// ── Diff ──────────────────────────────────────────────────────────
+
+	private async openDiff(ticket: Ticket) {
+		const leaf = this.app.workspace.getLeaf(Platform.isMobile ? "tab" : "split");
+		await leaf.setViewState({
+			type: DIFF_VIEW_TYPE,
+			state: { ticketId: ticket.id },
 		});
 		this.app.workspace.revealLeaf(leaf);
 	}
@@ -1088,6 +1110,81 @@ class TerminalView extends ItemView {
 		this.ws?.close();
 		this.terminal?.dispose();
 	}
+}
+
+// ── Diff View ─────────────────────────────────────────────────────────
+
+class DiffView extends ItemView {
+	private ticketId = "";
+
+	getViewType(): string {
+		return DIFF_VIEW_TYPE;
+	}
+
+	getDisplayText(): string {
+		return this.ticketId ? `Diff: ${this.ticketId}` : "Diff";
+	}
+
+	getIcon(): string {
+		return "git-compare";
+	}
+
+	async setState(state: Record<string, unknown>, result: ViewStateResult) {
+		this.ticketId = (state.ticketId as string) ?? "";
+		await super.setState(state, result);
+		this.renderDiff();
+	}
+
+	getState(): Record<string, unknown> {
+		return { ticketId: this.ticketId };
+	}
+
+	private renderDiff() {
+		this.contentEl.empty();
+
+		if (Platform.isMobile) {
+			this.showMessage("Diff view requires desktop.");
+			return;
+		}
+
+		if (!this.ticketId) {
+			this.showMessage("No ticket specified.");
+			return;
+		}
+
+		const basePath = (this.app.vault.adapter as any).getBasePath();
+		const branch = `tickets/${this.ticketId}`;
+		let output: string;
+
+		try {
+			output = execFileSync("git", ["diff", `main...${branch}`], {
+				cwd: basePath,
+				encoding: "utf-8",
+				maxBuffer: 10 * 1024 * 1024,
+			});
+		} catch {
+			this.showMessage(`Branch "${branch}" not found or git error.`);
+			return;
+		}
+
+		if (!output.trim()) {
+			this.showMessage("No changes — branch is identical to main.");
+			return;
+		}
+
+		const container = this.contentEl.createDiv({ cls: "tb-diff-container" });
+		container.innerHTML = diff2html(output, {
+			outputFormat: "line-by-line",
+			drawFileList: true,
+		});
+	}
+
+	private showMessage(msg: string) {
+		this.contentEl.empty();
+		this.contentEl.createEl("p", { text: msg, cls: "tb-diff-empty" });
+	}
+
+	async onClose() {}
 }
 
 // ── Text Input Modal ───────────────────────────────────────────────────
