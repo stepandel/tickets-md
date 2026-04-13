@@ -26,6 +26,9 @@ func newShowCmd() *cobra.Command {
 				return err
 			}
 			fmt.Printf("# %s — %s   [%s]\n", t.ID, t.Title, t.Stage)
+			if t.HasLinks() {
+				fmt.Printf("# Links: %s\n", t.LinksText())
+			}
 			fmt.Printf("# %s\n\n", t.Path)
 			os.Stdout.Write(data)
 			return nil

@@ -62,7 +62,11 @@ func printStage(stage string, tickets []ticket.Ticket) {
 		if priority == "" {
 			priority = "-"
 		}
-		fmt.Fprintf(tw, "  %s\t%s\t%s\n", t.ID, priority, t.Title)
+		links := ""
+		if n := t.LinkCount(); n > 0 {
+			links = fmt.Sprintf("[%d links]", n)
+		}
+		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\n", t.ID, priority, links, t.Title)
 	}
 	tw.Flush()
 }

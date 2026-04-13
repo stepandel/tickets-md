@@ -268,13 +268,134 @@ func (s *Store) Move(id, toStage string) (Ticket, error) {
 	return t, nil
 }
 
-// Delete removes a ticket from disk.
+// Delete removes a ticket from disk. Before removing the file it
+// cleans up any link references to this ticket in peer tickets.
 func (s *Store) Delete(id string) error {
 	t, err := s.Get(id)
 	if err != nil {
 		return err
 	}
+	s.cleanupLinks(t)
 	return os.Remove(t.Path)
+}
+
+// Link creates a bidirectional link between two tickets. linkType is
+// one of "related" or "blocked_by". For "related", both tickets gain
+// each other in their Related list. For "blocked_by", sourceID gains
+// targetID in BlockedBy and targetID gains sourceID in Blocks.
+func (s *Store) Link(sourceID, targetID, linkType string) error {
+	if sourceID == targetID {
+		return fmt.Errorf("cannot link a ticket to itself")
+	}
+	src, err := s.Get(sourceID)
+	if err != nil {
+		return err
+	}
+	tgt, err := s.Get(targetID)
+	if err != nil {
+		return err
+	}
+
+	switch linkType {
+	case "related":
+		if containsID(src.Related, targetID) {
+			return fmt.Errorf("%s and %s are already related", sourceID, targetID)
+		}
+		src.Related = appendID(src.Related, targetID)
+		tgt.Related = appendID(tgt.Related, sourceID)
+	case "blocked_by":
+		if containsID(src.BlockedBy, targetID) {
+			return fmt.Errorf("%s is already blocked by %s", sourceID, targetID)
+		}
+		src.BlockedBy = appendID(src.BlockedBy, targetID)
+		tgt.Blocks = appendID(tgt.Blocks, sourceID)
+	default:
+		return fmt.Errorf("unknown link type %q (use \"related\" or \"blocked_by\")", linkType)
+	}
+
+	if err := s.Save(src); err != nil {
+		return err
+	}
+	return s.Save(tgt)
+}
+
+// Unlink removes a bidirectional link between two tickets.
+func (s *Store) Unlink(sourceID, targetID, linkType string) error {
+	src, err := s.Get(sourceID)
+	if err != nil {
+		return err
+	}
+	tgt, err := s.Get(targetID)
+	if err != nil {
+		return err
+	}
+
+	switch linkType {
+	case "related":
+		src.Related = removeID(src.Related, targetID)
+		tgt.Related = removeID(tgt.Related, sourceID)
+	case "blocked_by":
+		src.BlockedBy = removeID(src.BlockedBy, targetID)
+		tgt.Blocks = removeID(tgt.Blocks, sourceID)
+	default:
+		return fmt.Errorf("unknown link type %q (use \"related\" or \"blocked_by\")", linkType)
+	}
+
+	if err := s.Save(src); err != nil {
+		return err
+	}
+	return s.Save(tgt)
+}
+
+// cleanupLinks removes all references to t.ID from peer tickets.
+// Errors are logged but do not prevent the caller from proceeding.
+func (s *Store) cleanupLinks(t Ticket) {
+	remove := func(peerID string, mutate func(*Ticket)) {
+		peer, err := s.Get(peerID)
+		if err != nil {
+			return
+		}
+		mutate(&peer)
+		s.Save(peer) // best-effort
+	}
+	for _, id := range t.Related {
+		remove(id, func(p *Ticket) { p.Related = removeID(p.Related, t.ID) })
+	}
+	for _, id := range t.BlockedBy {
+		remove(id, func(p *Ticket) { p.Blocks = removeID(p.Blocks, t.ID) })
+	}
+	for _, id := range t.Blocks {
+		remove(id, func(p *Ticket) { p.BlockedBy = removeID(p.BlockedBy, t.ID) })
+	}
+}
+
+func containsID(ids []string, id string) bool {
+	for _, v := range ids {
+		if v == id {
+			return true
+		}
+	}
+	return false
+}
+
+func appendID(ids []string, id string) []string {
+	if containsID(ids, id) {
+		return ids
+	}
+	return append(ids, id)
+}
+
+func removeID(ids []string, id string) []string {
+	out := ids[:0]
+	for _, v := range ids {
+		if v != id {
+			out = append(out, v)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // NextID scans every stage directory for the highest existing

@@ -37,6 +37,7 @@ type AgentConfig struct {
 	//   {{stage}}     — destination stage name
 	//   {{body}}      — ticket body (markdown after frontmatter)
 	//   {{worktree}}  — absolute path to the worktree (empty if worktree is off)
+	//   {{links}}     — human-readable summary of ticket links (empty if none)
 	Prompt string `yaml:"prompt"`
 	// Worktree, when true, creates a git worktree per ticket so the
 	// agent works in an isolated checkout. The branch is named
@@ -90,7 +91,7 @@ const defaultStageYML = `# Stage configuration — uncomment to enable an agent 
 #   args: ["--print"]        # extra flags before the prompt
 #   worktree: true           # isolate work in a git worktree per ticket
 #   base_branch: main        # branch to create worktree from (default: HEAD)
-#   prompt: |                # template with {{path}}, {{id}}, {{title}}, {{stage}}, {{body}}, {{worktree}}
+#   prompt: |                # template with {{path}}, {{id}}, {{title}}, {{stage}}, {{body}}, {{worktree}}, {{links}}
 #     You are working in {{worktree}} on branch tickets/{{id}}.
 #     Read the ticket at {{path}} and implement what it describes.
 `
@@ -105,6 +106,7 @@ func RenderPrompt(prompt string, vars PromptVars) string {
 		"{{stage}}", vars.Stage,
 		"{{body}}", vars.Body,
 		"{{worktree}}", vars.Worktree,
+		"{{links}}", vars.Links,
 	)
 	return r.Replace(prompt)
 }
@@ -118,4 +120,5 @@ type PromptVars struct {
 	Stage    string
 	Body     string
 	Worktree string
+	Links    string
 }

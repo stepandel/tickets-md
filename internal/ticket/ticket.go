@@ -24,6 +24,9 @@ type Ticket struct {
 	Title     string    `yaml:"title"`
 	Priority  string    `yaml:"priority,omitempty"`
 	Labels    []string  `yaml:"labels,omitempty"`
+	Related   []string  `yaml:"related,omitempty"`
+	BlockedBy []string  `yaml:"blocked_by,omitempty"`
+	Blocks    []string  `yaml:"blocks,omitempty"`
 	Assignee  string    `yaml:"assignee,omitempty"`
 	CreatedAt time.Time `yaml:"created_at"`
 	UpdatedAt time.Time `yaml:"updated_at"`
@@ -116,6 +119,31 @@ func LoadFile(path, stage string) (Ticket, error) {
 		return Ticket{}, err
 	}
 	return Parse(data, stage, path)
+}
+
+// HasLinks reports whether this ticket has any links to other tickets.
+func (t Ticket) HasLinks() bool {
+	return len(t.Related) > 0 || len(t.BlockedBy) > 0 || len(t.Blocks) > 0
+}
+
+// LinkCount returns the total number of links on this ticket.
+func (t Ticket) LinkCount() int {
+	return len(t.Related) + len(t.BlockedBy) + len(t.Blocks)
+}
+
+// LinksText returns a human-readable summary of this ticket's links.
+func (t Ticket) LinksText() string {
+	var parts []string
+	if len(t.Related) > 0 {
+		parts = append(parts, "related: "+strings.Join(t.Related, ", "))
+	}
+	if len(t.BlockedBy) > 0 {
+		parts = append(parts, "blocked by: "+strings.Join(t.BlockedBy, ", "))
+	}
+	if len(t.Blocks) > 0 {
+		parts = append(parts, "blocks: "+strings.Join(t.Blocks, ", "))
+	}
+	return strings.Join(parts, " | ")
 }
 
 // WriteFile serializes the ticket and writes it to t.Path, refusing

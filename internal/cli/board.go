@@ -531,10 +531,19 @@ func (m *boardModel) View() tea.View {
 			// Agent status badge.
 			badge := m.agentBadge(t.ID)
 
+			// Link count + blocked indicator.
+			linkInfo := ""
+			if n := t.LinkCount(); n > 0 {
+				linkInfo = " " + lipgloss.NewStyle().Foreground(lipgloss.Color("#87CEEB")).Render(fmt.Sprintf("[%d]", n))
+			}
+			if len(t.BlockedBy) > 0 {
+				linkInfo += " " + lipgloss.NewStyle().Foreground(lipgloss.Color("#FF8C00")).Bold(true).Render("!")
+			}
+
 			// Title.
 			title := truncate(t.Title, cardWidth-2)
 
-			cardContent := id + priority + badge + "\n" + title
+			cardContent := id + priority + badge + linkInfo + "\n" + title
 			cards = append(cards, cStyle.Render(cardContent))
 		}
 		// Show inline input or [+] button at the bottom of the first column.

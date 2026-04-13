@@ -27,6 +27,9 @@ interface Ticket {
 	title: string;
 	priority?: string;
 	labels?: string[];
+	related?: string[];
+	blocked_by?: string[];
+	blocks?: string[];
 	assignee?: string;
 	created_at?: string;
 	updated_at?: string;
@@ -167,6 +170,9 @@ class BoardView extends ItemView {
 				title: fm.title ?? file.basename,
 				priority: fm.priority,
 				labels: fm.labels,
+				related: fm.related,
+				blocked_by: fm.blocked_by,
+				blocks: fm.blocks,
 				assignee: fm.assignee,
 				created_at: fm.created_at,
 				updated_at: fm.updated_at,
@@ -435,8 +441,31 @@ class BoardView extends ItemView {
 		// Title
 		card.createDiv({ text: ticket.title, cls: "tb-card-title" });
 
-		// Footer: labels + assignee
+		// Footer: links + labels + assignee
 		const footer = card.createDiv({ cls: "tb-card-footer" });
+
+		const linkCount =
+			(ticket.related?.length ?? 0) +
+			(ticket.blocked_by?.length ?? 0) +
+			(ticket.blocks?.length ?? 0);
+
+		if (linkCount > 0) {
+			const linksEl = footer.createDiv({ cls: "tb-links" });
+			if (linkCount > 0) {
+				linksEl.createEl("span", {
+					text: String(linkCount),
+					cls: "tb-link-count",
+					attr: { "aria-label": `${linkCount} links` },
+				});
+			}
+			if (ticket.blocked_by && ticket.blocked_by.length > 0) {
+				linksEl.createEl("span", {
+					text: "blocked",
+					cls: "tb-blocked-badge",
+					attr: { "aria-label": `Blocked by ${ticket.blocked_by.join(", ")}` },
+				});
+			}
+		}
 
 		if (ticket.labels && ticket.labels.length > 0) {
 			const labelsEl = footer.createDiv({ cls: "tb-labels" });
@@ -789,7 +818,7 @@ class StageConfigModal extends Modal {
 					.onChange((v) => (this.config.args = v)),
 			);
 
-		const promptVarsBase = "{{path}}, {{id}}, {{title}}, {{stage}}, {{body}}";
+		const promptVarsBase = "{{path}}, {{id}}, {{title}}, {{stage}}, {{body}}, {{links}}";
 		const promptDescEl = contentEl.createEl("span");
 		const updatePromptDesc = () => {
 			const vars = this.config.worktree

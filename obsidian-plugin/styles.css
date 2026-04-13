@@ -270,6 +270,32 @@
 	margin-left: auto;
 }
 
+/* Link badges */
+.tb-links {
+	display: flex;
+	align-items: center;
+	gap: 3px;
+}
+
+.tb-link-count {
+	font-size: 0.65em;
+	font-weight: 600;
+	padding: 1px 5px;
+	border-radius: 3px;
+	background: var(--background-modifier-border);
+	color: var(--text-accent);
+}
+
+.tb-blocked-badge {
+	font-size: 0.6em;
+	font-weight: 700;
+	text-transform: uppercase;
+	padding: 1px 5px;
+	border-radius: 3px;
+	background: #FF8C00;
+	color: #fff;
+}
+
 /* ── Stage Config Modal ─────────────────────────────────────────────── */
 
 .tb-config-modal {

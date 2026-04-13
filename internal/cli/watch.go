@@ -275,6 +275,7 @@ func buildAgentArgs(t ticket.Ticket, ac *stage.AgentConfig, worktreePath string)
 		Stage:    t.Stage,
 		Body:     t.Body,
 		Worktree: worktreePath,
+		Links:    t.LinksText(),
 	})
 	argv := make([]string, 0, len(ac.Args)+1)
 	argv = append(argv, ac.Args...)
