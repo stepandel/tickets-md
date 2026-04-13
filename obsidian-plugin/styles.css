@@ -327,6 +327,12 @@
 	tab-size: 4;
 }
 
+/* ── Confirm Delete Modal ─────────────────────────────────────────────── */
+
+.tb-confirm-delete-modal {
+	max-width: 400px;
+}
+
 /* ── Terminal View ──────────────────────────────────────────────────── */
 
 .tb-terminal-container {
