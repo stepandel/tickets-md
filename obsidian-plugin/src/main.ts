@@ -1164,17 +1164,31 @@ class DiffView extends ItemView {
 		try {
 			const { execFileSync } = require("child_process");
 			const fs = require("fs");
+			const execOpts = { cwd: basePath, encoding: "utf-8" as const, maxBuffer: 10 * 1024 * 1024 };
+			let defaultBranch = "main";
+			try {
+				defaultBranch = execFileSync(
+					"git", ["rev-parse", "--abbrev-ref", "origin/HEAD"],
+					execOpts,
+				).trim().replace(/^origin\//, "");
+			} catch {
+				// origin/HEAD not set — check if "main" exists, otherwise try "master"
+				try {
+					execFileSync("git", ["rev-parse", "--verify", "main"], execOpts);
+				} catch {
+					defaultBranch = "master";
+				}
+			}
+
 			if (fs.existsSync(worktreePath)) {
-				// Diff worktree working tree (including uncommitted changes) against main
-				output = execFileSync("git", ["diff", "main"], {
+				output = execFileSync("git", ["diff", defaultBranch], {
 					cwd: worktreePath,
 					encoding: "utf-8",
 					maxBuffer: 10 * 1024 * 1024,
 				});
 			} else {
-				// No worktree — diff the branch ref against main
 				const branch = `tickets/${this.ticketId}`;
-				output = execFileSync("git", ["diff", "main", branch], {
+				output = execFileSync("git", ["diff", defaultBranch, branch], {
 					cwd: basePath,
 					encoding: "utf-8",
 					maxBuffer: 10 * 1024 * 1024,
@@ -1186,7 +1200,7 @@ class DiffView extends ItemView {
 		}
 
 		if (!output.trim()) {
-			this.showMessage("No changes — branch is identical to main.");
+			this.showMessage("No changes — branch is identical to the default branch.");
 			return;
 		}
 
