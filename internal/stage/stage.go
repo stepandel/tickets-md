@@ -18,7 +18,17 @@ const configFile = ".stage.yml"
 // Config is the per-stage configuration read from
 // .tickets/<stage>/.stage.yml.
 type Config struct {
-	Agent *AgentConfig `yaml:"agent,omitempty"`
+	Agent   *AgentConfig   `yaml:"agent,omitempty"`
+	Cleanup *CleanupConfig `yaml:"cleanup,omitempty"`
+}
+
+// CleanupConfig describes automatic cleanup actions performed by the
+// watcher when a ticket arrives in this stage — no agent required.
+type CleanupConfig struct {
+	// Worktree removes the ticket's git worktree (.worktrees/<id>).
+	Worktree bool `yaml:"worktree,omitempty"`
+	// Branch deletes the ticket's branch (tickets/<id>).
+	Branch bool `yaml:"branch,omitempty"`
 }
 
 // AgentConfig describes a CLI agent to spawn when a ticket arrives
@@ -52,6 +62,11 @@ type AgentConfig struct {
 // agent when a ticket arrives.
 func (c Config) HasAgent() bool {
 	return c.Agent != nil && c.Agent.Command != ""
+}
+
+// HasCleanup reports whether this stage has automatic cleanup actions.
+func (c Config) HasCleanup() bool {
+	return c.Cleanup != nil && (c.Cleanup.Worktree || c.Cleanup.Branch)
 }
 
 // Load reads the .stage.yml from stageDir. A missing file is not an

@@ -67,6 +67,24 @@ func Create(root, ticketID, baseBranch string) (string, error) {
 	return wtDir, nil
 }
 
+// DeleteBranch deletes the ticket's branch (tickets/<id>). It is a
+// no-op if the branch does not exist.
+func DeleteBranch(root, ticketID string) error {
+	branch := BranchPrefix + ticketID
+	cmd := exec.Command("git", "branch", "-D", branch)
+	cmd.Dir = root
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		msg := strings.TrimSpace(string(out))
+		// Not an error if the branch simply doesn't exist.
+		if strings.Contains(msg, "not found") {
+			return nil
+		}
+		return fmt.Errorf("git branch -D %s: %s", branch, msg)
+	}
+	return nil
+}
+
 // Remove removes a worktree directory and prunes git's record of it.
 func Remove(root, ticketID string) error {
 	wtDir := filepath.Join(root, Dir, ticketID)

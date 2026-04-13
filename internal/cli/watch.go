@@ -207,8 +207,21 @@ func handleCreate(s *ticket.Store, stageConfigs map[string]stage.Config, path st
 	}
 
 	sc, ok := stageConfigs[stageName]
-	if !ok || !sc.HasAgent() {
-		log.Printf("%s → %s (no agent configured)", strings.TrimSuffix(base, ".md"), stageName)
+	if !ok {
+		log.Printf("%s → %s (no stage config)", strings.TrimSuffix(base, ".md"), stageName)
+		return
+	}
+
+	// Run cleanup actions (worktree/branch removal) inline — no agent needed.
+	if sc.HasCleanup() {
+		ticketID := strings.TrimSuffix(base, ".md")
+		runCleanup(ticketID, sc.Cleanup, s.Root)
+	}
+
+	if !sc.HasAgent() {
+		if !sc.HasCleanup() {
+			log.Printf("%s → %s (no agent configured)", strings.TrimSuffix(base, ".md"), stageName)
+		}
 		return
 	}
 
@@ -219,6 +232,24 @@ func handleCreate(s *ticket.Store, stageConfigs map[string]stage.Config, path st
 	}
 
 	spawnAgent(t, sc, s.Root, mon, runner)
+}
+
+// runCleanup performs inline worktree and branch cleanup for a ticket.
+func runCleanup(ticketID string, cfg *stage.CleanupConfig, root string) {
+	if cfg.Worktree {
+		if err := worktree.Remove(root, ticketID); err != nil {
+			log.Printf("%s: cleanup: worktree remove failed: %v", ticketID, err)
+		} else {
+			log.Printf("%s: cleanup: removed worktree", ticketID)
+		}
+	}
+	if cfg.Branch {
+		if err := worktree.DeleteBranch(root, ticketID); err != nil {
+			log.Printf("%s: cleanup: branch delete failed: %v", ticketID, err)
+		} else {
+			log.Printf("%s: cleanup: deleted branch %s%s", ticketID, worktree.BranchPrefix, ticketID)
+		}
+	}
 }
 
 // handleRemove is called when a ticket file disappears from a stage
