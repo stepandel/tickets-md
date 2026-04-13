@@ -5,47 +5,27 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 )
 
-// SessionChecker reports whether a tmux session is alive. Extracted as
-// a function type so tests can substitute a fake.
+// SessionChecker reports whether a session is alive. Extracted as a
+// function type so tests can substitute a fake. The production
+// implementation is PTYRunner.Alive.
 type SessionChecker func(sessionName string) bool
 
-// TmuxSessionExists is the production implementation of SessionChecker.
-func TmuxSessionExists(sessionName string) bool {
-	return exec.Command("tmux", "has-session", "-t", sessionName).Run() == nil
-}
-
-// IdleChecker returns how many seconds a tmux pane has been idle.
-// Returns -1 if the session doesn't exist or the query fails.
+// IdleChecker returns how many seconds a session has been idle (no
+// output). Returns -1 if the session doesn't exist. The production
+// implementation is PTYRunner.IdleSeconds.
 type IdleChecker func(sessionName string) int
 
-// TmuxPaneIdle computes how long the pane has been idle by reading
-// #{window_activity} (a Unix epoch) and subtracting from now.
-func TmuxPaneIdle(sessionName string) int {
-	out, err := exec.Command("tmux", "display-message", "-t", sessionName, "-p", "#{window_activity}").Output()
-	if err != nil {
-		return -1
-	}
-	epoch, err := strconv.ParseInt(strings.TrimSpace(string(out)), 10, 64)
-	if err != nil {
-		return -1
-	}
-	return int(time.Now().Unix() - epoch)
-}
-
-// blockedThreshold is how long a pane must be idle (no output) before
-// the monitor considers it blocked (likely waiting for user input).
+// blockedThreshold is how long a session must be idle (no output)
+// before the monitor considers it blocked (likely waiting for input).
 const blockedThreshold = 30 // seconds
 
-// Monitor periodically reconciles agent run files against tmux reality.
-// It catches crashes, stale runs from a previous watcher process,
-// promotes spawned → running, and detects blocked agents.
+// Monitor periodically reconciles agent run files against session
+// reality. It catches crashes, stale runs from a previous watcher
+// process, promotes spawned → running, and detects blocked agents.
 type Monitor struct {
 	root      string
 	interval  time.Duration
@@ -56,7 +36,7 @@ type Monitor struct {
 	watching map[string]struct{} // "<ticket>/<run>" with active wait goroutines
 }
 
-// NewMonitor creates a monitor that checks tmux state every interval.
+// NewMonitor creates a monitor that checks session state every interval.
 func NewMonitor(root string, check SessionChecker, idle IdleChecker) *Monitor {
 	return &Monitor{
 		root:      root,
@@ -72,8 +52,8 @@ func runKey(ticketID, runID string) string {
 }
 
 // TrackRun registers a (ticket, run) pair as having an active
-// waitForTmuxSession goroutine. The monitor will not mark tracked
-// runs as failed (that's the wait goroutine's job).
+// waitForSession goroutine. The monitor will not mark tracked runs
+// as failed (that's the wait goroutine's job).
 func (m *Monitor) TrackRun(ticketID, runID string) {
 	m.mu.Lock()
 	m.watching[runKey(ticketID, runID)] = struct{}{}
@@ -100,7 +80,7 @@ type AliveStatus struct {
 	AgentStatus
 }
 
-// Reconcile checks all non-terminal run files against tmux state.
+// Reconcile checks all non-terminal run files against session state.
 // Sessions that are still alive are returned so the caller can spawn
 // new wait goroutines for them. Sessions that are gone are marked
 // failed.
@@ -124,7 +104,7 @@ func (m *Monitor) Reconcile() ([]AliveStatus, error) {
 			alive = append(alive, AliveStatus{as})
 		} else {
 			as.Status = StatusFailed
-			as.Error = "tmux session not found on watcher restart"
+			as.Error = "session not found on watcher restart"
 			if err := Write(m.root, as); err != nil {
 				log.Printf("monitor: failed to mark %s/%s failed: %v", as.TicketID, as.RunID, err)
 			} else {
@@ -206,7 +186,7 @@ func (m *Monitor) poll() {
 			}
 		} else if !m.isTracked(as.TicketID, as.RunID) {
 			as.Status = StatusFailed
-			as.Error = "tmux session disappeared"
+			as.Error = "session disappeared"
 			if err := Write(m.root, as); err != nil {
 				log.Printf("monitor: failed to mark %s/%s failed: %v", as.TicketID, as.RunID, err)
 			} else {

@@ -1,10 +1,10 @@
 // Package agent provides persistent, filesystem-backed status tracking
 // for AI agents spawned by `tickets watch`. Each ticket gets its own
 // directory under .tickets/.agents/<ticket-id>/, holding one <run>.yml
-// per agent run and a runs/ subdirectory with the matching .log and
-// .exit files. Run ids are <NNN>-<stage> where NNN is a per-ticket
-// monotonic sequence — so a ticket that revisits "execute" gets a
-// fresh run with a higher sequence number.
+// per agent run and a runs/ subdirectory with the matching .log file.
+// Run ids are <NNN>-<stage> where NNN is a per-ticket monotonic
+// sequence — so a ticket that revisits "execute" gets a fresh run
+// with a higher sequence number.
 package agent
 
 import (
@@ -27,12 +27,12 @@ import (
 type Status string
 
 const (
-	StatusSpawned Status = "spawned" // tmux session creation requested
-	StatusRunning Status = "running" // tmux session confirmed alive
+	StatusSpawned Status = "spawned" // session creation requested
+	StatusRunning Status = "running" // session confirmed alive
 	StatusBlocked Status = "blocked" // agent idle, likely waiting for user input
 	StatusDone    Status = "done"    // agent exited successfully (exit code 0)
 	StatusFailed  Status = "failed"  // agent exited with error (non-zero exit)
-	StatusErrored Status = "errored" // couldn't create the tmux session at all
+	StatusErrored Status = "errored" // couldn't create the session at all
 )
 
 // IsTerminal reports whether the status is a final state with no
@@ -76,10 +76,9 @@ type AgentStatus struct {
 	Status    Status    `yaml:"status"`
 	SpawnedAt time.Time `yaml:"spawned_at"`
 	UpdatedAt time.Time `yaml:"updated_at"`
-	ExitCode  *int      `yaml:"exit_code,omitempty"`
-	Error     string    `yaml:"error,omitempty"`
-	LogFile   string    `yaml:"log_file"`
-	ExitFile  string    `yaml:"exit_file,omitempty"`
+	ExitCode *int   `yaml:"exit_code,omitempty"`
+	Error    string `yaml:"error,omitempty"`
+	LogFile  string `yaml:"log_file"`
 	Worktree    string `yaml:"worktree,omitempty"`
 	SessionUUID string `yaml:"session_uuid,omitempty"`
 	PlanFile    string `yaml:"plan_file,omitempty"`
@@ -98,7 +97,7 @@ func TicketDir(root, ticketID string) string {
 }
 
 // RunsDir returns the absolute path to .tickets/.agents/<ticket-id>/runs/,
-// which holds the .log and .exit artifacts for every run.
+// which holds the .log artifacts for every run.
 func RunsDir(root, ticketID string) string {
 	return filepath.Join(TicketDir(root, ticketID), "runs")
 }
@@ -110,11 +109,6 @@ func runPath(root, ticketID, runID string) string {
 // LogPath returns the canonical log file path for a run.
 func LogPath(root, ticketID, runID string) string {
 	return filepath.Join(RunsDir(root, ticketID), runID+".log")
-}
-
-// ExitPath returns the canonical exit-code file path for a run.
-func ExitPath(root, ticketID, runID string) string {
-	return filepath.Join(RunsDir(root, ticketID), runID+".exit")
 }
 
 // runIDRegex matches "<seq>-<stage>" with a 3+ digit zero-padded seq.
@@ -352,10 +346,9 @@ func SetPlanFile(root, ticketID, runID, planFile string) error {
 	return os.Rename(tmp, target)
 }
 
-// RemoveRun deletes a single run's yml/log/exit files.
+// RemoveRun deletes a single run's yml and log files.
 func RemoveRun(root, ticketID, runID string) error {
 	os.Remove(LogPath(root, ticketID, runID))
-	os.Remove(ExitPath(root, ticketID, runID))
 	return os.Remove(runPath(root, ticketID, runID))
 }
 

@@ -28,22 +28,13 @@ automatically spawns the agent whenever a ticket arrives.
 
 ## Install
 
-Requires Go 1.22+ and [tmux](https://github.com/tmux/tmux) (for `tickets watch`).
-
-```sh
-brew install tmux
-```
+Requires Go 1.22+.
 
 ```sh
 make install
 # or manually:
 go install ./cmd/tickets
 ```
-
-`make install` ensures tmux is present (installs via Homebrew if
-missing) and builds the `tickets` binary. Alternatively, `tickets
-watch` will offer to install tmux for you on first run if it's not
-found.
 
 `go install` drops the binary in `$(go env GOPATH)/bin` (usually
 `~/go/bin`). Add that directory to your `$PATH` if it isn't already:
@@ -212,12 +203,11 @@ Follow one agent's status changes and streamed output until it exits:
 tickets agents monitor TIC-001
 ```
 
-That gives you a read-only progress view without attaching to tmux. If
-you need to interact with the running process directly, attach to its
-session instead:
+That gives you a read-only progress view. You can also tail the raw
+log file directly:
 
 ```sh
-tmux attach -t TIC-001
+tail -f .tickets/.agents/TIC-001/runs/001-execute.log
 ```
 
 ## Editor
