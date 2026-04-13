@@ -27,7 +27,6 @@ type Ticket struct {
 	Related   []string  `yaml:"related,omitempty"`
 	BlockedBy []string  `yaml:"blocked_by,omitempty"`
 	Blocks    []string  `yaml:"blocks,omitempty"`
-	Assignee  string    `yaml:"assignee,omitempty"`
 	CreatedAt time.Time `yaml:"created_at"`
 	UpdatedAt time.Time `yaml:"updated_at"`
 

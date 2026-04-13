@@ -33,7 +33,6 @@ interface Ticket {
 	related?: string[];
 	blocked_by?: string[];
 	blocks?: string[];
-	assignee?: string;
 	created_at?: string;
 	updated_at?: string;
 	agent_status?: string;
@@ -185,7 +184,6 @@ class BoardView extends ItemView {
 				related: fm.related,
 				blocked_by: fm.blocked_by,
 				blocks: fm.blocks,
-				assignee: fm.assignee,
 				created_at: fm.created_at,
 				updated_at: fm.updated_at,
 				agent_status: fm.agent_status,
@@ -511,7 +509,7 @@ class BoardView extends ItemView {
 		// Title
 		card.createDiv({ text: ticket.title, cls: "tb-card-title" });
 
-		// Footer: links + labels + assignee
+		// Footer: links + labels
 		const footer = card.createDiv({ cls: "tb-card-footer" });
 
 		const linkCount =
@@ -544,9 +542,6 @@ class BoardView extends ItemView {
 			}
 		}
 
-		if (ticket.assignee) {
-			footer.createEl("span", { text: ticket.assignee, cls: "tb-assignee" });
-		}
 	}
 
 	// ── Touch Drag Helpers ────────────────────────────────────────────

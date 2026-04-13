@@ -264,12 +264,6 @@
 	font-weight: 500;
 }
 
-.tb-assignee {
-	font-size: 0.7em;
-	color: var(--text-muted);
-	margin-left: auto;
-}
-
 /* Link badges */
 .tb-links {
 	display: flex;
