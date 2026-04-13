@@ -61,6 +61,7 @@ latest per ticket.`,
 	cmd.Flags().BoolVar(&history, "history", false, "show every run, not just the latest per ticket")
 	cmd.AddCommand(newAgentsLogCmd())
 	cmd.AddCommand(newAgentsPlanCmd())
+	cmd.AddCommand(newAgentsFollowupCmd())
 	return cmd
 }
 
@@ -149,7 +150,7 @@ With just a ticket id, prints the latest run. Pass an explicit run id
 			if err != nil {
 				return fmt.Errorf("reading log: %w", err)
 			}
-			output := strings.TrimSpace(stripAnsi(string(data)))
+			output := strings.TrimSpace(agent.StripAnsi(string(data)))
 			if output == "" {
 				fmt.Println("(empty log)")
 				return nil

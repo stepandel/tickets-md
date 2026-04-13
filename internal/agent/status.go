@@ -82,6 +82,7 @@ type AgentStatus struct {
 	Worktree    string `yaml:"worktree,omitempty"`
 	SessionUUID string `yaml:"session_uuid,omitempty"`
 	PlanFile    string `yaml:"plan_file,omitempty"`
+	ResumedFrom string `yaml:"resumed_from,omitempty"`
 }
 
 const agentsDir = ".agents"
@@ -166,9 +167,11 @@ func Write(root string, as AgentStatus) error {
 		return fmt.Errorf("agent.Write: RunID is required")
 	}
 
+	isNew := true
 	if as.Status != StatusSpawned {
 		existing, err := ReadRun(root, as.TicketID, as.RunID)
 		if err == nil {
+			isNew = false
 			if err := Transition(existing.Status, as.Status); err != nil {
 				return fmt.Errorf("status transition for %s/%s: %w", as.TicketID, as.RunID, err)
 			}
@@ -189,7 +192,9 @@ func Write(root string, as AgentStatus) error {
 
 	target := runPath(root, as.TicketID, as.RunID)
 
-	if as.Status == StatusSpawned {
+	// New files (spawned or first-write followups) use O_EXCL to
+	// surface races where two callers picked the same run id.
+	if isNew {
 		f, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 		if err != nil {
 			return fmt.Errorf("creating run file %s: %w", target, err)

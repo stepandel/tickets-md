@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -517,12 +516,4 @@ func removeTerminalServerFile(root string) {
 }
 
 // --- shared ---
-
-// ansiRegex matches ANSI escape sequences (colors, cursor movement,
-// etc.) captured from the raw PTY output.
-var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?\x07|\x1b\[.*?[HJK]`)
-
-func stripAnsi(s string) string {
-	return ansiRegex.ReplaceAllString(s, "")
-}
 
