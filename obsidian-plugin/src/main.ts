@@ -643,8 +643,13 @@ class BoardView extends ItemView {
 			);
 		}
 		menu.addItem((item) =>
-			item.setTitle("Delete ticket").setIcon("trash").onClick(async () => {
-				await this.app.vault.trash(ticket.file, true);
+			item.setTitle("Delete ticket").setIcon("trash").setWarning(true).onClick(() => {
+				new ConfirmDeleteModal(
+					this.app,
+					ticket.id,
+					ticket.title,
+					async () => { await this.app.vault.trash(ticket.file, true); },
+				).open();
 			}),
 		);
 		return menu;
@@ -1189,6 +1194,47 @@ class StageConfigModal extends Modal {
 		new Setting(contentEl).addButton((btn) =>
 			btn.setButtonText("Save").setCta().onClick(async () => {
 				await this.onSave(this.config);
+				this.close();
+			}),
+		).addButton((btn) =>
+			btn.setButtonText("Cancel").onClick(() => this.close()),
+		);
+	}
+
+	onClose() {
+		this.contentEl.empty();
+	}
+}
+
+class ConfirmDeleteModal extends Modal {
+	private readonly ticketId: string;
+	private readonly ticketTitle: string;
+	private readonly onConfirm: () => Promise<void>;
+
+	constructor(
+		app: import("obsidian").App,
+		ticketId: string,
+		ticketTitle: string,
+		onConfirm: () => Promise<void>,
+	) {
+		super(app);
+		this.ticketId = ticketId;
+		this.ticketTitle = ticketTitle;
+		this.onConfirm = onConfirm;
+	}
+
+	onOpen() {
+		const { contentEl } = this;
+		this.modalEl.addClass("tb-confirm-delete-modal");
+
+		contentEl.createEl("h3", { text: "Delete ticket" });
+		contentEl.createEl("p", {
+			text: `Are you sure you want to delete ${this.ticketId} (${this.ticketTitle})?`,
+		});
+
+		new Setting(contentEl).addButton((btn) =>
+			btn.setButtonText("Delete").setWarning().onClick(async () => {
+				await this.onConfirm();
 				this.close();
 			}),
 		).addButton((btn) =>
