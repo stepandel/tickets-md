@@ -29,7 +29,6 @@ interface Ticket {
 	id: string;
 	title: string;
 	priority?: string;
-	labels?: string[];
 	related?: string[];
 	blocked_by?: string[];
 	blocks?: string[];
@@ -180,7 +179,6 @@ class BoardView extends ItemView {
 				id: fm.id ?? file.basename,
 				title: fm.title ?? file.basename,
 				priority: fm.priority,
-				labels: fm.labels,
 				related: fm.related,
 				blocked_by: fm.blocked_by,
 				blocks: fm.blocks,
@@ -509,7 +507,7 @@ class BoardView extends ItemView {
 		// Title
 		card.createDiv({ text: ticket.title, cls: "tb-card-title" });
 
-		// Footer: links + labels
+		// Footer: links
 		const footer = card.createDiv({ cls: "tb-card-footer" });
 
 		const linkCount =
@@ -534,14 +532,6 @@ class BoardView extends ItemView {
 				});
 			}
 		}
-
-		if (ticket.labels && ticket.labels.length > 0) {
-			const labelsEl = footer.createDiv({ cls: "tb-labels" });
-			for (const label of ticket.labels) {
-				labelsEl.createEl("span", { text: label, cls: "tb-label" });
-			}
-		}
-
 	}
 
 	// ── Touch Drag Helpers ────────────────────────────────────────────

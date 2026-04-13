@@ -249,21 +249,6 @@
 	flex-wrap: wrap;
 }
 
-.tb-labels {
-	display: flex;
-	gap: 3px;
-	flex-wrap: wrap;
-}
-
-.tb-label {
-	font-size: 0.65em;
-	padding: 1px 5px;
-	border-radius: 3px;
-	background: var(--interactive-accent);
-	color: var(--text-on-accent);
-	font-weight: 500;
-}
-
 /* Link badges */
 .tb-links {
 	display: flex;

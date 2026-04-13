@@ -237,7 +237,6 @@ Each ticket is a markdown file with a YAML frontmatter block:
 id: TIC-001
 title: Fix login bug on Safari
 priority: high
-labels: [bug, auth]
 created_at: 2026-04-09T22:08:14Z
 updated_at: 2026-04-09T22:08:14Z
 ---
