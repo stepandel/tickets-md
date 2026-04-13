@@ -15,7 +15,6 @@ import {
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { html as diff2html } from "diff2html";
-import { execFileSync } from "child_process";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -1162,6 +1161,7 @@ class DiffView extends ItemView {
 		let output: string;
 
 		try {
+			const { execFileSync } = require("child_process");
 			output = execFileSync("git", ["diff", `main...${branch}`], {
 				cwd: basePath,
 				encoding: "utf-8",
