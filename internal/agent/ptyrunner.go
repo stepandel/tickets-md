@@ -20,6 +20,11 @@ type ptySession struct {
 	logFile    *os.File
 	lastOutput atomic.Int64 // unix epoch of last output
 
+	// Fan-out for PTY output to multiple consumers.
+	subMu  sync.Mutex
+	subSeq int
+	subs   map[int]chan []byte
+
 	exitCode *int
 	exitErr  error
 	copyDone sync.WaitGroup // tracks output-copy goroutine
@@ -70,6 +75,7 @@ func (r *PTYRunner) Start(name, cwd string, argv []string, logPath string) error
 		cmd:     cmd,
 		ptmx:    ptmx,
 		logFile: logF,
+		subs:    make(map[int]chan []byte),
 		done:    make(chan struct{}),
 	}
 	sess.lastOutput.Store(time.Now().Unix())
@@ -141,6 +147,67 @@ func (r *PTYRunner) Wait(name string) (*int, error) {
 	return sess.exitCode, sess.exitErr
 }
 
+// Subscribe returns a channel that receives copies of all PTY output
+// for the named session, plus an unsubscribe function. The channel is
+// closed when the session ends. Returns an error if the session
+// doesn't exist.
+func (r *PTYRunner) Subscribe(name string) (<-chan []byte, func(), error) {
+	r.mu.RLock()
+	sess, ok := r.sessions[name]
+	r.mu.RUnlock()
+	if !ok {
+		return nil, nil, fmt.Errorf("session %s not found", name)
+	}
+
+	ch := make(chan []byte, 256)
+
+	sess.subMu.Lock()
+	sess.subSeq++
+	id := sess.subSeq
+	sess.subs[id] = ch
+	sess.subMu.Unlock()
+
+	unsub := func() {
+		sess.subMu.Lock()
+		delete(sess.subs, id)
+		sess.subMu.Unlock()
+	}
+	return ch, unsub, nil
+}
+
+// WriteInput sends data to the named session's PTY stdin.
+func (r *PTYRunner) WriteInput(name string, data []byte) (int, error) {
+	r.mu.RLock()
+	sess, ok := r.sessions[name]
+	r.mu.RUnlock()
+	if !ok {
+		return 0, fmt.Errorf("session %s not found", name)
+	}
+	return sess.ptmx.Write(data)
+}
+
+// Resize changes the PTY window size for the named session.
+func (r *PTYRunner) Resize(name string, rows, cols uint16) error {
+	r.mu.RLock()
+	sess, ok := r.sessions[name]
+	r.mu.RUnlock()
+	if !ok {
+		return fmt.Errorf("session %s not found", name)
+	}
+	return pty.Setsize(sess.ptmx, &pty.Winsize{Rows: rows, Cols: cols})
+}
+
+// Sessions returns the names of all active sessions.
+func (r *PTYRunner) Sessions() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	names := make([]string, 0, len(r.sessions))
+	for name := range r.sessions {
+		names = append(names, name)
+	}
+	return names
+}
+
 // Shutdown terminates all sessions gracefully (SIGTERM), waiting up
 // to 5 seconds before force-killing survivors.
 func (r *PTYRunner) Shutdown() {
@@ -176,21 +243,52 @@ func (r *PTYRunner) Shutdown() {
 	}
 }
 
+// fanOut sends a copy of data to all subscribers. Non-blocking: if a
+// subscriber's channel is full, it is dropped (channel closed and
+// removed).
+func (s *ptySession) fanOut(data []byte) {
+	s.subMu.Lock()
+	defer s.subMu.Unlock()
+	for id, ch := range s.subs {
+		select {
+		case ch <- data:
+		default:
+			// Slow consumer — drop it.
+			close(ch)
+			delete(s.subs, id)
+		}
+	}
+}
+
+// closeAllSubs closes all subscriber channels.
+func (s *ptySession) closeAllSubs() {
+	s.subMu.Lock()
+	defer s.subMu.Unlock()
+	for id, ch := range s.subs {
+		close(ch)
+		delete(s.subs, id)
+	}
+}
+
 // copyOutput reads from the PTY master and writes to the log file,
-// updating lastOutput on each read. It exits when the PTY returns
-// EOF or EIO (child process exited).
+// fanning out to all subscribers and updating lastOutput on each read.
+// It exits when the PTY returns EOF or EIO (child process exited).
 func (s *ptySession) copyOutput() {
 	buf := make([]byte, 4096)
 	for {
 		n, err := s.ptmx.Read(buf)
 		if n > 0 {
+			chunk := make([]byte, n)
+			copy(chunk, buf[:n])
 			s.lastOutput.Store(time.Now().Unix())
-			s.logFile.Write(buf[:n])
+			s.logFile.Write(chunk)
+			s.fanOut(chunk)
 		}
 		if err != nil {
 			break
 		}
 	}
+	s.closeAllSubs()
 	s.logFile.Close()
 	s.ptmx.Close()
 }

@@ -1,6 +1,7 @@
 import {
 	Plugin,
 	ItemView,
+	ViewStateResult,
 	WorkspaceLeaf,
 	TFile,
 	TFolder,
@@ -9,6 +10,9 @@ import {
 	Setting,
 	parseYaml,
 } from "obsidian";
+
+import { Terminal } from "@xterm/xterm";
+import { FitAddon } from "@xterm/addon-fit";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -27,6 +31,7 @@ interface Ticket {
 	created_at?: string;
 	updated_at?: string;
 	agent_status?: string;
+	agent_session?: string;
 	file: TFile;
 	stage: string;
 }
@@ -51,13 +56,16 @@ interface StageAgentConfig {
 // ── Constants ──────────────────────────────────────────────────────────
 
 const VIEW_TYPE = "tickets-board";
+const TERMINAL_VIEW_TYPE = "tickets-terminal";
 const CONFIG_PATH = "config.yml";
+const TERMINAL_SERVER_PATH = ".terminal-server";
 
 // ── Plugin ─────────────────────────────────────────────────────────────
 
 export default class TicketsBoardPlugin extends Plugin {
 	async onload() {
 		this.registerView(VIEW_TYPE, (leaf) => new BoardView(leaf));
+		this.registerView(TERMINAL_VIEW_TYPE, (leaf) => new TerminalView(leaf));
 
 		this.addRibbonIcon("kanban", "Tickets Board", () => this.activateView());
 
@@ -163,6 +171,7 @@ class BoardView extends ItemView {
 				created_at: fm.created_at,
 				updated_at: fm.updated_at,
 				agent_status: fm.agent_status,
+				agent_session: fm.agent_session,
 				file,
 				stage,
 			};
@@ -377,6 +386,14 @@ class BoardView extends ItemView {
 		card.addEventListener("contextmenu", (e) => {
 			e.preventDefault();
 			const menu = new Menu();
+			if (ticket.agent_session && ticket.agent_status
+				&& !["done", "failed", "errored"].includes(ticket.agent_status)) {
+				menu.addItem((item) =>
+					item.setTitle("Open terminal").setIcon("terminal-square").onClick(() => {
+						this.openTerminal(ticket);
+					}),
+				);
+			}
 			menu.addItem((item) =>
 				item.setTitle("Delete ticket").setIcon("trash").onClick(async () => {
 					await this.app.vault.trash(ticket.file, true);
@@ -431,6 +448,20 @@ class BoardView extends ItemView {
 		if (ticket.assignee) {
 			footer.createEl("span", { text: ticket.assignee, cls: "tb-assignee" });
 		}
+	}
+
+	// ── Terminal ───────────────────────────────────────────────────────
+
+	private async openTerminal(ticket: Ticket) {
+		const leaf = this.app.workspace.getLeaf("split");
+		await leaf.setViewState({
+			type: TERMINAL_VIEW_TYPE,
+			state: {
+				sessionName: ticket.agent_session,
+				ticketId: ticket.id,
+			},
+		});
+		this.app.workspace.revealLeaf(leaf);
 	}
 
 	// ── Config Writing ─────────────────────────────────────────────────
@@ -582,6 +613,135 @@ class BoardView extends ItemView {
 	}
 
 	async onClose() {}
+}
+
+// ── Terminal View ──────────────────────────────────────────────────────
+
+class TerminalView extends ItemView {
+	private terminal: Terminal | null = null;
+	private fitAddon: FitAddon | null = null;
+	private ws: WebSocket | null = null;
+	private sessionName = "";
+	private ticketId = "";
+	private resizeObserver: ResizeObserver | null = null;
+
+	getViewType(): string {
+		return TERMINAL_VIEW_TYPE;
+	}
+
+	getDisplayText(): string {
+		return this.ticketId ? `Terminal: ${this.ticketId}` : "Terminal";
+	}
+
+	getIcon(): string {
+		return "terminal-square";
+	}
+
+	async setState(state: Record<string, unknown>, result: ViewStateResult) {
+		this.sessionName = (state.sessionName as string) ?? "";
+		this.ticketId = (state.ticketId as string) ?? "";
+		await super.setState(state, result);
+		this.connect();
+	}
+
+	getState(): Record<string, unknown> {
+		return { sessionName: this.sessionName, ticketId: this.ticketId };
+	}
+
+	async onOpen() {
+		this.contentEl.addClass("tb-terminal-container");
+	}
+
+	private async connect() {
+		const serverInfo = await this.readServerFile();
+		if (!serverInfo) {
+			this.showError("No terminal server running. Is `tickets watch` active?");
+			return;
+		}
+
+		this.terminal = new Terminal({
+			cursorBlink: true,
+			fontSize: 13,
+			fontFamily: "var(--font-monospace), monospace",
+			theme: {
+				background: "#1e1e1e",
+				foreground: "#d4d4d4",
+				cursor: "#d4d4d4",
+			},
+		});
+		this.fitAddon = new FitAddon();
+		this.terminal.loadAddon(this.fitAddon);
+		this.terminal.open(this.contentEl);
+		this.fitAddon.fit();
+
+		const url = `ws://127.0.0.1:${serverInfo.port}/terminal/${this.sessionName}`;
+		this.ws = new WebSocket(url);
+		this.ws.binaryType = "arraybuffer";
+
+		this.ws.onopen = () => {
+			this.sendResize();
+		};
+
+		this.ws.onmessage = (event: MessageEvent) => {
+			if (event.data instanceof ArrayBuffer) {
+				this.terminal?.write(new Uint8Array(event.data));
+			}
+		};
+
+		this.ws.onclose = () => {
+			this.terminal?.write("\r\n\x1b[90m[session ended]\x1b[0m\r\n");
+		};
+
+		this.ws.onerror = () => {
+			this.showError("Connection lost to terminal server.");
+		};
+
+		this.terminal.onData((data: string) => {
+			if (this.ws?.readyState === WebSocket.OPEN) {
+				this.ws.send(new TextEncoder().encode(data));
+			}
+		});
+
+		this.resizeObserver = new ResizeObserver(() => {
+			this.fitAddon?.fit();
+			this.sendResize();
+		});
+		this.resizeObserver.observe(this.contentEl);
+	}
+
+	private sendResize() {
+		if (this.ws?.readyState === WebSocket.OPEN && this.terminal) {
+			const msg = JSON.stringify({
+				type: "resize",
+				rows: this.terminal.rows,
+				cols: this.terminal.cols,
+			});
+			this.ws.send(msg);
+		}
+	}
+
+	private async readServerFile(): Promise<{ port: number; pid: number } | null> {
+		const adapter = this.app.vault.adapter;
+		if (!(await adapter.exists(TERMINAL_SERVER_PATH))) return null;
+		try {
+			const raw = await adapter.read(TERMINAL_SERVER_PATH);
+			return JSON.parse(raw);
+		} catch {
+			return null;
+		}
+	}
+
+	private showError(msg: string) {
+		this.contentEl.empty();
+		this.contentEl.addClass("tb-terminal-container");
+		this.contentEl.createEl("p", { text: msg, cls: "tb-terminal-error" });
+	}
+
+	async onClose() {
+		this.resizeObserver?.disconnect();
+		this.ws?.close();
+		this.terminal?.dispose();
+	}
 }
 
 // ── Text Input Modal ───────────────────────────────────────────────────

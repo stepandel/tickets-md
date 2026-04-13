@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -18,6 +19,7 @@ import (
 	"tickets-md/internal/agent"
 	"tickets-md/internal/config"
 	"tickets-md/internal/stage"
+	"tickets-md/internal/terminal"
 	"tickets-md/internal/ticket"
 	"tickets-md/internal/worktree"
 )
@@ -63,6 +65,20 @@ func runWatch(s *ticket.Store) error {
 	defer w.Close()
 
 	runner := agent.NewPTYRunner()
+
+	// Start the terminal WebSocket server for live PTY access.
+	termSrv := terminal.New(runner)
+	port, termErr := termSrv.Start()
+	if termErr != nil {
+		log.Printf("terminal server: %v (live terminal access disabled)", termErr)
+	} else {
+		log.Printf("terminal server listening on 127.0.0.1:%d", port)
+		writeTerminalServerFile(s.Root, port)
+		defer func() {
+			termSrv.Shutdown(context.Background())
+			removeTerminalServerFile(s.Root)
+		}()
+	}
 
 	// Start the agent status monitor.
 	mon := agent.NewMonitor(s.Root, runner.Alive, runner.IdleSeconds)
@@ -482,6 +498,21 @@ func lookupPlanFile(as agent.AgentStatus, root string) string {
 		return ""
 	}
 	return planFile
+}
+
+// --- terminal server discovery ---
+
+func terminalServerFilePath(root string) string {
+	return filepath.Join(root, config.ConfigDir, ".terminal-server")
+}
+
+func writeTerminalServerFile(root string, port int) {
+	data, _ := json.Marshal(map[string]int{"pid": os.Getpid(), "port": port})
+	os.WriteFile(terminalServerFilePath(root), data, 0o644)
+}
+
+func removeTerminalServerFile(root string) {
+	os.Remove(terminalServerFilePath(root))
 }
 
 // --- shared ---
