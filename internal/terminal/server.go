@@ -85,7 +85,7 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.CloseNow()
 
-	ch, unsub, err := s.runner.Subscribe(sessionName)
+	replay, ch, unsub, err := s.runner.Subscribe(sessionName)
 	if err != nil {
 		conn.Close(websocket.StatusInternalError, err.Error())
 		return
@@ -94,6 +94,13 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
+
+	// Send replay buffer so the client can reconstruct terminal state.
+	if len(replay) > 0 {
+		if err := conn.Write(ctx, websocket.MessageBinary, replay); err != nil {
+			return
+		}
+	}
 
 	// PTY output → WebSocket (binary frames).
 	go func() {

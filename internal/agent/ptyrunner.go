@@ -12,6 +12,10 @@ import (
 	"github.com/creack/pty"
 )
 
+// maxReplayBytes is the amount of recent PTY output kept in memory
+// so that new subscribers can reconstruct the terminal state.
+const maxReplayBytes = 64 * 1024
+
 // ptySession represents a single running agent process with its PTY.
 type ptySession struct {
 	name       string
@@ -21,9 +25,10 @@ type ptySession struct {
 	lastOutput atomic.Int64 // unix epoch of last output
 
 	// Fan-out for PTY output to multiple consumers.
-	subMu  sync.Mutex
-	subSeq int
-	subs   map[int]chan []byte
+	subMu     sync.Mutex
+	subSeq    int
+	subs      map[int]chan []byte
+	replayBuf []byte // recent output for replay to new subscribers
 
 	exitCode *int
 	exitErr  error
@@ -147,16 +152,17 @@ func (r *PTYRunner) Wait(name string) (*int, error) {
 	return sess.exitCode, sess.exitErr
 }
 
-// Subscribe returns a channel that receives copies of all PTY output
-// for the named session, plus an unsubscribe function. The channel is
-// closed when the session ends. Returns an error if the session
-// doesn't exist.
-func (r *PTYRunner) Subscribe(name string) (<-chan []byte, func(), error) {
+// Subscribe returns a snapshot of recent output (for terminal state
+// reconstruction), a channel that receives all future PTY output, and
+// an unsubscribe function. The snapshot and channel subscription are
+// taken atomically so no data is lost between them. The channel is
+// closed when the session ends.
+func (r *PTYRunner) Subscribe(name string) ([]byte, <-chan []byte, func(), error) {
 	r.mu.RLock()
 	sess, ok := r.sessions[name]
 	r.mu.RUnlock()
 	if !ok {
-		return nil, nil, fmt.Errorf("session %s not found", name)
+		return nil, nil, nil, fmt.Errorf("session %s not found", name)
 	}
 
 	ch := make(chan []byte, 256)
@@ -165,6 +171,9 @@ func (r *PTYRunner) Subscribe(name string) (<-chan []byte, func(), error) {
 	sess.subSeq++
 	id := sess.subSeq
 	sess.subs[id] = ch
+	// Snapshot replay buffer while holding lock so no data is missed.
+	replay := make([]byte, len(sess.replayBuf))
+	copy(replay, sess.replayBuf)
 	sess.subMu.Unlock()
 
 	unsub := func() {
@@ -172,7 +181,7 @@ func (r *PTYRunner) Subscribe(name string) (<-chan []byte, func(), error) {
 		delete(sess.subs, id)
 		sess.subMu.Unlock()
 	}
-	return ch, unsub, nil
+	return replay, ch, unsub, nil
 }
 
 // WriteInput sends data to the named session's PTY stdin.
@@ -243,12 +252,19 @@ func (r *PTYRunner) Shutdown() {
 	}
 }
 
-// fanOut sends a copy of data to all subscribers. Non-blocking: if a
-// subscriber's channel is full, it is dropped (channel closed and
-// removed).
+// fanOut sends a copy of data to all subscribers and appends to the
+// replay buffer. Non-blocking: if a subscriber's channel is full, it
+// is dropped (channel closed and removed).
 func (s *ptySession) fanOut(data []byte) {
 	s.subMu.Lock()
 	defer s.subMu.Unlock()
+
+	// Keep recent output for replay to late-joining subscribers.
+	s.replayBuf = append(s.replayBuf, data...)
+	if len(s.replayBuf) > maxReplayBytes {
+		s.replayBuf = s.replayBuf[len(s.replayBuf)-maxReplayBytes:]
+	}
+
 	for id, ch := range s.subs {
 		select {
 		case ch <- data:
