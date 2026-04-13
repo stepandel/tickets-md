@@ -38,7 +38,20 @@ func newEditCmd() *cobra.Command {
 			c.Stdin = os.Stdin
 			c.Stdout = os.Stdout
 			c.Stderr = os.Stderr
-			return c.Run()
+			if err := c.Run(); err != nil {
+				return err
+			}
+
+			// Auto-fix broken links after manual edits.
+			issues, derr := s.DoctorTicket(t.ID, false)
+			if derr != nil {
+				fmt.Fprintf(os.Stderr, "warning: doctor: %v\n", derr)
+				return nil
+			}
+			for _, issue := range issues {
+				fmt.Println(issue.String())
+			}
+			return nil
 		},
 	}
 	return cmd
