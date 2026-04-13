@@ -1,5 +1,6 @@
 import {
 	Plugin,
+	Platform,
 	ItemView,
 	ViewStateResult,
 	WorkspaceLeaf,
@@ -102,6 +103,13 @@ class BoardView extends ItemView {
 	private tickets: Ticket[] = [];
 	private agentStages: Set<string> = new Set();
 	private previewLeaf: WorkspaceLeaf | null = null;
+
+	// Touch drag state
+	private dragTicketPath: string | null = null;
+	private dragGhost: HTMLElement | null = null;
+	private dragStartTouch: { x: number; y: number } | null = null;
+	private dragActive = false;
+	private longPressTriggered = false;
 
 	getViewType(): string {
 		return VIEW_TYPE;
@@ -232,7 +240,7 @@ class BoardView extends ItemView {
 		const header = container.createDiv({ cls: "tb-header" });
 		const boardName = this.config?.name || "Tickets Board";
 		const titleEl = header.createEl("h2", { text: boardName, cls: "tb-board-title" });
-		titleEl.addEventListener("click", () => {
+		const openRenameModal = () => {
 			new TextInputModal(
 				this.app,
 				"Board Name",
@@ -245,7 +253,12 @@ class BoardView extends ItemView {
 					}
 				},
 			).open();
-		});
+		};
+		if (Platform.isMobile) {
+			this.onLongPress(titleEl, () => openRenameModal());
+		} else {
+			titleEl.addEventListener("click", () => openRenameModal());
+		}
 		const headerActions = header.createDiv({ cls: "tb-header-actions" });
 
 		const refreshBtn = headerActions.createEl("button", {
@@ -303,28 +316,17 @@ class BoardView extends ItemView {
 
 		colHeader.addEventListener("contextmenu", (e) => {
 			e.preventDefault();
-			const menu = new Menu();
-			menu.addItem((item) =>
-				item.setTitle("Rename stage").setIcon("pencil").onClick(() => {
-					new TextInputModal(
-						this.app,
-						"Rename Stage",
-						"New name",
-						stage,
-						(name) => this.renameStage(stage, name),
-					).open();
-				}),
-			);
-			menu.addItem((item) =>
-				item.setTitle("Edit stage config").setIcon("settings").onClick(() => {
-					this.openStageConfig(stage);
-				}),
-			);
-			menu.showAtMouseEvent(e);
+			this.buildColumnMenu(stage).showAtMouseEvent(e);
 		});
+		if (Platform.isMobile) {
+			this.onLongPress(colHeader, (x, y) => {
+				this.buildColumnMenu(stage).showAtPosition({ x, y });
+			});
+		}
 
 		// Drop zone
 		const cardList = column.createDiv({ cls: "tb-card-list" });
+		cardList.dataset.stage = stage;
 
 		cardList.addEventListener("dragover", (e) => {
 			e.preventDefault();
@@ -391,28 +393,92 @@ class BoardView extends ItemView {
 		// Right-click context menu
 		card.addEventListener("contextmenu", (e) => {
 			e.preventDefault();
-			const menu = new Menu();
-			if (ticket.agent_session && ticket.agent_status
-				&& !["done", "failed", "errored"].includes(ticket.agent_status)) {
-				menu.addItem((item) =>
-					item.setTitle("Open terminal").setIcon("terminal-square").onClick(() => {
-						this.openTerminal(ticket);
-					}),
-				);
-			}
-			menu.addItem((item) =>
-				item.setTitle("Delete ticket").setIcon("trash").onClick(async () => {
-					await this.app.vault.trash(ticket.file, true);
-				}),
-			);
-			menu.showAtMouseEvent(e);
+			this.buildCardMenu(ticket).showAtMouseEvent(e);
 		});
 
-		// Click to open the ticket file in a split to the right
+		// Mobile: long-press for context menu
+		if (Platform.isMobile) {
+			this.onLongPress(card, (x, y) => {
+				this.buildCardMenu(ticket).showAtPosition({ x, y });
+			});
+		}
+
+		// Mobile: touch drag
+		if (Platform.isMobile) {
+			card.addEventListener("touchstart", (e) => {
+				if (e.touches.length !== 1) {
+					this.cleanupDrag();
+					return;
+				}
+				this.dragTicketPath = ticket.file.path;
+				this.dragStartTouch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+				this.dragActive = false;
+			});
+
+			card.addEventListener("touchmove", (e) => {
+				if (!this.dragStartTouch || !this.dragTicketPath) return;
+				if (e.touches.length > 1) { this.cleanupDrag(); return; }
+
+				const tx = e.touches[0].clientX;
+				const ty = e.touches[0].clientY;
+				const dx = tx - this.dragStartTouch.x;
+				const dy = ty - this.dragStartTouch.y;
+
+				if (!this.dragActive) {
+					if (Math.sqrt(dx * dx + dy * dy) > 10) {
+						this.dragActive = true;
+						card.addClass("tb-dragging");
+						this.dragGhost = this.createDragGhost(card, tx, ty);
+					}
+					return;
+				}
+
+				e.preventDefault();
+				if (this.dragGhost) {
+					this.dragGhost.style.left = `${tx - 30}px`;
+					this.dragGhost.style.top = `${ty - 20}px`;
+				}
+
+				// Hit-test card lists for drag-over highlight
+				this.contentEl.querySelectorAll(".tb-card-list").forEach((el) => el.removeClass("tb-drag-over"));
+				const target = this.findCardListAtPoint(tx, ty);
+				target?.addClass("tb-drag-over");
+			});
+
+			card.addEventListener("touchend", async (e) => {
+				if (!this.dragActive) {
+					this.cleanupDrag();
+					return;
+				}
+
+				const touch = e.changedTouches[0];
+				const target = this.findCardListAtPoint(touch.clientX, touch.clientY);
+				const targetStage = target?.dataset.stage;
+
+				if (targetStage && targetStage !== ticket.stage) {
+					const file = this.app.vault.getAbstractFileByPath(this.dragTicketPath!);
+					if (file instanceof TFile) {
+						const newPath = `${targetStage}/${file.name}`;
+						await this.app.vault.rename(file, newPath);
+					}
+				}
+
+				this.cleanupDrag();
+			});
+
+			card.addEventListener("touchcancel", () => this.cleanupDrag());
+		}
+
+		// Click to open the ticket file in a split (desktop) or tab (mobile)
 		card.addEventListener("click", async () => {
+			if (this.longPressTriggered) {
+				this.longPressTriggered = false;
+				return;
+			}
+			if (this.dragActive) return;
 			// Reuse existing preview leaf if it's still around
 			if (!this.previewLeaf || !this.previewLeaf.view?.containerEl?.isConnected) {
-				this.previewLeaf = this.app.workspace.getLeaf("split");
+				this.previewLeaf = this.app.workspace.getLeaf(Platform.isMobile ? "tab" : "split");
 			}
 			await this.previewLeaf.openFile(ticket.file);
 		});
@@ -479,10 +545,136 @@ class BoardView extends ItemView {
 		}
 	}
 
+	// ── Touch Drag Helpers ────────────────────────────────────────────
+
+	private createDragGhost(card: HTMLElement, x: number, y: number): HTMLElement {
+		const ghost = card.cloneNode(true) as HTMLElement;
+		ghost.addClass("tb-drag-ghost");
+		ghost.style.position = "fixed";
+		ghost.style.left = `${x - 30}px`;
+		ghost.style.top = `${y - 20}px`;
+		ghost.style.width = `${card.offsetWidth}px`;
+		document.body.appendChild(ghost);
+		return ghost;
+	}
+
+	private cleanupDrag() {
+		this.dragGhost?.remove();
+		this.dragGhost = null;
+		this.dragTicketPath = null;
+		this.dragStartTouch = null;
+		this.dragActive = false;
+		this.contentEl.querySelectorAll(".tb-drag-over").forEach((el) => el.removeClass("tb-drag-over"));
+		this.contentEl.querySelectorAll(".tb-dragging").forEach((el) => el.removeClass("tb-dragging"));
+	}
+
+	private findCardListAtPoint(x: number, y: number): HTMLElement | null {
+		const lists = this.contentEl.querySelectorAll(".tb-card-list");
+		for (const list of Array.from(lists)) {
+			const rect = list.getBoundingClientRect();
+			if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+				return list as HTMLElement;
+			}
+		}
+		return null;
+	}
+
+	// ── Long Press Helper ─────────────────────────────────────────────
+
+	private onLongPress(el: HTMLElement, callback: (x: number, y: number) => void, delay = 500) {
+		let timeout: ReturnType<typeof setTimeout> | null = null;
+		let startX = 0;
+		let startY = 0;
+
+		el.addEventListener("touchstart", (e) => {
+			if (e.touches.length !== 1) return;
+			startX = e.touches[0].clientX;
+			startY = e.touches[0].clientY;
+			timeout = setTimeout(() => {
+				timeout = null;
+				this.longPressTriggered = true;
+				navigator.vibrate?.(50);
+				callback(startX, startY);
+			}, delay);
+		});
+
+		el.addEventListener("touchmove", (e) => {
+			if (!timeout) return;
+			const dx = e.touches[0].clientX - startX;
+			const dy = e.touches[0].clientY - startY;
+			if (Math.sqrt(dx * dx + dy * dy) > 10) {
+				clearTimeout(timeout);
+				timeout = null;
+			}
+		});
+
+		el.addEventListener("touchend", () => {
+			if (timeout) { clearTimeout(timeout); timeout = null; }
+			// Reset longPressTriggered after the click event fires (queued via setTimeout)
+			if (this.longPressTriggered) {
+				setTimeout(() => { this.longPressTriggered = false; }, 0);
+			}
+		});
+		el.addEventListener("touchcancel", () => {
+			if (timeout) { clearTimeout(timeout); timeout = null; }
+			this.longPressTriggered = false;
+		});
+	}
+
+	// ── Menu Builders ─────────────────────────────────────────────────
+
+	private buildCardMenu(ticket: Ticket): Menu {
+		const menu = new Menu();
+		if (Platform.isMobile) {
+			// On mobile, show log viewer for any agent that has a session (logs are static files)
+			if (ticket.agent_session) {
+				menu.addItem((item) =>
+					item.setTitle("View agent log").setIcon("file-text").onClick(() => {
+						this.openTerminal(ticket);
+					}),
+				);
+			}
+		} else if (ticket.agent_session && ticket.agent_status
+			&& !["done", "failed", "errored"].includes(ticket.agent_status)) {
+			menu.addItem((item) =>
+				item.setTitle("Open terminal").setIcon("terminal-square").onClick(() => {
+					this.openTerminal(ticket);
+				}),
+			);
+		}
+		menu.addItem((item) =>
+			item.setTitle("Delete ticket").setIcon("trash").onClick(async () => {
+				await this.app.vault.trash(ticket.file, true);
+			}),
+		);
+		return menu;
+	}
+
+	private buildColumnMenu(stage: string): Menu {
+		const menu = new Menu();
+		menu.addItem((item) =>
+			item.setTitle("Rename stage").setIcon("pencil").onClick(() => {
+				new TextInputModal(
+					this.app,
+					"Rename Stage",
+					"New name",
+					stage,
+					(name) => this.renameStage(stage, name),
+				).open();
+			}),
+		);
+		menu.addItem((item) =>
+			item.setTitle("Edit stage config").setIcon("settings").onClick(() => {
+				this.openStageConfig(stage);
+			}),
+		);
+		return menu;
+	}
+
 	// ── Terminal ───────────────────────────────────────────────────────
 
 	private async openTerminal(ticket: Ticket) {
-		const leaf = this.app.workspace.getLeaf("split");
+		const leaf = this.app.workspace.getLeaf(Platform.isMobile ? "tab" : "split");
 		await leaf.setViewState({
 			type: TERMINAL_VIEW_TYPE,
 			state: {
@@ -621,7 +813,7 @@ class BoardView extends ItemView {
 		const file = await this.app.vault.create(`${stage}/${id}.md`, content);
 
 		if (!this.previewLeaf || !this.previewLeaf.view?.containerEl?.isConnected) {
-			this.previewLeaf = this.app.workspace.getLeaf("split");
+			this.previewLeaf = this.app.workspace.getLeaf(Platform.isMobile ? "tab" : "split");
 		}
 		await this.previewLeaf.openFile(file);
 	}
@@ -682,6 +874,11 @@ class TerminalView extends ItemView {
 	}
 
 	private async connect() {
+		if (Platform.isMobile) {
+			await this.showAgentLog();
+			return;
+		}
+
 		const serverInfo = await this.readServerFile();
 		if (!serverInfo) {
 			this.showError("No terminal server running. Is `tickets watch` active?");
@@ -746,6 +943,126 @@ class TerminalView extends ItemView {
 				cols: this.terminal.cols,
 			});
 			this.ws.send(msg);
+		}
+	}
+
+	private async showAgentLog() {
+		const adapter = this.app.vault.adapter;
+		const agentDir = `.tickets/.agents/${this.ticketId}`;
+
+		// Check if agent directory exists
+		if (!(await adapter.exists(agentDir))) {
+			this.showError("No agent runs found for this ticket.");
+			return;
+		}
+
+		// List files and find the latest run YAML
+		const listing = await adapter.list(agentDir);
+		const yamlFiles = listing.files
+			.filter((f: string) => f.endsWith(".yml"))
+			.sort();
+
+		if (yamlFiles.length === 0) {
+			this.showError("No agent runs found for this ticket.");
+			return;
+		}
+
+		const latestYaml = yamlFiles[yamlFiles.length - 1];
+		let runData: Record<string, string> = {};
+		try {
+			const raw = await adapter.read(latestYaml);
+			runData = parseYaml(raw) ?? {};
+		} catch {
+			this.showError("Could not parse agent run data.");
+			return;
+		}
+
+		const status = runData.status ?? "unknown";
+		const runId = runData.run_id ?? latestYaml.split("/").pop()?.replace(".yml", "") ?? "";
+		const logFile = runData.log_file;
+
+		if (!logFile || !(await adapter.exists(logFile))) {
+			this.showLogViewer(status, runId, null);
+			return;
+		}
+
+		let logContent: string;
+		try {
+			logContent = await adapter.read(logFile);
+		} catch {
+			this.showLogViewer(status, runId, null);
+			return;
+		}
+
+		// Strip ANSI escape sequences
+		logContent = logContent.replace(/\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x07]*\x07|\x1b[^[\]].?/g, "");
+
+		this.showLogViewer(status, runId, logContent);
+	}
+
+	private showLogViewer(status: string, runId: string, logContent: string | null) {
+		this.contentEl.empty();
+		this.contentEl.addClass("tb-terminal-container");
+
+		const header = this.contentEl.createDiv({ cls: "tb-log-header" });
+
+		const badge = AGENT_BADGES[status];
+		if (badge) {
+			header.createEl("span", {
+				text: `${badge.icon} ${status}`,
+				cls: `tb-agent-badge ${badge.cls} tb-log-status`,
+			});
+		} else {
+			header.createEl("span", { text: status, cls: "tb-log-status" });
+		}
+
+		header.createEl("span", { text: runId, cls: "tb-log-run-id" });
+		header.createEl("span", {
+			text: "Read-only \u2014 live terminal not available on mobile",
+			cls: "tb-log-notice",
+		});
+
+		if (logContent === null) {
+			this.contentEl.createEl("p", {
+				text: "Log file not available.",
+				cls: "tb-terminal-error",
+			});
+			return;
+		}
+
+		if (logContent.trim().length === 0) {
+			this.contentEl.createEl("p", {
+				text: "Agent session started \u2014 no output yet.",
+				cls: "tb-terminal-error",
+			});
+			return;
+		}
+
+		const lines = logContent.split("\n");
+		const MAX_INITIAL = 500;
+		const viewer = this.contentEl.createDiv({ cls: "tb-log-viewer" });
+
+		if (lines.length > MAX_INITIAL) {
+			const showMoreBtn = viewer.createEl("button", {
+				text: `Show earlier output (${lines.length - MAX_INITIAL} lines)`,
+				cls: "tb-show-more-btn",
+			});
+			const pre = viewer.createEl("pre");
+			pre.textContent = lines.slice(-MAX_INITIAL).join("\n");
+
+			let shown = MAX_INITIAL;
+			showMoreBtn.addEventListener("click", () => {
+				shown = Math.min(shown + 500, lines.length);
+				pre.textContent = lines.slice(-shown).join("\n");
+				if (shown >= lines.length) {
+					showMoreBtn.remove();
+				} else {
+					showMoreBtn.textContent = `Show earlier output (${lines.length - shown} lines)`;
+				}
+			});
+		} else {
+			const pre = viewer.createEl("pre");
+			pre.textContent = logContent;
 		}
 	}
 
