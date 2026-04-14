@@ -13,8 +13,9 @@ func newAgentsRunCmd() *cobra.Command {
 		Use:   "run <ticket-id>",
 		Short: "Start an interactive agent session on a ticket",
 		Long: `Launch the default agent in the current terminal for the
-given ticket. The ticket's full markdown content (including
-frontmatter) is passed as the final argument to the agent command.
+given ticket. The ticket's full markdown content is passed as a
+context-loading prompt; the agent is told to wait for the user's
+first message before acting.
 
 Configure the agent in .tickets/config.yml:
 
@@ -43,13 +44,16 @@ Configure the agent in .tickets/config.yml:
 				return fmt.Errorf("reading ticket file: %w", err)
 			}
 
-			// Terminate option parsing before the prompt: the ticket
-			// content starts with `---` frontmatter, which the agent CLI
-			// (e.g. claude via commander.js) would otherwise treat as an
-			// unknown option and abort.
+			prompt := fmt.Sprintf(`Here is the ticket the user wants to work on. Read it for context, but do not start implementing anything yet — wait for the user's first message describing what they actually want you to do with this ticket.
+
+%s`, string(content))
+
+			// `--` terminates option parsing so the prompt (which may
+			// contain leading dashes from markdown or frontmatter) is
+			// always treated as a positional arg.
 			argv := make([]string, 0, len(da.Args)+2)
 			argv = append(argv, da.Args...)
-			argv = append(argv, "--", string(content))
+			argv = append(argv, "--", prompt)
 
 			c := exec.Command(da.Command, argv...)
 			c.Stdin = os.Stdin
