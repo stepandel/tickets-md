@@ -4,6 +4,13 @@ A Linear-style ticket tracker where every ticket is a markdown file and
 every stage is a folder. No database, no daemon — just files you can
 read, grep, edit, and commit alongside your code.
 
+> **Scoped to a single repository.** `tickets-md` is designed to live
+> inside one git repo, right next to the code it describes. The CLI is
+> installed globally, but `tickets init` is per-repo: it creates a
+> `.tickets/` directory at the repo root (the way `.git/` does), and
+> any agents you wire up run only against that repo's checkouts. Use a
+> separate `tickets init` for each project.
+
 ```
 .tickets/
 ├── config.yml
