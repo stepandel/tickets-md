@@ -794,16 +794,7 @@ class BoardView extends ItemView {
 
 		// Group 5 — Agent / danger
 		menu.addSeparator();
-		if (Platform.isMobile) {
-			// On mobile, show log viewer for any agent that has a session (logs are static files)
-			if (ticket.agent_session) {
-				menu.addItem((item) =>
-					item.setTitle("View agent log").setIcon("file-text").onClick(() => {
-						this.openTerminal(ticket);
-					}),
-				);
-			}
-		} else if (ticket.agent_session && ticket.agent_status
+		if (!Platform.isMobile && ticket.agent_session && ticket.agent_status
 			&& !["done", "failed", "errored"].includes(ticket.agent_status)) {
 			menu.addItem((item) =>
 				item.setTitle("Open terminal").setIcon("terminal-square").onClick(() => {
@@ -1141,11 +1132,6 @@ class TerminalView extends ItemView {
 	}
 
 	private async connect() {
-		if (Platform.isMobile) {
-			await this.showAgentLog();
-			return;
-		}
-
 		const serverInfo = await this.readServerFile();
 		if (!serverInfo) {
 			this.showError("No terminal server running. Is `tickets watch` active?");
@@ -1210,126 +1196,6 @@ class TerminalView extends ItemView {
 				cols: this.terminal.cols,
 			});
 			this.ws.send(msg);
-		}
-	}
-
-	private async showAgentLog() {
-		const adapter = this.app.vault.adapter;
-		const agentDir = `.tickets/.agents/${this.ticketId}`;
-
-		// Check if agent directory exists
-		if (!(await adapter.exists(agentDir))) {
-			this.showError("No agent runs found for this ticket.");
-			return;
-		}
-
-		// List files and find the latest run YAML
-		const listing = await adapter.list(agentDir);
-		const yamlFiles = listing.files
-			.filter((f: string) => f.endsWith(".yml"))
-			.sort();
-
-		if (yamlFiles.length === 0) {
-			this.showError("No agent runs found for this ticket.");
-			return;
-		}
-
-		const latestYaml = yamlFiles[yamlFiles.length - 1];
-		let runData: Record<string, string> = {};
-		try {
-			const raw = await adapter.read(latestYaml);
-			runData = parseYaml(raw) ?? {};
-		} catch {
-			this.showError("Could not parse agent run data.");
-			return;
-		}
-
-		const status = runData.status ?? "unknown";
-		const runId = runData.run_id ?? latestYaml.split("/").pop()?.replace(".yml", "") ?? "";
-		const logFile = runData.log_file;
-
-		if (!logFile || !(await adapter.exists(logFile))) {
-			this.showLogViewer(status, runId, null);
-			return;
-		}
-
-		let logContent: string;
-		try {
-			logContent = await adapter.read(logFile);
-		} catch {
-			this.showLogViewer(status, runId, null);
-			return;
-		}
-
-		// Strip ANSI escape sequences
-		logContent = logContent.replace(/\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x07]*\x07|\x1b[^[\]].?/g, "");
-
-		this.showLogViewer(status, runId, logContent);
-	}
-
-	private showLogViewer(status: string, runId: string, logContent: string | null) {
-		this.contentEl.empty();
-		this.contentEl.addClass("tb-terminal-container");
-
-		const header = this.contentEl.createDiv({ cls: "tb-log-header" });
-
-		const badge = AGENT_BADGES[status];
-		if (badge) {
-			header.createEl("span", {
-				text: `${badge.icon} ${status}`,
-				cls: `tb-agent-badge ${badge.cls} tb-log-status`,
-			});
-		} else {
-			header.createEl("span", { text: status, cls: "tb-log-status" });
-		}
-
-		header.createEl("span", { text: runId, cls: "tb-log-run-id" });
-		header.createEl("span", {
-			text: "Read-only \u2014 live terminal not available on mobile",
-			cls: "tb-log-notice",
-		});
-
-		if (logContent === null) {
-			this.contentEl.createEl("p", {
-				text: "Log file not available.",
-				cls: "tb-terminal-error",
-			});
-			return;
-		}
-
-		if (logContent.trim().length === 0) {
-			this.contentEl.createEl("p", {
-				text: "Agent session started \u2014 no output yet.",
-				cls: "tb-terminal-error",
-			});
-			return;
-		}
-
-		const lines = logContent.split("\n");
-		const MAX_INITIAL = 500;
-		const viewer = this.contentEl.createDiv({ cls: "tb-log-viewer" });
-
-		if (lines.length > MAX_INITIAL) {
-			const showMoreBtn = viewer.createEl("button", {
-				text: `Show earlier output (${lines.length - MAX_INITIAL} lines)`,
-				cls: "tb-show-more-btn",
-			});
-			const pre = viewer.createEl("pre");
-			pre.textContent = lines.slice(-MAX_INITIAL).join("\n");
-
-			let shown = MAX_INITIAL;
-			showMoreBtn.addEventListener("click", () => {
-				shown = Math.min(shown + 500, lines.length);
-				pre.textContent = lines.slice(-shown).join("\n");
-				if (shown >= lines.length) {
-					showMoreBtn.remove();
-				} else {
-					showMoreBtn.textContent = `Show earlier output (${lines.length - shown} lines)`;
-				}
-			});
-		} else {
-			const pre = viewer.createEl("pre");
-			pre.textContent = logContent;
 		}
 	}
 

@@ -77,11 +77,12 @@ tickets -C ~/work/acme list
 | `tickets rm <id> [--force]`             | Delete a ticket                                    |
 | `tickets link <a> <b> [--blocks]`       | Link two tickets (related, or directional blocks)  |
 | `tickets unlink <a> <b> [--blocks]`     | Remove a link                                      |
-| `tickets doctor [--dry-run]`            | Find and fix broken ticket links                   |
+| `tickets doctor [--dry-run]`            | Scan for drift across tickets, runs, worktrees     |
 | `tickets board`                         | Interactive kanban board TUI (alias: `tui`)        |
 | `tickets watch`                         | Watch for ticket movements and spawn agents        |
 | `tickets agents [-a] [--history]`       | List agent runs                                    |
 | `tickets agents log <id> [run]`         | Print the captured output for a run                |
+| `tickets agents monitor <id>`           | Follow one agent's status and output               |
 | `tickets agents plan <id> [run]`        | Open the plan file written by a Claude Code run    |
 | `tickets agents followup <id> [--run R] [--message M]` | Spawn a followup session with prior run's context |
 | `tickets agents run <id>`               | Start an interactive agent session for a ticket    |
@@ -282,6 +283,37 @@ default_agent:
   args: []
 ```
 
+## Doctor
+
+`tickets doctor` is the offline sweep that catches drift the watcher
+might miss — link integrity, stale agent runs, orphan worktrees, and
+ticket frontmatter that disagrees with the authoritative run YAMLs.
+
+By default it fixes every issue it finds. Pass `--dry-run` to preview,
+or `--stale-after=<duration>` to change the age at which a
+non-terminal run is considered abandoned (default `24h`).
+
+```sh
+tickets doctor              # fix everything
+tickets doctor --dry-run    # preview
+tickets doctor --stale-after=6h
+```
+
+The checks are:
+
+- **Link integrity** — dangling, one-sided, or self-referential links
+  between tickets.
+- **Stale runs** — non-terminal run YAMLs whose `updated_at` is older
+  than `--stale-after`; flipped to `failed`.
+- **Orphan agent dirs** — `.tickets/.agents/<id>/` directories whose
+  ticket no longer exists; removed.
+- **Orphan `.tmp` files** — leftover `<run>.yml.tmp` from an
+  interrupted atomic rename; removed.
+- **Orphan worktrees** — `.worktrees/<id>/` directories whose ticket
+  no longer exists; removed.
+- **Frontmatter drift** — ticket `agent_status` / `agent_run` /
+  `agent_session` that disagrees with the latest run YAML; rewritten.
+
 ## Editor
 
 `tickets edit` resolves which editor to launch in this order:
@@ -420,6 +452,14 @@ always lives at the repo root.
 ID numbers are assigned by scanning every stage directory for the
 highest existing `<PREFIX>-NNN`, so deletions and manual edits never
 desync a counter.
+
+## For agents working on this repo
+
+See [`AGENTS.md`](AGENTS.md) at the repo root for the layer rules,
+invariants, and canonical commands that AI coding agents (Claude
+Code, Codex, Aider, …) must follow. `make check` runs the full
+verification suite — build, vet, and tests (including the
+`internal/archtest` layer enforcement).
 
 ## Project layout
 
