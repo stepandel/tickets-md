@@ -28,6 +28,11 @@ automatically spawns the agent whenever a ticket arrives.
 
 ## Install
 
+The `tickets` binary is installed **once, globally** on your machine.
+Everything else — ticket store, stage agents, per-ticket worktrees —
+is scoped to the individual repository you run `tickets init` inside.
+See [Set up in a project](#set-up-in-a-project) below.
+
 ### Homebrew (macOS or Linux)
 
 ```sh
@@ -38,7 +43,8 @@ brew install stepandel/tap/tickets
 
 Download the archive for your OS/arch from the
 [latest release](https://github.com/stepandel/tickets-md/releases/latest),
-unpack it, and drop `tickets` on your `$PATH`.
+unpack it, and drop `tickets` somewhere on your `$PATH`
+(`/usr/local/bin` or `~/.local/bin` are common choices).
 
 ### From source
 
@@ -55,10 +61,12 @@ go install github.com/stepandel/tickets-md/cmd/tickets@latest
 echo 'export PATH="$HOME/go/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
 ```
 
-Building locally from a checkout (rebuilds the embedded Obsidian
-plugin bundle first):
+Building from a local checkout (rebuilds the embedded Obsidian plugin
+bundle first):
 
 ```sh
+git clone https://github.com/stepandel/tickets-md.git
+cd tickets-md
 make install
 ```
 
@@ -90,24 +98,55 @@ On fish:
 tickets completion fish > ~/.config/fish/completions/tickets.fish
 ```
 
+## Set up in a project
+
+`tickets init` is meant to run inside the **git repository you're
+actually working on**. The whole store lives under `.tickets/` at the
+repo root — same way `.git/` does — so ticket files get committed
+alongside the code they describe, and agents you wire up operate
+only on checkouts of that repo.
+
+```sh
+cd ~/code/my-app              # a git repo with code you work on
+tickets init                  # creates ./.tickets/ + stage folders
+git add .tickets && git commit -m "chore: add tickets-md store"
+```
+
+Running `tickets init` outside a git repo works — `.tickets/` is just
+a directory — but you lose two useful properties:
+
+- **Scoping of agents.** When a stage has `worktree: true`, each
+  agent run is spawned inside a fresh `git worktree` under
+  `.worktrees/<ticket-id>` on a dedicated `tickets/<ticket-id>`
+  branch, so concurrent agents can't trample each other and
+  experimental changes stay isolated from `main` until you merge
+  them. Without a git repo, agents run directly against the
+  directory with no isolation.
+- **Audit trail.** Ticket moves are file renames, so `git log --stat
+  .tickets/` shows who moved what when and from which stage to which.
+
+A second, unrelated project gets its own `.tickets/` store — they
+don't share state, and an agent configured under one project's
+stage directory will never fire on a ticket in another project.
+
 ## Quick start
 
 ```sh
-mkdir my-project && cd my-project
+cd ~/code/my-app              # inside a git repo
 tickets init
 tickets new "Fix login bug on Safari"
 tickets new "Add dark mode toggle"
 tickets list
 tickets move TIC-001 execute
 tickets show TIC-001
-tickets edit TIC-001        # opens your editor (see "Editor" below)
-tickets rm TIC-002          # prompts for confirmation
+tickets edit TIC-001          # opens your editor (see "Editor" below)
+tickets rm TIC-002            # prompts for confirmation
 ```
 
 Use `-C <path>` to operate on a store that isn't the current directory:
 
 ```sh
-tickets -C ~/work/acme list
+tickets -C ~/code/acme list
 ```
 
 ## Commands
