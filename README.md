@@ -82,7 +82,6 @@ tickets -C ~/work/acme list
 | `tickets watch`                         | Watch for ticket movements and spawn agents        |
 | `tickets agents [-a] [--history]`       | List agent runs                                    |
 | `tickets agents log <id> [run]`         | Print the captured output for a run                |
-| `tickets agents monitor <id>`           | Follow one agent's status and output               |
 | `tickets agents plan <id> [run]`        | Open the plan file written by a Claude Code run    |
 | `tickets agents followup <id> [--run R] [--message M]` | Spawn a followup session with prior run's context |
 | `tickets agents run <id>`               | Start an interactive agent session for a ticket    |
