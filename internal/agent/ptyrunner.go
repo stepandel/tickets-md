@@ -2,6 +2,7 @@ package agent
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"sync"
@@ -305,13 +306,20 @@ func (s *ptySession) closeAllSubs() {
 // It exits when the PTY returns EOF or EIO (child process exited).
 func (s *ptySession) copyOutput() {
 	buf := make([]byte, 4096)
+	var logWriteErrLogged bool
 	for {
 		n, err := s.ptmx.Read(buf)
 		if n > 0 {
 			chunk := make([]byte, n)
 			copy(chunk, buf[:n])
 			s.lastOutput.Store(time.Now().Unix())
-			s.logFile.Write(chunk)
+			if _, werr := s.logFile.Write(chunk); werr != nil && !logWriteErrLogged {
+				// Log once per session — a failing fd will keep failing
+				// and we don't want to spam the watcher log. The agent
+				// keeps running; only the persisted log is incomplete.
+				log.Printf("pty %s: log write failed: %v (log will be truncated)", s.name, werr)
+				logWriteErrLogged = true
+			}
 			s.fanOut(chunk)
 		}
 		if err != nil {
