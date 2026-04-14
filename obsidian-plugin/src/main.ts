@@ -10,7 +10,9 @@ import {
 	Modal,
 	Notice,
 	Setting,
+	FuzzySuggestModal,
 	parseYaml,
+	stringifyYaml,
 } from "obsidian";
 
 import { Terminal } from "@xterm/xterm";
@@ -193,6 +195,27 @@ class BoardView extends ItemView {
 		} catch {
 			return null;
 		}
+	}
+
+	private async updateTicketFrontmatter(
+		file: TFile,
+		mutate: (fm: Record<string, any>) => void,
+	): Promise<void> {
+		const content = await this.app.vault.read(file);
+		const match = content.match(/^---\n([\s\S]*?)\n---/);
+		if (!match) return;
+		const body = content.slice(match[0].length);
+		const fm = (parseYaml(match[1]) ?? {}) as Record<string, any>;
+		mutate(fm);
+		fm.updated_at = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+		for (const key of Object.keys(fm)) {
+			const v = fm[key];
+			if (v === undefined || v === null || v === "" || (Array.isArray(v) && v.length === 0)) {
+				delete fm[key];
+			}
+		}
+		const newContent = "---\n" + stringifyYaml(fm) + "---" + body;
+		await this.app.vault.modify(file, newContent);
 	}
 
 	private async loadAgentStages(stages: string[]): Promise<Set<string>> {
@@ -532,6 +555,13 @@ class BoardView extends ItemView {
 					attr: { "aria-label": `Blocked by ${ticket.blocked_by.join(", ")}` },
 				});
 			}
+			if (ticket.blocks && ticket.blocks.length > 0) {
+				linksEl.createEl("span", {
+					text: "blocks",
+					cls: "tb-blocks-badge",
+					attr: { "aria-label": `Blocks ${ticket.blocks.join(", ")}` },
+				});
+			}
 		}
 	}
 
@@ -615,6 +645,155 @@ class BoardView extends ItemView {
 
 	private buildCardMenu(ticket: Ticket): Menu {
 		const menu = new Menu();
+
+		// Group 1 — Quick actions
+		menu.addItem((item) =>
+			item.setTitle("Copy ticket ID").setIcon("copy").onClick(async () => {
+				await navigator.clipboard.writeText(ticket.id);
+				new Notice(`Copied ${ticket.id}`);
+			}),
+		);
+
+		// Group 2 — Metadata
+		menu.addSeparator();
+		menu.addItem((item) =>
+			item.setTitle("Set priority").setIcon("alert-triangle").onClick(() => {
+				const options = ["critical", "high", "medium", "low", "none"];
+				new FuzzyPickerModal<string>(
+					this.app,
+					options,
+					(v) => v,
+					async (choice) => {
+						await this.updateTicketFrontmatter(ticket.file, (fm) => {
+							fm.priority = choice === "none" ? undefined : choice;
+						});
+					},
+				).open();
+			}),
+		);
+
+		// Group 3 — Move
+		const otherStages = this.stages.filter((s) => s !== ticket.stage);
+		if (otherStages.length > 0) {
+			menu.addSeparator();
+			for (const target of otherStages) {
+				menu.addItem((item) =>
+					item.setTitle(`Move to ${target}`).setIcon("arrow-right").onClick(async () => {
+						await this.app.vault.rename(ticket.file, `${target}/${ticket.file.name}`);
+					}),
+				);
+			}
+		}
+
+		// Group 4 — Links
+		const alreadyRelated = new Set(ticket.related ?? []);
+		const alreadyBlockedBy = new Set(ticket.blocked_by ?? []);
+		const linkCandidates = this.tickets.filter(
+			(t) => t.id !== ticket.id && !alreadyRelated.has(t.id),
+		);
+		const blockCandidates = this.tickets.filter(
+			(t) => t.id !== ticket.id && !alreadyBlockedBy.has(t.id),
+		);
+
+		type LinkItem = { id: string; type: "related" | "blocked_by" | "blocks"; label: string };
+		const unlinkItems: LinkItem[] = [];
+		const ticketsById = new Map(this.tickets.map((t) => [t.id, t]));
+		for (const rid of ticket.related ?? []) {
+			const t = ticketsById.get(rid);
+			if (t) unlinkItems.push({ id: rid, type: "related", label: `${rid} — ${t.title} (related)` });
+		}
+		for (const rid of ticket.blocked_by ?? []) {
+			const t = ticketsById.get(rid);
+			if (t) unlinkItems.push({ id: rid, type: "blocked_by", label: `${rid} — ${t.title} (blocked by)` });
+		}
+		for (const rid of ticket.blocks ?? []) {
+			const t = ticketsById.get(rid);
+			if (t) unlinkItems.push({ id: rid, type: "blocks", label: `${rid} — ${t.title} (blocks)` });
+		}
+
+		const hasLinkSection = linkCandidates.length > 0 || blockCandidates.length > 0 || unlinkItems.length > 0;
+		if (hasLinkSection) {
+			menu.addSeparator();
+			if (linkCandidates.length > 0) {
+				menu.addItem((item) =>
+					item.setTitle("Link related").setIcon("link").onClick(() => {
+						new FuzzyPickerModal<Ticket>(
+							this.app,
+							linkCandidates,
+							(t) => `${t.id} — ${t.title}`,
+							async (target) => {
+								await this.updateTicketFrontmatter(ticket.file, (fm) => {
+									fm.related = [...(fm.related ?? []), target.id];
+								});
+								try {
+									await this.updateTicketFrontmatter(target.file, (fm) => {
+										fm.related = [...(fm.related ?? []), ticket.id];
+									});
+								} catch { /* target file may be gone */ }
+							},
+						).open();
+					}),
+				);
+			}
+			if (blockCandidates.length > 0) {
+				menu.addItem((item) =>
+					item.setTitle("Mark as blocked by").setIcon("shield-ban").onClick(() => {
+						new FuzzyPickerModal<Ticket>(
+							this.app,
+							blockCandidates,
+							(t) => `${t.id} — ${t.title}`,
+							async (target) => {
+								await this.updateTicketFrontmatter(ticket.file, (fm) => {
+									fm.blocked_by = [...(fm.blocked_by ?? []), target.id];
+								});
+								try {
+									await this.updateTicketFrontmatter(target.file, (fm) => {
+										fm.blocks = [...(fm.blocks ?? []), ticket.id];
+									});
+								} catch { /* target file may be gone */ }
+							},
+						).open();
+					}),
+				);
+			}
+			if (unlinkItems.length > 0) {
+				menu.addItem((item) =>
+					item.setTitle("Unlink").setIcon("unlink").onClick(() => {
+						new FuzzyPickerModal<LinkItem>(
+							this.app,
+							unlinkItems,
+							(it) => it.label,
+							async (choice) => {
+								const target = ticketsById.get(choice.id);
+								await this.updateTicketFrontmatter(ticket.file, (fm) => {
+									const remove = (key: string) => {
+										if (Array.isArray(fm[key])) {
+											fm[key] = fm[key].filter((x: string) => x !== choice.id);
+										}
+									};
+									remove(choice.type);
+								});
+								if (!target) return;
+								try {
+									await this.updateTicketFrontmatter(target.file, (fm) => {
+										const reverseKey =
+											choice.type === "related" ? "related" :
+											choice.type === "blocked_by" ? "blocks" :
+											"blocked_by";
+										if (Array.isArray(fm[reverseKey])) {
+											fm[reverseKey] = fm[reverseKey].filter((x: string) => x !== ticket.id);
+										}
+									});
+								} catch { /* target file may be gone */ }
+							},
+						).open();
+					}),
+				);
+			}
+		}
+
+		// Group 5 — Agent / danger
+		menu.addSeparator();
 		if (Platform.isMobile) {
 			// On mobile, show log viewer for any agent that has a session (logs are static files)
 			if (ticket.agent_session) {
@@ -1483,5 +1662,35 @@ class TextInputModal extends Modal {
 
 	onClose() {
 		this.contentEl.empty();
+	}
+}
+
+class FuzzyPickerModal<T> extends FuzzySuggestModal<T> {
+	private readonly items: T[];
+	private readonly getText: (item: T) => string;
+	private readonly onChoose: (item: T) => void;
+
+	constructor(
+		app: import("obsidian").App,
+		items: T[],
+		getText: (item: T) => string,
+		onChoose: (item: T) => void,
+	) {
+		super(app);
+		this.items = items;
+		this.getText = getText;
+		this.onChoose = onChoose;
+	}
+
+	getItems(): T[] {
+		return this.items;
+	}
+
+	getItemText(item: T): string {
+		return this.getText(item);
+	}
+
+	onChooseItem(item: T): void {
+		this.onChoose(item);
 	}
 }
