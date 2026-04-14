@@ -28,7 +28,7 @@ automatically spawns the agent whenever a ticket arrives.
 
 ## Install
 
-Requires Go 1.22+.
+Requires Go 1.25+.
 
 ```sh
 make install
