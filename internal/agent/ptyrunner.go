@@ -29,6 +29,10 @@ type ptySession struct {
 	subSeq    int
 	subs      map[int]chan []byte
 	replayBuf []byte // recent output for replay to new subscribers
+	// subsClosed is set once closeAllSubs has run so late Subscribe
+	// calls return an already-closed channel instead of registering
+	// an orphan that would leak a goroutine.
+	subsClosed bool
 
 	exitCode *int
 	exitErr  error
@@ -168,12 +172,20 @@ func (r *PTYRunner) Subscribe(name string) ([]byte, <-chan []byte, func(), error
 	ch := make(chan []byte, 256)
 
 	sess.subMu.Lock()
-	sess.subSeq++
-	id := sess.subSeq
-	sess.subs[id] = ch
 	// Snapshot replay buffer while holding lock so no data is missed.
 	replay := make([]byte, len(sess.replayBuf))
 	copy(replay, sess.replayBuf)
+	if sess.subsClosed {
+		// Session ended between the map lookup and now. Hand back a
+		// closed channel so the caller's range loop terminates instead
+		// of blocking forever on an orphan subscription.
+		sess.subMu.Unlock()
+		close(ch)
+		return replay, ch, func() {}, nil
+	}
+	sess.subSeq++
+	id := sess.subSeq
+	sess.subs[id] = ch
 	sess.subMu.Unlock()
 
 	unsub := func() {
@@ -276,10 +288,12 @@ func (s *ptySession) fanOut(data []byte) {
 	}
 }
 
-// closeAllSubs closes all subscriber channels.
+// closeAllSubs closes all subscriber channels and marks the session
+// as no longer accepting new subscribers. Must be called at most once.
 func (s *ptySession) closeAllSubs() {
 	s.subMu.Lock()
 	defer s.subMu.Unlock()
+	s.subsClosed = true
 	for id, ch := range s.subs {
 		close(ch)
 		delete(s.subs, id)
