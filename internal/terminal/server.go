@@ -68,12 +68,37 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return s.srv.Shutdown(ctx)
 }
 
-// withCORS allows the Obsidian renderer (app://obsidian.md) to POST to
-// localhost endpoints. Without this, preflight fails and /spawn silently
-// errors in the browser.
+// allowedOrigins is the set of browser origins permitted to call the
+// terminal bridge. Non-browser clients (curl, Go tests) send no Origin
+// header and are allowed through unconditionally — the bridge only
+// listens on 127.0.0.1, so the only realistic attacker is a webpage
+// the user visits while `tickets watch` is running.
+var allowedOrigins = map[string]bool{
+	"app://obsidian.md": true,
+}
+
+func originAllowed(origin string) bool {
+	if origin == "" {
+		return true
+	}
+	return allowedOrigins[origin]
+}
+
+// withCORS restricts cross-origin access to the Obsidian renderer.
+// Requests from disallowed browser origins are rejected outright so a
+// malicious page cannot spawn agents, read PTY output, or send
+// keystrokes.
 func withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		origin := r.Header.Get("Origin")
+		if !originAllowed(origin) {
+			http.Error(w, "origin not allowed", http.StatusForbidden)
+			return
+		}
+		if origin != "" {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		if r.Method == http.MethodOptions {
@@ -105,8 +130,14 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !originAllowed(r.Header.Get("Origin")) {
+		http.Error(w, "origin not allowed", http.StatusForbidden)
+		return
+	}
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		InsecureSkipVerify: true, // localhost only, no origin check needed
+		// Origin already verified above against allowedOrigins; skip
+		// the library's hostname-only check to avoid duplicating logic.
+		InsecureSkipVerify: true,
 	})
 	if err != nil {
 		log.Printf("terminal: websocket accept: %v", err)
