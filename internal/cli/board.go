@@ -793,7 +793,11 @@ func (m *boardModel) View() tea.View {
 			} else if isActiveCard {
 				cStyle = cStyle.BorderForeground(accent).Bold(true)
 			}
-			cStyle = cStyle.Width(cardWidth)
+			// Fixed 2-row content height: ID-line + title-line. Without
+			// this, a narrow column wraps the ID-line and the card
+			// balloons past the assumed 5-row footprint, which pushes
+			// subsequent cards — and the help bar — off-screen.
+			cStyle = cStyle.Width(cardWidth).Height(2).MaxHeight(2)
 
 			// ID line.
 			id := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Render(t.ID)
