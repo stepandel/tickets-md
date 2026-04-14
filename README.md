@@ -11,9 +11,11 @@
 
 A Linear-style ticket tracker that lives inside a single git repo —
 every ticket is a markdown file, every stage a folder, kept right
-next to the code (commit them or gitignore them, your call). No
-database, no background service; agent automation is opt-in via a
-foreground `tickets watch` terminal.
+next to the code (commit them or gitignore them, your call). The
+companion Obsidian plugin is the primary UI (drag-and-drop Kanban,
+live agent terminal); the `tickets` CLI drives the same files for
+terminal-first users. No database, no background service; agent
+automation is opt-in via `tickets watch`.
 
 > **Scoped to one repo.** The CLI is global; `tickets init` is per-repo
 > and creates `.tickets/` at the repo root (the way `.git/` does).
