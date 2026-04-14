@@ -166,6 +166,18 @@ func (m *Monitor) poll() {
 		if as.Status.IsTerminal() {
 			if time.Since(as.UpdatedAt) <= staleAge {
 				ticketsWithLiveRuns[as.TicketID] = true
+				continue
+			}
+			// Terminal and older than staleAge. Drop the run files
+			// individually so a ticket that's re-run forever doesn't
+			// accumulate history indefinitely — the all-or-nothing
+			// RemoveTicket sweep below only fires when every run
+			// qualifies at once.
+			if err := os.Remove(runPath(m.root, as.TicketID, as.RunID)); err != nil && !os.IsNotExist(err) {
+				log.Printf("monitor: failed to prune stale run %s/%s: %v", as.TicketID, as.RunID, err)
+			}
+			if err := os.Remove(LogPath(m.root, as.TicketID, as.RunID)); err != nil && !os.IsNotExist(err) {
+				log.Printf("monitor: failed to prune stale log %s/%s: %v", as.TicketID, as.RunID, err)
 			}
 			continue
 		}
