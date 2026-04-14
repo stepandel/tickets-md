@@ -46,6 +46,13 @@ ticket arrives.
 
 <img width="2912" height="1524" alt="CleanShot 2026-04-13 at 20 11 04@2x" src="https://github.com/user-attachments/assets/9b094924-3924-4f32-b9a7-21dd17438d6b" />
 
+_Obsidian plugin_
+
+<img width="1984" height="1548" alt="CleanShot 2026-04-13 at 20 20 11@2x" src="https://github.com/user-attachments/assets/e55509ce-1769-4f46-991a-c5099cc04f0b" />
+
+_Terminal_ _board_ _`tickets board`_
+
+
 
 ## Install
 
