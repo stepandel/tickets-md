@@ -607,15 +607,7 @@ func syncAgentFrontmatter(root, ticketID string) {
 		return
 	}
 
-	var wantStatus, wantRun, wantSession string
-	if latest, err := agent.Latest(root, ticketID); err == nil {
-		wantStatus = string(latest.Status)
-		wantRun = latest.RunID
-		if !latest.Status.IsTerminal() {
-			wantSession = latest.Session
-		}
-	}
-
+	wantStatus, wantRun, wantSession := desiredFrontmatter(root, ticketID)
 	if t.AgentStatus == wantStatus && t.AgentRun == wantRun && t.AgentSession == wantSession {
 		return
 	}

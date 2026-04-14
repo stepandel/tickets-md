@@ -2,54 +2,87 @@ package cli
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 )
 
 func newDoctorCmd() *cobra.Command {
 	var dryRun bool
+	var staleAfter time.Duration
 	cmd := &cobra.Command{
 		Use:   "doctor",
-		Short: "Find and fix broken ticket links",
-		Long: `doctor scans all tickets for link integrity issues:
+		Short: "Find and fix drift across tickets, agent runs, and worktrees",
+		Long: `doctor is the harness's offline GC pass. It scans for drift
+that the live watcher might not catch, and fixes it by default.
 
-  - Dangling references to tickets that no longer exist (removed)
-  - One-sided links where the reciprocal is missing (added)
-  - Self-referential links (removed)
+Checks performed:
 
-By default it fixes every issue it finds. Use --dry-run to preview
-without making changes.`,
+  Link integrity (ticket.Store.Doctor):
+    - Dangling references to tickets that no longer exist
+    - One-sided links where the reciprocal is missing
+    - Self-referential links
+
+  Harness drift (HarnessDoctor):
+    - Stale non-terminal runs → marked failed
+    - Orphan .tickets/.agents/<id>/ dirs → removed
+    - Orphan <run>.yml.tmp files from interrupted renames → removed
+    - Orphan .worktrees/<id>/ dirs → removed
+    - Ticket frontmatter that disagrees with the latest run → rewritten
+
+Use --dry-run to preview without changing anything. A run with no
+issues prints "Nothing to do." and exits 0.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := openStore()
 			if err != nil {
 				return err
 			}
-			issues, err := s.Doctor(dryRun)
+			fix := !dryRun
+
+			linkIssues, err := s.Doctor(dryRun)
 			if err != nil {
-				return err
+				return fmt.Errorf("link check: %w", err)
 			}
-			if len(issues) == 0 {
-				fmt.Println("No link issues found.")
+			harnessIssues, err := HarnessDoctor(s, fix, staleAfter)
+			if err != nil {
+				return fmt.Errorf("harness check: %w", err)
+			}
+
+			total := len(linkIssues) + len(harnessIssues)
+			if total == 0 {
+				fmt.Println("Nothing to do.")
 				return nil
 			}
-			for _, issue := range issues {
+
+			for _, issue := range linkIssues {
 				fmt.Println(issue.String())
 			}
-			if dryRun {
-				fmt.Printf("\n%d issue(s) found (dry run, nothing changed)\n", len(issues))
-			} else {
-				fixed := 0
-				for _, issue := range issues {
-					if issue.Fixed {
-						fixed++
-					}
+			for _, issue := range harnessIssues {
+				fmt.Println(issue.String())
+			}
+
+			fixed := 0
+			for _, issue := range linkIssues {
+				if issue.Fixed {
+					fixed++
 				}
-				fmt.Printf("\n%d issue(s) found, %d fixed\n", len(issues), fixed)
+			}
+			for _, issue := range harnessIssues {
+				if issue.Fixed {
+					fixed++
+				}
+			}
+
+			if dryRun {
+				fmt.Printf("\n%d issue(s) found (dry run, nothing changed)\n", total)
+			} else {
+				fmt.Printf("\n%d issue(s) found, %d fixed\n", total, fixed)
 			}
 			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "report issues without fixing them")
+	cmd.Flags().DurationVar(&staleAfter, "stale-after", DefaultStaleAfter, "wall-clock age at which a non-terminal run is considered abandoned")
 	return cmd
 }

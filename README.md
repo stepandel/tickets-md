@@ -78,6 +78,7 @@ tickets -C ~/work/acme list
 | `tickets watch`               | Watch for ticket movements and spawn agents    |
 | `tickets agents`              | List active agent runs                         |
 | `tickets agents monitor <id>` | Follow one agent's status and output           |
+| `tickets doctor [--dry-run]`  | Scan for drift across tickets, runs, worktrees |
 
 `init` accepts `--prefix` and `--stages` to override the defaults at
 creation time. When run interactively without `--stages`, it walks
@@ -210,6 +211,37 @@ log file directly:
 tail -f .tickets/.agents/TIC-001/runs/001-execute.log
 ```
 
+## Doctor
+
+`tickets doctor` is the offline sweep that catches drift the watcher
+might miss — link integrity, stale agent runs, orphan worktrees, and
+ticket frontmatter that disagrees with the authoritative run YAMLs.
+
+By default it fixes every issue it finds. Pass `--dry-run` to preview,
+or `--stale-after=<duration>` to change the age at which a
+non-terminal run is considered abandoned (default `24h`).
+
+```sh
+tickets doctor              # fix everything
+tickets doctor --dry-run    # preview
+tickets doctor --stale-after=6h
+```
+
+The checks are:
+
+- **Link integrity** — dangling, one-sided, or self-referential links
+  between tickets.
+- **Stale runs** — non-terminal run YAMLs whose `updated_at` is older
+  than `--stale-after`; flipped to `failed`.
+- **Orphan agent dirs** — `.tickets/.agents/<id>/` directories whose
+  ticket no longer exists; removed.
+- **Orphan `.tmp` files** — leftover `<run>.yml.tmp` from an
+  interrupted atomic rename; removed.
+- **Orphan worktrees** — `.worktrees/<id>/` directories whose ticket
+  no longer exists; removed.
+- **Frontmatter drift** — ticket `agent_status` / `agent_run` /
+  `agent_session` that disagrees with the latest run YAML; rewritten.
+
 ## Editor
 
 `tickets edit` resolves which editor to launch in this order:
@@ -281,6 +313,14 @@ always lives at the repo root.
 ID numbers are assigned by scanning every stage directory for the
 highest existing `<PREFIX>-NNN`, so deletions and manual edits never
 desync a counter.
+
+## For agents working on this repo
+
+See [`AGENTS.md`](AGENTS.md) at the repo root for the layer rules,
+invariants, and canonical commands that AI coding agents (Claude
+Code, Codex, Aider, …) must follow. `make check` runs the full
+verification suite — build, vet, and tests (including the
+`internal/archtest` layer enforcement).
 
 ## Project layout
 
