@@ -503,6 +503,9 @@ true, branch: true }` (see the Agents section above).
 
 ## Obsidian plugin
 
+<img width="2848" height="1454" alt="CleanShot 2026-04-13 at 20 11 48@2x" src="https://github.com/user-attachments/assets/92d2136e-69ea-4f3c-85f4-bed2bfe9fc61" />
+
+
 The companion Obsidian plugin renders `.tickets/` as a drag-and-drop
 Kanban board with inline ticket editing, per-ticket agent controls, a
 live terminal pane wired to `tickets watch`, and a diff view for
