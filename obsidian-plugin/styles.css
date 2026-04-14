@@ -275,6 +275,16 @@
 	color: #fff;
 }
 
+.tb-blocks-badge {
+	font-size: 0.6em;
+	font-weight: 700;
+	text-transform: uppercase;
+	padding: 1px 5px;
+	border-radius: 3px;
+	background: #8a63d2;
+	color: #fff;
+}
+
 /* ── Stage Config Modal ─────────────────────────────────────────────── */
 
 .tb-config-modal {
