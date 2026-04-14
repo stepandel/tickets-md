@@ -10,6 +10,7 @@ import (
 	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/spf13/cobra"
 
 	"tickets-md/internal/agent"
@@ -793,11 +794,7 @@ func (m *boardModel) View() tea.View {
 			} else if isActiveCard {
 				cStyle = cStyle.BorderForeground(accent).Bold(true)
 			}
-			// Fixed 2-row content height: ID-line + title-line. Without
-			// this, a narrow column wraps the ID-line and the card
-			// balloons past the assumed 5-row footprint, which pushes
-			// subsequent cards — and the help bar — off-screen.
-			cStyle = cStyle.Width(cardWidth).Height(2).MaxHeight(2)
+			cStyle = cStyle.Width(cardWidth)
 
 			// ID line.
 			id := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Render(t.ID)
@@ -818,10 +815,18 @@ func (m *boardModel) View() tea.View {
 				linkInfo += " " + lipgloss.NewStyle().Foreground(lipgloss.Color("#FF8C00")).Bold(true).Render("!")
 			}
 
-			// Title.
-			title := truncate(t.Title, cardWidth-2)
+			// lipgloss's Width() is total width including border; content
+			// area = cardWidth - 2 (border) - 2 (horizontal padding).
+			contentW := cardWidth - 4
+			if contentW < 1 {
+				contentW = 1
+			}
+			// Truncate each rendered line separately (ANSI-aware) so the
+			// card never wraps beyond its assumed 2-content-row height.
+			idLine := ansi.Truncate(id+priority+badge+linkInfo, contentW, "…")
+			titleLine := ansi.Truncate(t.Title, contentW, "…")
 
-			cardContent := id + priority + badge + linkInfo + "\n" + title
+			cardContent := idLine + "\n" + titleLine
 			cards = append(cards, cStyle.Render(cardContent))
 		}
 		// Show inline input or [+] button at the bottom of the first column.
