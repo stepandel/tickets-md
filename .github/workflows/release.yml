@@ -21,18 +21,6 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: obsidian-plugin/package-lock.json
-
-      # `make plugin-bundle` refreshes internal/obsidian/assets so the
-      # binaries GoReleaser produces embed the exact plugin that ships
-      # with this tag, even if the committed assets lag.
-      - name: Rebuild Obsidian plugin bundle
-        run: make plugin-bundle
-
       - uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"

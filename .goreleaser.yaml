@@ -4,8 +4,10 @@ project_name: tickets
 
 before:
   hooks:
-    - make plugin-bundle
-    - go mod tidy
+    # Trust the committed bundle under internal/obsidian/assets/ —
+    # rebuilding here would mark the tree dirty whenever the CI
+    # toolchain produces byte-different output.
+    - go mod tidy -diff
 
 builds:
   - id: tickets

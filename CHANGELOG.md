@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-04-13
+
+### Fixed
+
+- Release pipeline no longer rebuilds `internal/obsidian/assets/` in
+  CI. The esbuild toolchain on GitHub runners produced byte-different
+  output from the committed bundle, which left the worktree dirty and
+  caused GoReleaser to abort. The committed bundle is the source of
+  truth; `make plugin-bundle` still refreshes it locally.
+
+Note: v0.1.1 was tagged but never produced a GitHub release or
+binaries because of the CI bug fixed here. `go install …@v0.1.1` does
+work — the source is correct, only the release step broke.
+
 ## [0.1.1] - 2026-04-13
 
 ### Added
@@ -100,6 +114,7 @@ course of development.
 - `make release VERSION=x.y.z` stamps the binary version via
   `-ldflags`; `tickets --version` reports it.
 
-[Unreleased]: https://github.com/stepandel/tickets-md/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/stepandel/tickets-md/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/stepandel/tickets-md/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/stepandel/tickets-md/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/stepandel/tickets-md/releases/tag/v0.1.0
