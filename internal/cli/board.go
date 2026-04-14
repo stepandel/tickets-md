@@ -703,7 +703,15 @@ func (m *boardModel) View() tea.View {
 		colWidth = 16
 	}
 	m.colWidth = colWidth
-	cardWidth := colWidth - 4
+	// The column frame is Width(colWidth-2) with a border (2) and
+	// Padding(0,1) (2 horizontal). Cards must fit into the remaining
+	// content width = colWidth - 6. Anything wider gets horizontally
+	// wrapped by lipgloss, which inflates the rendered height of every
+	// card and breaks the 5-rows-per-card scroll math.
+	cardWidth := colWidth - 6
+	if cardWidth < 6 {
+		cardWidth = 6
+	}
 
 	// Column frame height: screen minus status bar and help bar.
 	contentHeight := m.height - 6
