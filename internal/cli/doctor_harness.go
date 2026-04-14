@@ -59,6 +59,29 @@ func (h HarnessIssue) String() string {
 // agent from one whose watcher died. Configurable via --stale-after.
 const DefaultStaleAfter = 24 * time.Hour
 
+// AutoHeal runs the non-destructive subset of the harness doctor —
+// frontmatter drift and orphan .yml.tmp files — and returns the
+// issues it found (all Fixed). It is safe to call on watcher startup:
+// neither check can destroy data or kill a live agent. Destructive
+// fixes (stale-run failures, orphan agent dirs, orphan worktrees)
+// stay behind an explicit `tickets doctor` invocation.
+func AutoHeal(s *ticket.Store) ([]HarnessIssue, error) {
+	tickets, err := s.ListAll()
+	if err != nil {
+		return nil, err
+	}
+	knownTickets := make(map[string]ticket.Ticket)
+	for _, ts := range tickets {
+		for _, t := range ts {
+			knownTickets[t.ID] = t
+		}
+	}
+	var issues []HarnessIssue
+	issues = append(issues, checkFrontmatterDrift(s, true, knownTickets)...)
+	issues = append(issues, checkOrphanTmpFiles(s.Root, true)...)
+	return issues, nil
+}
+
 // HarnessDoctor walks the whole store for cross-cutting drift and
 // optionally repairs it. Returns the full list of issues; each issue's
 // Fixed field records whether the repair succeeded.

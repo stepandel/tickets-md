@@ -94,10 +94,16 @@ func runWatch(s *ticket.Store) error {
 		log.Printf("monitor: startup reconciliation failed: %v", err)
 	}
 
-	// Resync every ticket's frontmatter from its latest run YAML. Heals
-	// drift from a prior watcher that crashed between writing a YAML and
-	// writing the md — the YAML is truth, so we rewrite the md to match.
-	syncAllFrontmatter(s)
+	// Silently apply the safe subset of doctor fixes — frontmatter
+	// drift and orphan .yml.tmp files — so long-lived stores heal
+	// themselves without a manual `tickets doctor` run. Destructive
+	// fixes (stale runs, orphan agent dirs, orphan worktrees) stay
+	// behind an explicit invocation.
+	if issues, err := AutoHeal(s); err != nil {
+		log.Printf("startup auto-heal: %v", err)
+	} else if len(issues) > 0 {
+		log.Printf("startup auto-heal: fixed %d issue(s)", len(issues))
+	}
 
 	// Backfill plan_file for any terminal runs whose session-end
 	// capture missed it. Self-heals runs that finished under an
@@ -579,22 +585,6 @@ func writeTerminalServerFile(root string, port int) {
 
 func removeTerminalServerFile(root string) {
 	os.Remove(terminalServerFilePath(root))
-}
-
-// syncAllFrontmatter runs syncAgentFrontmatter for every known ticket.
-// Called on watcher startup so any frontmatter that drifted from its
-// YAML (e.g. watcher killed mid-write) self-heals.
-func syncAllFrontmatter(s *ticket.Store) {
-	byStage, err := s.ListAll()
-	if err != nil {
-		log.Printf("startup frontmatter sync: list tickets: %v", err)
-		return
-	}
-	for _, tickets := range byStage {
-		for _, t := range tickets {
-			syncAgentFrontmatter(s.Root, t.ID)
-		}
-	}
 }
 
 // syncAgentFrontmatter rewrites the ticket's agent_* frontmatter fields

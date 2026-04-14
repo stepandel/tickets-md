@@ -8,7 +8,7 @@ import (
 )
 
 func newDoctorCmd() *cobra.Command {
-	var dryRun bool
+	var dryRun, auto bool
 	var staleAfter time.Duration
 	cmd := &cobra.Command{
 		Use:   "doctor",
@@ -31,11 +31,22 @@ Checks performed:
     - Ticket frontmatter that disagrees with the latest run → rewritten
 
 Use --dry-run to preview without changing anything. A run with no
-issues prints "Nothing to do." and exits 0.`,
+issues prints "Nothing to do." and exits 0.
+
+--auto restricts the pass to the non-destructive subset — frontmatter
+drift and orphan .yml.tmp files — and suppresses output. It is the
+same pass tickets watch runs at startup so long-lived stores self-heal.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := openStore()
 			if err != nil {
+				return err
+			}
+			if auto {
+				if dryRun {
+					return fmt.Errorf("--auto and --dry-run are mutually exclusive")
+				}
+				_, err := AutoHeal(s)
 				return err
 			}
 			fix := !dryRun
@@ -83,6 +94,7 @@ issues prints "Nothing to do." and exits 0.`,
 		},
 	}
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "report issues without fixing them")
+	cmd.Flags().BoolVar(&auto, "auto", false, "silently apply the safe subset (frontmatter drift, orphan .tmp files)")
 	cmd.Flags().DurationVar(&staleAfter, "stale-after", DefaultStaleAfter, "wall-clock age at which a non-terminal run is considered abandoned")
 	return cmd
 }

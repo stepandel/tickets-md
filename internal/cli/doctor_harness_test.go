@@ -263,6 +263,80 @@ func TestHarnessDoctorOrphanTmpFile(t *testing.T) {
 	}
 }
 
+func TestAutoHealFixesSafeIssuesOnly(t *testing.T) {
+	s := newHarnessStore(t)
+	tk, _ := s.Create("Alpha")
+
+	// Safe fix #1: frontmatter drift (done run vs "running" frontmatter).
+	runID := agent.FormatRunID(1, "execute")
+	writeRunRaw(t, s.Root, agent.AgentStatus{
+		TicketID:  tk.ID,
+		RunID:     runID,
+		Seq:       1,
+		Stage:     "execute",
+		Agent:     "claude",
+		Session:   tk.ID + "-1",
+		Status:    agent.StatusDone,
+		SpawnedAt: time.Now().UTC().Truncate(time.Second),
+		UpdatedAt: time.Now().UTC().Truncate(time.Second),
+	})
+	tk, _ = s.Get(tk.ID)
+	tk.AgentStatus = "running"
+	if err := s.Save(tk); err != nil {
+		t.Fatal(err)
+	}
+
+	// Safe fix #2: an orphan .yml.tmp file.
+	tmp := filepath.Join(agent.TicketDir(s.Root, tk.ID), "002-execute.yml.tmp")
+	if err := os.WriteFile(tmp, []byte("partial"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Destructive issue that auto must *not* touch: a stale run.
+	ghost, _ := s.Create("Ghost")
+	staleRun := agent.FormatRunID(1, "execute")
+	writeRunRaw(t, s.Root, agent.AgentStatus{
+		TicketID:  ghost.ID,
+		RunID:     staleRun,
+		Seq:       1,
+		Stage:     "execute",
+		Agent:     "claude",
+		Session:   ghost.ID + "-1",
+		Status:    agent.StatusRunning,
+		SpawnedAt: time.Now().Add(-48 * time.Hour).UTC().Truncate(time.Second),
+		UpdatedAt: time.Now().Add(-48 * time.Hour).UTC().Truncate(time.Second),
+	})
+
+	issues, err := AutoHeal(s)
+	if err != nil {
+		t.Fatalf("AutoHeal: %v", err)
+	}
+
+	// Frontmatter drift fixed.
+	tk, _ = s.Get(tk.ID)
+	if tk.AgentStatus != "done" {
+		t.Errorf("auto-heal did not fix frontmatter: status=%q", tk.AgentStatus)
+	}
+	// Tmp file removed.
+	if _, err := os.Stat(tmp); !os.IsNotExist(err) {
+		t.Errorf("auto-heal did not remove %s: stat err=%v", tmp, err)
+	}
+	// Stale run left alone.
+	stale, err := agent.Latest(s.Root, ghost.ID)
+	if err != nil {
+		t.Fatalf("Latest(ghost): %v", err)
+	}
+	if stale.Status != agent.StatusRunning {
+		t.Errorf("auto-heal flipped stale run: status=%q, want running", stale.Status)
+	}
+	// Every reported issue must be Fixed (auto always fixes what it reports).
+	for _, iss := range issues {
+		if !iss.Fixed {
+			t.Errorf("auto-heal reported unfixed issue: %v", iss)
+		}
+	}
+}
+
 func TestHarnessDoctorFrontmatterDrift(t *testing.T) {
 	s := newHarnessStore(t)
 	tk, _ := s.Create("Alpha")

@@ -319,11 +319,14 @@ ticket frontmatter that disagrees with the authoritative run YAMLs.
 
 By default it fixes every issue it finds. Pass `--dry-run` to preview,
 or `--stale-after=<duration>` to change the age at which a
-non-terminal run is considered abandoned (default `24h`).
+non-terminal run is considered abandoned (default `24h`). `--auto`
+runs the non-destructive subset (frontmatter drift, orphan `.tmp`
+files) silently — the same pass `tickets watch` runs at startup.
 
 ```sh
 tickets doctor              # fix everything
 tickets doctor --dry-run    # preview
+tickets doctor --auto       # safe subset, no output
 tickets doctor --stale-after=6h
 ```
 
