@@ -28,12 +28,24 @@ automatically spawns the agent whenever a ticket arrives.
 
 ## Install
 
+### Homebrew (macOS or Linux)
+
+```sh
+brew install stepandel/tap/tickets
+```
+
+### Prebuilt binary
+
+Download the archive for your OS/arch from the
+[latest release](https://github.com/stepandel/tickets-md/releases/latest),
+unpack it, and drop `tickets` on your `$PATH`.
+
+### From source
+
 Requires Go 1.25+.
 
 ```sh
-make install
-# or manually:
-go install ./cmd/tickets
+go install github.com/stepandel/tickets-md/cmd/tickets@latest
 ```
 
 `go install` drops the binary in `$(go env GOPATH)/bin` (usually
@@ -41,6 +53,13 @@ go install ./cmd/tickets
 
 ```sh
 echo 'export PATH="$HOME/go/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
+```
+
+Building locally from a checkout (rebuilds the embedded Obsidian
+plugin bundle first):
+
+```sh
+make install
 ```
 
 ### Shell completions

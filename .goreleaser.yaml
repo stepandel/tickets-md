@@ -35,6 +35,26 @@ archives:
       - LICENSE
       - CHANGELOG.md
 
+brews:
+  - name: tickets
+    repository:
+      owner: stepandel
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: https://github.com/stepandel/tickets-md
+    description: Linear-style ticket tracker where every ticket is a markdown file
+    license: MIT
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    install: |
+      bin.install "tickets"
+      generate_completions_from_executable(bin/"tickets", "completion")
+    test: |
+      system "#{bin}/tickets", "--version"
+
 checksum:
   name_template: "checksums.txt"
 
