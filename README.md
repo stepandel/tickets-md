@@ -117,6 +117,7 @@ tickets -C ~/work/acme list
 | `tickets worktree open <id>`            | Open a ticket's worktree in your editor            |
 | `tickets worktree clean [ids...\|--all]`| Remove worktrees                                   |
 | `tickets completion <shell>`            | Emit a shell completion script                     |
+| `tickets hooks install [--force]`       | Install a pre-commit hook that runs `make check`   |
 
 `init` accepts `--prefix` and `--stages` to override the defaults at
 creation time. When run interactively without `--stages`, it walks
@@ -410,6 +411,18 @@ tickets worktree clean --all        # remove every worktree
 
 A stage can release worktrees automatically with `cleanup: { worktree:
 true, branch: true }` (see the Agents section above).
+
+## Obsidian plugin
+
+An optional companion Obsidian plugin lives under
+[`obsidian-plugin/`](obsidian-plugin/README.md). It renders `.tickets/`
+as a drag-and-drop Kanban board inside Obsidian with inline ticket
+editing, per-ticket agent controls, a live terminal pane wired to
+`tickets watch`, and a diff view for agent runs.
+
+Everything the plugin does is also available from the CLI — it exists
+to give Obsidian users a board view without leaving the editor. See
+the plugin's README for install and development instructions.
 
 ## Ticket file format
 
