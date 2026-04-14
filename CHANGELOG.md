@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-04-13
+
+### Changed
+
+- `tickets obsidian install` now defaults the vault to `.tickets/`
+  instead of the repo root, matching the convention that the
+  `.tickets/` directory *is* the Obsidian vault.
+- `tickets obsidian install` bootstraps the vault directory
+  (including `.obsidian/`) if it does not yet exist, so a fresh
+  `tickets init` + `tickets obsidian install` pair works end-to-end
+  without manual setup.
+
 ## [0.1.4] - 2026-04-13
 
 ### Added
@@ -136,7 +148,8 @@ course of development.
 - `make release VERSION=x.y.z` stamps the binary version via
   `-ldflags`; `tickets --version` reports it.
 
-[Unreleased]: https://github.com/stepandel/tickets-md/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/stepandel/tickets-md/compare/v0.1.5...HEAD
+[0.1.5]: https://github.com/stepandel/tickets-md/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/stepandel/tickets-md/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/stepandel/tickets-md/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/stepandel/tickets-md/compare/v0.1.1...v0.1.2
