@@ -43,9 +43,13 @@ Configure the agent in .tickets/config.yml:
 				return fmt.Errorf("reading ticket file: %w", err)
 			}
 
-			argv := make([]string, 0, len(da.Args)+1)
+			// Terminate option parsing before the prompt: the ticket
+			// content starts with `---` frontmatter, which the agent CLI
+			// (e.g. claude via commander.js) would otherwise treat as an
+			// unknown option and abort.
+			argv := make([]string, 0, len(da.Args)+2)
 			argv = append(argv, da.Args...)
-			argv = append(argv, string(content))
+			argv = append(argv, "--", string(content))
 
 			c := exec.Command(da.Command, argv...)
 			c.Stdin = os.Stdin
