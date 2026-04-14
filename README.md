@@ -44,6 +44,9 @@ Moving a ticket between stages is just `mv` — commit `.tickets/` and
 configured, `tickets watch` automatically spawns the agent whenever a
 ticket arrives.
 
+<img width="2912" height="1524" alt="CleanShot 2026-04-13 at 20 11 04@2x" src="https://github.com/user-attachments/assets/9b094924-3924-4f32-b9a7-21dd17438d6b" />
+
+
 ## Install
 
 The `tickets` binary is installed **once, globally** on your machine.
@@ -223,6 +226,8 @@ Pass `--stages new,doing,done` (or pipe stdin from a script) to skip
 the wizard.
 
 ## Agents
+
+<img width="3088" height="1484" alt="CleanShot 2026-04-13 at 20 18 08@2x" src="https://github.com/user-attachments/assets/a896b225-b9ad-4dd1-8e08-491fd824b80e" />
 
 Stages can be configured to automatically spawn a CLI agent (Claude
 Code, Codex, Aider, etc.) when a ticket arrives. This turns your
