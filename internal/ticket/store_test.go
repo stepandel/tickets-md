@@ -186,6 +186,72 @@ func TestTicketHasLinksAndLinkCount(t *testing.T) {
 	}
 }
 
+func TestCreateAndSetPriority(t *testing.T) {
+	s := newTestStore(t)
+	a, err := s.Create("Alpha")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	a.Priority = "high"
+	if err := s.Save(a); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	got, err := s.Get(a.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Priority != "high" {
+		t.Errorf("expected Priority=high, got %q", got.Priority)
+	}
+}
+
+func TestPriorityOmittedWhenEmpty(t *testing.T) {
+	s := newTestStore(t)
+	a, err := s.Create("Alpha")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	data, err := os.ReadFile(a.Path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if strings.Contains(string(data), "priority:") {
+		t.Errorf("expected no priority key in frontmatter for ticket without priority, got:\n%s", string(data))
+	}
+}
+
+func TestPriorityClearedOnSave(t *testing.T) {
+	s := newTestStore(t)
+	a, err := s.Create("Alpha")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	a.Priority = "low"
+	if err := s.Save(a); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	a, _ = s.Get(a.ID)
+	a.Priority = ""
+	if err := s.Save(a); err != nil {
+		t.Fatalf("Save clear: %v", err)
+	}
+
+	data, err := os.ReadFile(a.Path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if strings.Contains(string(data), "priority:") {
+		t.Errorf("expected priority key absent after clear, got:\n%s", string(data))
+	}
+
+	got, _ := s.Get(a.ID)
+	if got.Priority != "" {
+		t.Errorf("expected empty priority, got %q", got.Priority)
+	}
+}
+
 func TestLinksText(t *testing.T) {
 	tk := Ticket{
 		Related:   []string{"T-001"},
