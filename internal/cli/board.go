@@ -696,11 +696,3 @@ func truncate(s string, max int) string {
 }
 
 var _ tea.Model = (*boardModel)(nil)
-
-func stripForView(s string) string {
-	lines := strings.Split(s, "\n")
-	for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
-		lines = lines[:len(lines)-1]
-	}
-	return strings.Join(lines, "\n")
-}
