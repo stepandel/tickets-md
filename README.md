@@ -9,18 +9,14 @@
 
 # tickets-md
 
-A Linear-style ticket tracker where every ticket is a markdown file and
-every stage is a folder. No database; just files you can read, grep,
-edit, and commit alongside your code. Agent automation is opt-in —
-`tickets watch` runs in a foreground terminal when you want stages
-to trigger agents, and there's no background service otherwise.
+A Linear-style ticket tracker that lives inside a single git repo —
+every ticket is a markdown file, every stage a folder, all committed
+alongside the code. No database, no background service; agent
+automation is opt-in via a foreground `tickets watch` terminal.
 
-> **Scoped to a single repository.** `tickets-md` is designed to live
-> inside one git repo, right next to the code it describes. The CLI is
-> installed globally, but `tickets init` is per-repo: it creates a
-> `.tickets/` directory at the repo root (the way `.git/` does), and
-> any agents you wire up run only against that repo's checkouts. Use a
-> separate `tickets init` for each project.
+> **Scoped to one repo.** The CLI is global; `tickets init` is per-repo
+> and creates `.tickets/` at the repo root (the way `.git/` does).
+> Run it once per project.
 
 ```
 .tickets/
