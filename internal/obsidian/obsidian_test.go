@@ -42,6 +42,41 @@ func TestDiscoverVaultFailsWhenMissing(t *testing.T) {
 	}
 }
 
+func TestEnsureVaultReturnsExistingWithoutMutating(t *testing.T) {
+	vault := newVault(t)
+	got, created, err := EnsureVault(vault)
+	if err != nil {
+		t.Fatalf("EnsureVault: %v", err)
+	}
+	if created {
+		t.Error("existing vault should not be marked as created")
+	}
+	gotReal, _ := filepath.EvalSymlinks(got)
+	wantReal, _ := filepath.EvalSymlinks(vault)
+	if gotReal != wantReal {
+		t.Errorf("EnsureVault = %s, want %s", gotReal, wantReal)
+	}
+}
+
+func TestEnsureVaultBootstrapsWhenMissing(t *testing.T) {
+	dir := t.TempDir()
+	got, created, err := EnsureVault(dir)
+	if err != nil {
+		t.Fatalf("EnsureVault: %v", err)
+	}
+	if !created {
+		t.Error("missing vault should be marked as created")
+	}
+	gotReal, _ := filepath.EvalSymlinks(got)
+	wantReal, _ := filepath.EvalSymlinks(dir)
+	if gotReal != wantReal {
+		t.Errorf("EnsureVault = %s, want %s", gotReal, wantReal)
+	}
+	if info, err := os.Stat(filepath.Join(dir, ".obsidian")); err != nil || !info.IsDir() {
+		t.Errorf(".obsidian/ not created: info=%v err=%v", info, err)
+	}
+}
+
 func TestInstallRefusesWithoutBundle(t *testing.T) {
 	if HasBundle() {
 		t.Skip("binary includes the real plugin bundle; skipping stub-only assertion")

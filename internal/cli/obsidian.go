@@ -41,22 +41,38 @@ func (f *obsidianFlags) resolveVault() (string, error) {
 	return obsidian.DiscoverVault(start)
 }
 
+// ensureVault is the install-time variant of resolveVault: if no
+// ancestor vault is found, it bootstraps `.obsidian/` at the starting
+// path rather than erroring out.
+func (f *obsidianFlags) ensureVault() (string, bool, error) {
+	start := f.vault
+	if start == "" {
+		start = globalFlags.root
+	}
+	return obsidian.EnsureVault(start)
+}
+
 func newObsidianInstallCmd() *cobra.Command {
 	var flags obsidianFlags
 	var noEnable bool
 	cmd := &cobra.Command{
 		Use:   "install",
-		Short: "Copy the bundled plugin into an Obsidian vault",
+		Short: "Initialize an Obsidian vault (if needed) and install the bundled plugin",
 		Long: `Writes main.js, manifest.json, and styles.css into
 <vault>/.obsidian/plugins/tickets-board/ and (unless --no-enable) adds
-the plugin id to community-plugins.json so Obsidian enables it on
+the plugin id to community-plugins.json so Obsidian activates it on
 next launch.
+
+If no Obsidian vault is found at or above the target path, one is
+bootstrapped by creating .obsidian/ at the project root. Pair it with
+` + "`tickets init`" + ` to land both the ticket store and the vault in the
+same repository in two commands.
 
 If the plugin is already installed it is overwritten — the CLI is the
 source of truth for this copy.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			vault, err := flags.resolveVault()
+			vault, created, err := flags.ensureVault()
 			if err != nil {
 				return err
 			}
@@ -64,6 +80,7 @@ source of truth for this copy.`,
 			if err != nil {
 				return err
 			}
+			res.VaultCreated = created
 			return printObsidianInstallResult(cmd.OutOrStdout(), vault, res, noEnable)
 		},
 	}
@@ -130,16 +147,24 @@ func printObsidianInstallResult(out io.Writer, vault string, res obsidian.Instal
 			verb = fmt.Sprintf("Upgraded (%s → %s)", res.PreviousVersion, res.InstalledVersion)
 		}
 	}
+	if res.VaultCreated {
+		fmt.Fprintf(out, "Initialized Obsidian vault at %s\n", vault)
+	}
 	fmt.Fprintf(out, "%s %s %s into %s\n", verb, obsidian.PluginID, res.InstalledVersion, res.Dir)
 	switch {
 	case noEnable:
-		fmt.Fprintln(out, "Skipped community-plugins.json — enable the plugin from Obsidian's Community plugins pane.")
+		fmt.Fprintln(out, "Skipped community-plugins.json — you'll need to enable the plugin manually (see step 3 below).")
 	case res.Enabled:
-		fmt.Fprintln(out, "Added to community-plugins.json — Obsidian will load it on next launch.")
+		fmt.Fprintln(out, "Marked enabled in community-plugins.json — Obsidian will load it once community plugins are turned on.")
 	case res.AlreadyEnabled:
-		fmt.Fprintln(out, "Already present in community-plugins.json — reload Obsidian to pick up the new build.")
+		fmt.Fprintln(out, "Already enabled in community-plugins.json — reload Obsidian to pick up the new build.")
 	}
-	fmt.Fprintf(out, "Vault: %s\n", vault)
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "Next steps in Obsidian:")
+	fmt.Fprintf(out, "  1. Open Obsidian → \"Open folder as vault\" → select %s\n", vault)
+	fmt.Fprintln(out, "  2. Settings → Community plugins → \"Turn on community plugins\"")
+	fmt.Fprintln(out, "  3. Under Installed plugins, toggle \"Tickets Board\" on")
+	fmt.Fprintln(out, "  4. Cmd+P (Ctrl+P on Linux/Windows) → \"Tickets Board: Open Tickets Board\"")
 	return nil
 }
 

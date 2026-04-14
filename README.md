@@ -491,34 +491,53 @@ true, branch: true }` (see the Agents section above).
 
 ## Obsidian plugin
 
-An optional companion Obsidian plugin lives under
-[`obsidian-plugin/`](obsidian-plugin/README.md). It renders `.tickets/`
-as a drag-and-drop Kanban board inside Obsidian with inline ticket
-editing, per-ticket agent controls, a live terminal pane wired to
-`tickets watch`, and a diff view for agent runs.
+The companion Obsidian plugin renders `.tickets/` as a drag-and-drop
+Kanban board with inline ticket editing, per-ticket agent controls, a
+live terminal pane wired to `tickets watch`, and a diff view for
+agent runs. Source lives under
+[`obsidian-plugin/`](obsidian-plugin/README.md).
 
-The CLI embeds the plugin bundle so you can install it without npm:
+### Install (one command)
+
+The `tickets` CLI embeds the plugin bundle, so you never need npm.
+From the repo root where you ran `tickets init`:
 
 ```sh
-tickets obsidian install                # auto-detect vault from cwd
-tickets obsidian install --vault ~/Vaults/Work
-tickets obsidian status                 # installed vs. bundled version
-tickets obsidian uninstall
+tickets obsidian install
 ```
 
-`install` walks up from `--vault` (or `--root`) looking for a
-`.obsidian/` directory, writes `main.js` / `manifest.json` /
-`styles.css` into `<vault>/.obsidian/plugins/tickets-board/`, and
-appends the plugin id to `community-plugins.json` so Obsidian picks
-it up on next launch. Pass `--no-enable` to skip the
-`community-plugins.json` edit.
+That single command does three things:
 
-The bundled plugin version is locked to the CLI version — upgrade
-the CLI and rerun `tickets obsidian install` to keep them in sync.
+1. If no `.obsidian/` exists at or above the current directory, it
+   bootstraps an Obsidian vault at the repo root (same place your
+   `.tickets/` lives).
+2. Writes `main.js`, `manifest.json`, and `styles.css` into
+   `.obsidian/plugins/tickets-board/`.
+3. Appends `tickets-board` to `.obsidian/community-plugins.json` so
+   Obsidian marks the plugin as enabled once you turn community
+   plugins on.
 
-Everything the plugin does is also available from the CLI — it exists
-to give Obsidian users a board view without leaving the editor. See
-the plugin's README for manual install and development instructions.
+The command then prints the exact clicks you need inside Obsidian:
+
+1. Open Obsidian → **Open folder as vault** → select the repo.
+2. **Settings → Community plugins → Turn on community plugins**
+   (confirm the safety prompt).
+3. Under **Installed plugins**, toggle **Tickets Board** on.
+4. `Cmd+P` (or `Ctrl+P`) → **Tickets Board: Open Tickets Board**.
+
+### Upgrades and housekeeping
+
+```sh
+tickets obsidian install           # also the upgrade path — overwrites bundled files
+tickets obsidian status            # installed vs. bundled version + enabled flag
+tickets obsidian uninstall         # removes plugin dir and community-plugins.json entry
+tickets obsidian install --no-enable   # copy files but don't touch community-plugins.json
+tickets obsidian install --vault ~/Vaults/Work   # install into a specific vault
+```
+
+The bundled plugin version is locked to the CLI version — `brew
+upgrade tickets` (or `go install …@latest`) and rerun
+`tickets obsidian install` to keep them in sync.
 
 ## Ticket file format
 

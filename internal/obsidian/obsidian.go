@@ -91,6 +91,27 @@ func DiscoverVault(start string) (string, error) {
 	}
 }
 
+// EnsureVault returns a vault rooted at start, creating `.obsidian/`
+// there if no ancestor vault exists. Returns the vault path and a
+// flag indicating whether the vault was freshly initialized.
+//
+// This is the "install flow" counterpart to DiscoverVault: `tickets
+// obsidian install` in a repo with no vault yet should bootstrap one
+// at the repo root rather than erroring out.
+func EnsureVault(start string) (string, bool, error) {
+	if vault, err := DiscoverVault(start); err == nil {
+		return vault, false, nil
+	}
+	abs, err := filepath.Abs(start)
+	if err != nil {
+		return "", false, err
+	}
+	if err := os.MkdirAll(filepath.Join(abs, ".obsidian"), 0o755); err != nil {
+		return "", false, fmt.Errorf("initializing Obsidian vault at %s: %w", abs, err)
+	}
+	return abs, true, nil
+}
+
 // pluginDir returns the destination directory for our plugin inside
 // vault.
 func pluginDir(vault string) string {
@@ -99,6 +120,8 @@ func pluginDir(vault string) string {
 
 // InstallResult summarises what Install did for the caller.
 type InstallResult struct {
+	Vault            string
+	VaultCreated     bool
 	Dir              string
 	InstalledVersion string
 	PreviousVersion  string
@@ -112,6 +135,7 @@ type InstallResult struct {
 // launch.
 func Install(vault string, enable bool) (InstallResult, error) {
 	var res InstallResult
+	res.Vault = vault
 	if !HasBundle() {
 		return res, errors.New("this binary was built without the plugin bundle; run `make plugin-bundle && make install` from source")
 	}
