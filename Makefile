@@ -26,7 +26,7 @@ release: plugin-bundle
 		echo "usage: make release VERSION=v0.1.0" >&2; \
 		exit 1; \
 	fi
-	go install -ldflags "-X github.com/stepandel/tickets-md/internal/cli.version=$(VERSION)" ./cmd/tickets
+	go install -ldflags "-X github.com/stepandel/tickets-md/internal/cli.linkerVersion=$(VERSION)" ./cmd/tickets
 	@echo "installed tickets $(VERSION)"
 
 check: build vet test

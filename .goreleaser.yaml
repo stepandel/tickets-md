@@ -1,0 +1,69 @@
+version: 2
+
+project_name: tickets
+
+before:
+  hooks:
+    - make plugin-bundle
+    - go mod tidy
+
+builds:
+  - id: tickets
+    main: ./cmd/tickets
+    binary: tickets
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X github.com/stepandel/tickets-md/internal/cli.linkerVersion={{.Version}}
+
+archives:
+  - id: tickets
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - LICENSE
+      - CHANGELOG.md
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^chore:"
+      - "^test:"
+      - "^ci:"
+      - "Merge pull request"
+      - "Merge branch"
+
+release:
+  github:
+    owner: stepandel
+    name: tickets-md
+  draft: false
+  prerelease: auto
+  header: |
+    Install the CLI (which embeds the companion Obsidian plugin):
+
+    ```sh
+    go install github.com/stepandel/tickets-md/cmd/tickets@{{ .Tag }}
+    ```
+
+    Or download a prebuilt binary from the assets below and drop it on
+    `$PATH`. After installing, you can ship the Obsidian plugin into a
+    vault with `tickets obsidian install`.
