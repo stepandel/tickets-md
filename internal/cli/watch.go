@@ -170,6 +170,11 @@ func runWatch(s *ticket.Store) error {
 		select {
 		case <-sigCh:
 			log.Println("shutting down")
+			// Stop accepting new WebSocket clients before SIGTERM'ing
+			// children. Otherwise a client that attaches during the
+			// 5-second runner grace can Subscribe to a session that's
+			// about to close.
+			termSrv.Shutdown(context.Background())
 			runner.Shutdown()
 			cancel()
 			return nil
