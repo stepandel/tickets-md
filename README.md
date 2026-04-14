@@ -521,9 +521,13 @@ That single command does three things:
    so Obsidian marks the plugin as enabled once you turn community
    plugins on.
 
-The command then prints the exact clicks you need inside Obsidian:
+Obsidian has no CLI to register a vault, so the remaining steps are
+manual (the install command prints them too):
 
-1. Open Obsidian → **Open folder as vault** → select `.tickets/`.
+1. Open Obsidian → **Open folder as vault** → **pick `.tickets/`
+   specifically, not the repo root**. The plugin renders the stage
+   folders under `.tickets/` as Kanban columns, so the vault root
+   has to be `.tickets/`.
 2. **Settings → Community plugins → Turn on community plugins**
    (confirm the safety prompt).
 3. Under **Installed plugins**, toggle **Tickets Board** on.

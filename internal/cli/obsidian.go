@@ -209,8 +209,10 @@ func printObsidianInstallResult(out io.Writer, vault string, res obsidian.Instal
 		fmt.Fprintln(out, "Already enabled in community-plugins.json — reload Obsidian to pick up the new build.")
 	}
 	fmt.Fprintln(out)
-	fmt.Fprintln(out, "Next steps in Obsidian:")
-	fmt.Fprintf(out, "  1. Open Obsidian → \"Open folder as vault\" → select %s\n", vault)
+	fmt.Fprintln(out, "Next steps in Obsidian (Obsidian has no CLI to register a vault; these are manual):")
+	fmt.Fprintln(out, "  1. Open Obsidian → \"Open folder as vault\" and pick this exact path:")
+	fmt.Fprintf(out, "       %s\n", vault)
+	fmt.Fprintln(out, "     Do not pick the repo root — the plugin expects `.tickets/` to be the vault.")
 	fmt.Fprintln(out, "  2. Settings → Community plugins → \"Turn on community plugins\"")
 	fmt.Fprintln(out, "  3. Under Installed plugins, toggle \"Tickets Board\" on")
 	fmt.Fprintln(out, "  4. Cmd+P (Ctrl+P on Linux/Windows) → \"Tickets Board: Open Tickets Board\"")
