@@ -81,6 +81,11 @@ type boardModel struct {
 	inputStep  int
 	inputTitle string
 	descInput  textarea.Model
+
+	// Overlay (picker / confirm / notice). When non-nil, captures all keys.
+	overlay     overlay
+	overlayKind string // discriminator so handleOverlayDone knows what to do
+	overlayCtx  any    // optional context data (e.g. link kind)
 }
 
 func newBoardModel(s *ticket.Store) (*boardModel, error) {
@@ -141,6 +146,9 @@ func (m *boardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, boardTickCmd()
 
 	case tea.KeyPressMsg:
+		if m.overlay != nil {
+			return m.handleOverlayKey(msg)
+		}
 		if m.inputStep > 0 {
 			return m.handleInput(msg)
 		}
@@ -190,8 +198,77 @@ func (m *boardModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "n", "+":
 		m.inputStep = 1
 		m.inputTitle = ""
+	case "p":
+		m.startSetPriority()
+	case "D":
+		m.startDelete()
+	case "y":
+		m.copySelectedID()
+	case "R":
+		m.startLink("related")
+	case "b":
+		m.startLink("blocked_by")
+	case "u":
+		m.startUnlink()
+	case "A":
+		m.startAdhocAgent()
+	case "S":
+		m.startRerunStageAgent()
+	case "g":
+		m.openAgentLog()
+	case "f":
+		m.startFollowup()
+	case "d":
+		m.viewDiff()
 	}
 	return m, nil
+}
+
+// finishOverlay runs the action associated with the current overlay's
+// final value, then clears overlay state. Dispatch is by m.overlayKind.
+func (m *boardModel) finishOverlay() {
+	kind := m.overlayKind
+	ov := m.overlay
+	m.overlay = nil
+	m.overlayKind = ""
+	ctx := m.overlayCtx
+	m.overlayCtx = nil
+
+	switch kind {
+	case "priority":
+		m.applyPriorityChoice(ov)
+	case "delete":
+		m.applyDeleteConfirm()
+	case "link":
+		m.applyLinkChoice(ov, ctx)
+	case "unlink":
+		m.applyUnlinkChoice(ov)
+	}
+}
+
+func (m *boardModel) handleOverlayKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	next, cmd, result := m.overlay.update(msg)
+	m.overlay = next
+	switch result {
+	case overlayCancel:
+		m.overlay = nil
+		m.overlayKind = ""
+		m.overlayCtx = nil
+	case overlayDone:
+		m.finishOverlay()
+	}
+	return m, cmd
+}
+
+func (m *boardModel) selectedTicket() (ticket.Ticket, bool) {
+	if m.activeCol < 0 || m.activeCol >= len(m.columns) {
+		return ticket.Ticket{}, false
+	}
+	col := m.columns[m.activeCol]
+	if m.activeRow < 0 || m.activeRow >= len(col) {
+		return ticket.Ticket{}, false
+	}
+	return col[m.activeRow], true
 }
 
 func (m *boardModel) handleInput(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -341,9 +418,11 @@ func (m *boardModel) hitTest(x, y int) (col, row int, ok bool) {
 	if col < 0 || col >= len(m.stages) {
 		return 0, 0, false
 	}
-	// Y layout: row 0-1 = status bar, row 2 = border, row 3 = header, row 4+ = cards
-	cardStartY := 4
-	cardHeight := 4
+	// Y layout: row 0 = status bar, row 1 = column top border,
+	// row 2 = stage header, row 3+ = cards. Each card is 5 rows
+	// (border-top + 2 content lines + border-bottom + margin-bottom).
+	cardStartY := 3
+	cardHeight := 5
 	if y < cardStartY {
 		return col, 0, true
 	}
@@ -609,7 +688,7 @@ func (m *boardModel) View() tea.View {
 	board := lipgloss.JoinHorizontal(lipgloss.Top, renderedCols...)
 
 	// --- Help bar ---
-	helpText := "h/l: columns  j/k: cards  H/L: move card  enter: open  n: new  mouse: drag & drop  r: reload  q: quit"
+	helpText := "h/l·j/k move  H/L shift  enter open  n new  p prio  D del  y copy  R/b link  u unlink  A/S agent  g log  f follow  d diff  q"
 	if m.inputStep == 1 {
 		helpText = "type a title, then enter to continue • esc to cancel"
 	} else if m.inputStep == 2 {
@@ -632,7 +711,14 @@ func (m *boardModel) View() tea.View {
 		m.err = nil
 	}
 
-	v := tea.NewView(statusBar + "\n" + board + "\n" + help + errMsg)
+	body := statusBar + "\n" + board + "\n" + help + errMsg
+
+	if m.overlay != nil {
+		ov := m.overlay.view(m.width)
+		body += "\n" + ov
+	}
+
+	v := tea.NewView(body)
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeCellMotion
 	return v
