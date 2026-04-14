@@ -3,6 +3,8 @@ package cli
 import (
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -33,23 +35,66 @@ func (f *obsidianFlags) bind(cmd *cobra.Command) {
 		"path inside an Obsidian vault (default: auto-detect from --root)")
 }
 
+// resolveVault picks the vault for read-only commands (status,
+// uninstall). An explicit --vault wins; otherwise prefer the
+// `.tickets/` directory (the conventional vault for this CLI), and
+// fall back to walking up from --root for a pre-existing `.obsidian/`
+// the user might have set up themselves.
 func (f *obsidianFlags) resolveVault() (string, error) {
-	start := f.vault
-	if start == "" {
-		start = globalFlags.root
+	if f.vault != "" {
+		return obsidian.DiscoverVault(f.vault)
 	}
-	return obsidian.DiscoverVault(start)
+	if ticketsDir, ok := existingTicketsDir(); ok {
+		if vault, err := obsidian.DiscoverVault(ticketsDir); err == nil {
+			return vault, nil
+		}
+	}
+	return obsidian.DiscoverVault(globalFlags.root)
 }
 
-// ensureVault is the install-time variant of resolveVault: if no
-// ancestor vault is found, it bootstraps `.obsidian/` at the starting
-// path rather than erroring out.
+// ensureVault is the install-time variant. Resolution order:
+//  1. --vault <path>: use it as-is, bootstrapping `.obsidian/` if
+//     the caller passed a directory that isn't a vault yet.
+//  2. A pre-existing `.obsidian/` at or above --root: respect it
+//     (the user already opened this repo as a vault).
+//  3. Default: install into `<root>/.tickets/`, which requires
+//     `tickets init` to have run. The plugin's Kanban view renders
+//     `.tickets/` as its stage columns, so the store directory *is*
+//     the vault.
 func (f *obsidianFlags) ensureVault() (string, bool, error) {
-	start := f.vault
-	if start == "" {
-		start = globalFlags.root
+	if f.vault != "" {
+		return obsidian.EnsureVault(f.vault)
 	}
-	return obsidian.EnsureVault(start)
+	if vault, err := obsidian.DiscoverVault(globalFlags.root); err == nil {
+		return vault, false, nil
+	}
+	ticketsDir, ok := existingTicketsDir()
+	if !ok {
+		return "", false, fmt.Errorf("no .tickets/ directory at %s — run `tickets init` first so the plugin has a board to render, or pass --vault to install into a different vault",
+			mustAbs(globalFlags.root))
+	}
+	return obsidian.EnsureVault(ticketsDir)
+}
+
+func existingTicketsDir() (string, bool) {
+	p := filepath.Join(globalFlags.root, ".tickets")
+	info, err := os.Stat(p)
+	if err != nil || !info.IsDir() {
+		return "", false
+	}
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return "", false
+	}
+	return abs, true
+}
+
+func mustAbs(p string) string {
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return p
+	}
+	return abs
 }
 
 func newObsidianInstallCmd() *cobra.Command {
@@ -57,16 +102,20 @@ func newObsidianInstallCmd() *cobra.Command {
 	var noEnable bool
 	cmd := &cobra.Command{
 		Use:   "install",
-		Short: "Initialize an Obsidian vault (if needed) and install the bundled plugin",
+		Short: "Initialize an Obsidian vault inside .tickets/ and install the bundled plugin",
 		Long: `Writes main.js, manifest.json, and styles.css into
 <vault>/.obsidian/plugins/tickets-board/ and (unless --no-enable) adds
 the plugin id to community-plugins.json so Obsidian activates it on
 next launch.
 
-If no Obsidian vault is found at or above the target path, one is
-bootstrapped by creating .obsidian/ at the project root. Pair it with
-` + "`tickets init`" + ` to land both the ticket store and the vault in the
-same repository in two commands.
+The default vault is ` + "`.tickets/`" + ` itself — the plugin's Kanban view
+reads the stage folders there as its columns, so opening ` + "`.tickets/`" + `
+as an Obsidian vault is the canonical setup. Run ` + "`tickets init`" + `
+first so the directory exists.
+
+If you already opened this repo as a vault elsewhere (a ` + "`.obsidian/`" + `
+at or above the project root), that vault is reused instead. Pass
+--vault to install into an unrelated vault.
 
 If the plugin is already installed it is overwritten — the CLI is the
 source of truth for this copy.`,

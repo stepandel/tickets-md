@@ -508,18 +508,22 @@ tickets obsidian install
 
 That single command does three things:
 
-1. If no `.obsidian/` exists at or above the current directory, it
-   bootstraps an Obsidian vault at the repo root (same place your
-   `.tickets/` lives).
+1. Bootstraps an Obsidian vault at `.tickets/` (by creating
+   `.tickets/.obsidian/`). The plugin's Kanban view reads the stage
+   folders under `.tickets/` as its columns, so the ticket store
+   *is* the vault — Obsidian shouldn't see the rest of your code.
+   If you already opened the repo as a vault elsewhere (a
+   `.obsidian/` at or above the project root), that vault is reused
+   instead.
 2. Writes `main.js`, `manifest.json`, and `styles.css` into
-   `.obsidian/plugins/tickets-board/`.
-3. Appends `tickets-board` to `.obsidian/community-plugins.json` so
-   Obsidian marks the plugin as enabled once you turn community
+   `<vault>/.obsidian/plugins/tickets-board/`.
+3. Appends `tickets-board` to `<vault>/.obsidian/community-plugins.json`
+   so Obsidian marks the plugin as enabled once you turn community
    plugins on.
 
 The command then prints the exact clicks you need inside Obsidian:
 
-1. Open Obsidian → **Open folder as vault** → select the repo.
+1. Open Obsidian → **Open folder as vault** → select `.tickets/`.
 2. **Settings → Community plugins → Turn on community plugins**
    (confirm the safety prompt).
 3. Under **Installed plugins**, toggle **Tickets Board** on.
