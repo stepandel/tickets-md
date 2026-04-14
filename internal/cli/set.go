@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"tickets-md/internal/ticket"
+	"github.com/stepandel/tickets-md/internal/ticket"
 )
 
 // setFields lists the scalar frontmatter fields that `tickets set`

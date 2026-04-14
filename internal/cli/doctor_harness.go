@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"tickets-md/internal/agent"
-	"tickets-md/internal/ticket"
-	"tickets-md/internal/worktree"
+	"github.com/stepandel/tickets-md/internal/agent"
+	"github.com/stepandel/tickets-md/internal/ticket"
+	"github.com/stepandel/tickets-md/internal/worktree"
 )
 
 // HarnessIssueKind classifies a harness-level drift issue detected by

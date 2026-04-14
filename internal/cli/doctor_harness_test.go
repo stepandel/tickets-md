@@ -8,9 +8,9 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"tickets-md/internal/agent"
-	"tickets-md/internal/config"
-	"tickets-md/internal/ticket"
+	"github.com/stepandel/tickets-md/internal/agent"
+	"github.com/stepandel/tickets-md/internal/config"
+	"github.com/stepandel/tickets-md/internal/ticket"
 )
 
 func newHarnessStore(t *testing.T) *ticket.Store {

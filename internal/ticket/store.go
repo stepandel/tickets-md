@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"tickets-md/internal/config"
-	"tickets-md/internal/stage"
+	"github.com/stepandel/tickets-md/internal/config"
+	"github.com/stepandel/tickets-md/internal/stage"
 )
 
 // ErrNotFound is returned when a ticket ID cannot be located in any

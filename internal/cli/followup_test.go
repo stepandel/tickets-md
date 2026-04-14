@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"tickets-md/internal/agent"
+	"github.com/stepandel/tickets-md/internal/agent"
 )
 
 func TestComposeFollowupPrompt(t *testing.T) {

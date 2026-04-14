@@ -13,8 +13,8 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/spf13/cobra"
 
-	"tickets-md/internal/agent"
-	"tickets-md/internal/ticket"
+	"github.com/stepandel/tickets-md/internal/agent"
+	"github.com/stepandel/tickets-md/internal/ticket"
 )
 
 func newBoardCmd() *cobra.Command {

@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"tickets-md/internal/obsidian"
+	"github.com/stepandel/tickets-md/internal/obsidian"
 )
 
 func newObsidianCmd() *cobra.Command {

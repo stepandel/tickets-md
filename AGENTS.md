@@ -126,8 +126,8 @@ make install
 
 ## Conventions
 
-- Go module path is `tickets-md`. All internal imports are
-  `tickets-md/internal/<pkg>`.
+- Go module path is `github.com/stepandel/tickets-md`. All internal
+  imports are `github.com/stepandel/tickets-md/internal/<pkg>`.
 - Keep command files (`internal/cli/*.go`) thin wrappers around
   `ticket.Store` and the other internal packages. Business logic
   belongs in the internal packages, not in cobra handlers.

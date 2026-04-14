@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"tickets-md/internal/ticket"
+	"github.com/stepandel/tickets-md/internal/ticket"
 )
 
 func newListCmd() *cobra.Command {

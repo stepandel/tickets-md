@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"tickets-md/internal/config"
+	"github.com/stepandel/tickets-md/internal/config"
 )
 
 // newTestStore creates a temporary store with three stages and returns

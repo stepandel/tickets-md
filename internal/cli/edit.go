@@ -10,7 +10,7 @@ import (
 	"charm.land/huh/v2"
 	"github.com/spf13/cobra"
 
-	"tickets-md/internal/userconfig"
+	"github.com/stepandel/tickets-md/internal/userconfig"
 )
 
 func newEditCmd() *cobra.Command {

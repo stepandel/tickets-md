@@ -16,7 +16,7 @@ import (
 
 	"github.com/coder/websocket"
 
-	"tickets-md/internal/agent"
+	"github.com/stepandel/tickets-md/internal/agent"
 )
 
 // Server exposes PTY sessions over WebSocket.

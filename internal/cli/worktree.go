@@ -9,7 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"tickets-md/internal/worktree"
+	"github.com/stepandel/tickets-md/internal/worktree"
 )
 
 func newWorktreeCmd() *cobra.Command {

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"tickets-md/internal/agent"
+	"github.com/stepandel/tickets-md/internal/agent"
 )
 
 // --- terminal-server client ---

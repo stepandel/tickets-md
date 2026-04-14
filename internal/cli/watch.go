@@ -15,12 +15,12 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/cobra"
 
-	"tickets-md/internal/agent"
-	"tickets-md/internal/config"
-	"tickets-md/internal/stage"
-	"tickets-md/internal/terminal"
-	"tickets-md/internal/ticket"
-	"tickets-md/internal/worktree"
+	"github.com/stepandel/tickets-md/internal/agent"
+	"github.com/stepandel/tickets-md/internal/config"
+	"github.com/stepandel/tickets-md/internal/stage"
+	"github.com/stepandel/tickets-md/internal/terminal"
+	"github.com/stepandel/tickets-md/internal/ticket"
+	"github.com/stepandel/tickets-md/internal/worktree"
 )
 
 func newWatchCmd() *cobra.Command {

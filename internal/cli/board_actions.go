@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"strings"
 
-	"tickets-md/internal/ticket"
+	"github.com/stepandel/tickets-md/internal/ticket"
 )
 
 // --- priority ---

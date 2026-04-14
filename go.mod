@@ -1,4 +1,4 @@
-module tickets-md
+module github.com/stepandel/tickets-md
 
 go 1.25.8
 

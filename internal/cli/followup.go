@@ -10,7 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"tickets-md/internal/agent"
+	"github.com/stepandel/tickets-md/internal/agent"
 )
 
 const (

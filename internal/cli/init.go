@@ -10,8 +10,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"tickets-md/internal/config"
-	"tickets-md/internal/ticket"
+	"github.com/stepandel/tickets-md/internal/config"
+	"github.com/stepandel/tickets-md/internal/ticket"
 )
 
 func newInitCmd() *cobra.Command {

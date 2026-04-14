@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"tickets-md/internal/cli"
+	"github.com/stepandel/tickets-md/internal/cli"
 )
 
 func main() {

@@ -28,7 +28,7 @@ import (
 	"testing"
 )
 
-const modulePath = "tickets-md"
+const modulePath = "github.com/stepandel/tickets-md"
 
 // pkg is the subset of `go list -json` we care about.
 type pkg struct {

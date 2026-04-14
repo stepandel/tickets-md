@@ -18,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	"tickets-md/internal/config"
+	"github.com/stepandel/tickets-md/internal/config"
 
 	"gopkg.in/yaml.v3"
 )
