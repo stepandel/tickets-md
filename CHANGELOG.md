@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-04-13
+
+### Fixed
+
+- `go.mod` tidy: `github.com/charmbracelet/x/ansi` is a direct
+  dependency (used by the TUI) and is now listed as such. CI's
+  `go mod tidy -diff` hook caught the drift.
+- GoReleaser config migrated from the deprecated
+  `archives.format_overrides.format` key to the `formats` array form
+  required by GoReleaser v2.
+
+Note: v0.1.2's release run failed on both issues above; v0.1.3 is the
+first tag to produce a full GitHub release with binaries.
+
 ## [0.1.2] - 2026-04-13
 
 ### Fixed
@@ -114,7 +128,8 @@ course of development.
 - `make release VERSION=x.y.z` stamps the binary version via
   `-ldflags`; `tickets --version` reports it.
 
-[Unreleased]: https://github.com/stepandel/tickets-md/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/stepandel/tickets-md/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/stepandel/tickets-md/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/stepandel/tickets-md/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/stepandel/tickets-md/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/stepandel/tickets-md/releases/tag/v0.1.0
