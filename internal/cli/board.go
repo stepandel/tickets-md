@@ -656,6 +656,60 @@ func (m *boardModel) scrollActive(delta int) {
 
 // --- view ---
 
+// renderHelp builds the two-line (or mode-specific) help footer.
+func (m *boardModel) renderHelp() string {
+	if m.inputStep == 1 {
+		return helpModeStyle.Render("type a title, then enter to continue  •  esc to cancel")
+	}
+	if m.inputStep == 2 {
+		return helpModeStyle.Render("type a description  •  ctrl+s to save  •  esc to cancel")
+	}
+	if m.dragging {
+		return helpModeStyle.Render(fmt.Sprintf("dragging %s — release over target column to move", m.dragID))
+	}
+
+	nav := []helpBind{
+		{"h/l·j/k", "move"},
+		{"H/L", "shift stage"},
+		{"^d/^u·G", "scroll"},
+		{"enter", "open"},
+		{"n", "new"},
+	}
+	act := []helpBind{
+		{"p", "prio"},
+		{"D", "del"},
+		{"y", "copy"},
+		{"R/b", "link"},
+		{"u", "unlink"},
+		{"A/S", "agent"},
+		{"g", "log"},
+		{"f", "follow"},
+		{"d", "diff"},
+		{"q", "quit"},
+	}
+	return renderHelpLine(nav) + "\n" + renderHelpLine(act)
+}
+
+type helpBind struct {
+	key, desc string
+}
+
+var (
+	helpKeyStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#C7C7C7")).Bold(true)
+	helpDescStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#666666"))
+	helpSepStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#3A3A3A"))
+	helpModeStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#AAAAAA")).Padding(0, 0, 0, 1)
+)
+
+func renderHelpLine(binds []helpBind) string {
+	parts := make([]string, 0, len(binds))
+	for _, b := range binds {
+		parts = append(parts, helpKeyStyle.Render(b.key)+" "+helpDescStyle.Render(b.desc))
+	}
+	sep := helpSepStyle.Render("  │  ")
+	return " " + strings.Join(parts, sep)
+}
+
 // accentColor returns green when the watcher is running, pink otherwise.
 func (m *boardModel) accentColor() string {
 	if m.watcherRunning {
@@ -902,18 +956,7 @@ func (m *boardModel) View() tea.View {
 	board := lipgloss.JoinHorizontal(lipgloss.Top, renderedCols...)
 
 	// --- Help bar ---
-	helpText := "h/l·j/k move  H/L shift  ^d/^u·G scroll  enter open  n new  p prio  D del  y copy  R/b link  u unlink  A/S agent  g log  f follow  d diff  q"
-	if m.inputStep == 1 {
-		helpText = "type a title, then enter to continue • esc to cancel"
-	} else if m.inputStep == 2 {
-		helpText = "type a description • ctrl+s to save • esc to cancel"
-	} else if m.dragging {
-		helpText = fmt.Sprintf("dragging %s — release over target column to move", m.dragID)
-	}
-	help := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#666666")).
-		Padding(0, 0, 0, 1).
-		Render(helpText)
+	help := m.renderHelp()
 
 	// Error display.
 	errMsg := ""
