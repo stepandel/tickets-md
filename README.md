@@ -10,8 +10,10 @@
 # tickets-md
 
 A Linear-style ticket tracker where every ticket is a markdown file and
-every stage is a folder. No database, no daemon — just files you can
-read, grep, edit, and commit alongside your code.
+every stage is a folder. No database; just files you can read, grep,
+edit, and commit alongside your code. Agent automation is opt-in —
+`tickets watch` runs in a foreground terminal when you want stages
+to trigger agents, and there's no background service otherwise.
 
 > **Scoped to a single repository.** `tickets-md` is designed to live
 > inside one git repo, right next to the code it describes. The CLI is
