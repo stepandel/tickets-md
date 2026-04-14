@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-04-13
+
+### Added
+
+- `tickets obsidian install|uninstall|status` — the CLI now embeds
+  the companion Obsidian plugin bundle and drops it into a vault's
+  `.obsidian/plugins/tickets-board/` directory. Walks up from
+  `--vault` (or `--root`) to auto-detect the vault, and appends the
+  plugin id to `community-plugins.json` unless `--no-enable` is passed.
+  Locking the plugin version to the CLI version it shipped with means
+  the WebSocket protocol shared by `tickets watch` and the board can
+  evolve without mismatched-pair bugs.
+- `make plugin-bundle` rebuilds `obsidian-plugin/` via npm + esbuild
+  and copies the artefacts into `internal/obsidian/assets/`, which is
+  where `go:embed` picks them up. `make install` and `make release`
+  now depend on it.
+- GoReleaser pipeline (`.goreleaser.yaml` + `.github/workflows/release.yml`)
+  that fires on `v*` tags to cross-compile darwin/linux/windows
+  (amd64 + arm64) binaries and attach them to a GitHub release.
+
+### Changed
+
+- Go module path moved from `tickets-md` to
+  `github.com/stepandel/tickets-md`, which is a prerequisite for
+  `go install github.com/stepandel/tickets-md/cmd/tickets@latest`.
+- `tickets --version` now falls back to
+  `runtime/debug.ReadBuildInfo` when no `-ldflags` stamp is present,
+  so `go install …@vX.Y.Z` binaries report the tag instead of "dev".
+
 ## [0.1.0] - 2026-04-13
 
 First public release. Everything below has shipped on `main` over the
@@ -71,5 +100,6 @@ course of development.
 - `make release VERSION=x.y.z` stamps the binary version via
   `-ldflags`; `tickets --version` reports it.
 
-[Unreleased]: https://github.com/stepandel/tickets-md/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/stepandel/tickets-md/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/stepandel/tickets-md/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/stepandel/tickets-md/releases/tag/v0.1.0
