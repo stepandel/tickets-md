@@ -53,6 +53,7 @@ Move tickets between stages by renaming the file across folders.`,
 		newBoardCmd(),
 		newCompletionCmd(),
 		newHooksCmd(),
+		newObsidianCmd(),
 	)
 	return cmd
 }

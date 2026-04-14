@@ -118,6 +118,7 @@ tickets -C ~/work/acme list
 | `tickets worktree clean [ids...\|--all]`| Remove worktrees                                   |
 | `tickets completion <shell>`            | Emit a shell completion script                     |
 | `tickets hooks install [--force]`       | Install a pre-commit hook that runs `make check`   |
+| `tickets obsidian <install\|status\|uninstall>` | Manage the bundled Obsidian companion plugin |
 
 `init` accepts `--prefix` and `--stages` to override the defaults at
 creation time. When run interactively without `--stages`, it walks
@@ -420,9 +421,28 @@ as a drag-and-drop Kanban board inside Obsidian with inline ticket
 editing, per-ticket agent controls, a live terminal pane wired to
 `tickets watch`, and a diff view for agent runs.
 
+The CLI embeds the plugin bundle so you can install it without npm:
+
+```sh
+tickets obsidian install                # auto-detect vault from cwd
+tickets obsidian install --vault ~/Vaults/Work
+tickets obsidian status                 # installed vs. bundled version
+tickets obsidian uninstall
+```
+
+`install` walks up from `--vault` (or `--root`) looking for a
+`.obsidian/` directory, writes `main.js` / `manifest.json` /
+`styles.css` into `<vault>/.obsidian/plugins/tickets-board/`, and
+appends the plugin id to `community-plugins.json` so Obsidian picks
+it up on next launch. Pass `--no-enable` to skip the
+`community-plugins.json` edit.
+
+The bundled plugin version is locked to the CLI version — upgrade
+the CLI and rerun `tickets obsidian install` to keep them in sync.
+
 Everything the plugin does is also available from the CLI — it exists
 to give Obsidian users a board view without leaving the editor. See
-the plugin's README for install and development instructions.
+the plugin's README for manual install and development instructions.
 
 ## Ticket file format
 

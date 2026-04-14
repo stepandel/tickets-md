@@ -150,6 +150,11 @@ var rules = []rule{
 		applies:   hasPrefix("internal/worktree"),
 		forbidden: hasPrefix("internal"),
 	},
+	{
+		name:      "internal/obsidian is a leaf — no internal imports",
+		applies:   hasPrefix("internal/obsidian"),
+		forbidden: hasPrefix("internal"),
+	},
 }
 
 func TestLayerRules(t *testing.T) {

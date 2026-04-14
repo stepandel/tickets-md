@@ -28,6 +28,11 @@ caught it and update this file.
   package may read or write there.
 - `internal/terminal/` — WebSocket server that brokers live PTY
   access to the Obsidian plugin. Depends on `agent`.
+- `internal/obsidian/` — embeds the companion Obsidian plugin's build
+  artefacts (`assets/main.js`, `manifest.json`, `styles.css`) and
+  installs them into a vault. Leaf package. The assets are regenerated
+  by `make plugin-bundle`, which bundles `obsidian-plugin/` via npm +
+  esbuild and copies the three files into `assets/`.
 - `internal/cli/` — cobra subcommands (one file per command), the
   `watch` loop, and the glue between everything above.
 - `internal/archtest/` — test-only package. Asserts the layer rules
@@ -45,6 +50,7 @@ cmd/tickets
             ├── internal/agent  ── internal/config
             ├── internal/worktree
             ├── internal/terminal ── internal/agent
+            ├── internal/obsidian
             ├── internal/stage
             ├── internal/config
             └── internal/userconfig
@@ -65,6 +71,8 @@ Concretely:
   `internal/worktree`, `internal/terminal`, or `internal/cli`. It
   sits alongside `internal/ticket`, not on top of it.
 - `internal/worktree` is a leaf: no internal imports.
+- `internal/obsidian` is a leaf: no internal imports. Only `internal/cli`
+  may import it.
 
 These rules are enforced mechanically by
 `internal/archtest/arch_test.go`. If you need to cross a boundary,
