@@ -351,12 +351,6 @@ func SetPlanFile(root, ticketID, runID, planFile string) error {
 	return os.Rename(tmp, target)
 }
 
-// RemoveRun deletes a single run's yml and log files.
-func RemoveRun(root, ticketID, runID string) error {
-	os.Remove(LogPath(root, ticketID, runID))
-	return os.Remove(runPath(root, ticketID, runID))
-}
-
 // RemoveTicket deletes the entire .agents/<ticket-id>/ directory.
 func RemoveTicket(root, ticketID string) error {
 	return os.RemoveAll(TicketDir(root, ticketID))
