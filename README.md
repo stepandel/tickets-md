@@ -43,6 +43,34 @@ go install ./cmd/tickets
 echo 'export PATH="$HOME/go/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
 ```
 
+### Shell completions
+
+`tickets completion <bash|zsh|fish|powershell>` emits a completion
+script on stdout. To load it for the current session:
+
+```sh
+source <(tickets completion zsh)   # or bash / fish
+```
+
+To load it for every new shell, redirect the output to the location
+your shell reads on startup. For example, on zsh:
+
+```sh
+tickets completion zsh > "${fpath[1]}/_tickets"
+```
+
+On bash:
+
+```sh
+tickets completion bash > /etc/bash_completion.d/tickets
+```
+
+On fish:
+
+```sh
+tickets completion fish > ~/.config/fish/completions/tickets.fish
+```
+
 ## Quick start
 
 ```sh
@@ -88,6 +116,7 @@ tickets -C ~/work/acme list
 | `tickets worktree list`                 | List active per-ticket git worktrees (alias: `wt`) |
 | `tickets worktree open <id>`            | Open a ticket's worktree in your editor            |
 | `tickets worktree clean [ids...\|--all]`| Remove worktrees                                   |
+| `tickets completion <shell>`            | Emit a shell completion script                     |
 
 `init` accepts `--prefix` and `--stages` to override the defaults at
 creation time. When run interactively without `--stages`, it walks
