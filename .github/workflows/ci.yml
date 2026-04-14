@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  go:
+    name: go
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: gofmt
+        # Limit to first-party packages so transient .worktrees/<id>
+        # checkouts (when developers run CI locally via act) don't get
+        # scanned. CI checkouts never see those.
+        run: |
+          unformatted=$(gofmt -l ./cmd ./internal)
+          if [ -n "$unformatted" ]; then
+            echo "gofmt would rewrite these files:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go build
+        run: go build ./...
+
+      - name: go test -race
+        run: go test ./... -race
+
+  plugin:
+    name: obsidian-plugin
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: obsidian-plugin
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: obsidian-plugin/package-lock.json
+
+      - run: npm ci
+
+      - name: typecheck
+        run: npx tsc --noEmit
+
+      - name: build
+        run: npm run build
