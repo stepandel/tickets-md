@@ -46,7 +46,7 @@ func (s *Server) Start() (int, error) {
 	mux.HandleFunc("/sessions", s.handleSessions)
 	mux.HandleFunc("/spawn", s.handleSpawn)
 
-	s.srv = &http.Server{Handler: mux}
+	s.srv = &http.Server{Handler: withCORS(mux)}
 	go s.srv.Serve(ln)
 
 	return ln.Addr().(*net.TCPAddr).Port, nil
@@ -58,6 +58,22 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		return nil
 	}
 	return s.srv.Shutdown(ctx)
+}
+
+// withCORS allows the Obsidian renderer (app://obsidian.md) to POST to
+// localhost endpoints. Without this, preflight fails and /spawn silently
+// errors in the browser.
+func withCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // resizeMsg is the JSON payload for PTY resize requests.
