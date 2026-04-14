@@ -154,6 +154,13 @@ func runWatch(s *ticket.Store) error {
 		log.Printf("watching %s/ (%s)", st, status)
 	}
 
+	// Wire the "re-run stage agent" callback now that stage configs are
+	// loaded. The terminal server exposes this via POST /rerun-stage-agent
+	// so the Obsidian plugin can manually trigger the stage agent.
+	termSrv.RerunStageAgent = func(ticketID string) (string, error) {
+		return rerunStageAgent(ticketID, s, stageConfigs, mon, runner)
+	}
+
 	log.Println("ready — move tickets between stages to trigger agents (ctrl+c to stop)")
 
 	sigCh := make(chan os.Signal, 1)
@@ -239,7 +246,9 @@ func handleCreate(s *ticket.Store, stageConfigs map[string]stage.Config, path st
 		return
 	}
 
-	spawnAgent(t, sc, s.Root, mon, runner)
+	if _, err := spawnAgent(t, sc, s.Root, mon, runner); err != nil {
+		log.Printf("%s → %s: spawn failed: %v", t.ID, t.Stage, err)
+	}
 }
 
 // runCleanup performs inline worktree and branch cleanup for a ticket.
@@ -322,22 +331,43 @@ func buildAgentArgs(t ticket.Ticket, ac *stage.AgentConfig, worktreePath string)
 	return argv
 }
 
+// rerunStageAgent is the handler for manual stage-agent re-runs
+// triggered by the Obsidian plugin. It mirrors the watcher's handleCreate
+// path: looks up the ticket's current stage config, verifies an agent is
+// configured, refuses if a run is already active, then calls spawnAgent.
+func rerunStageAgent(ticketID string, s *ticket.Store, stageConfigs map[string]stage.Config, mon *agent.Monitor, runner *agent.PTYRunner) (string, error) {
+	t, err := s.Get(ticketID)
+	if err != nil {
+		return "", fmt.Errorf("ticket %s: %w", ticketID, err)
+	}
+	sc, ok := stageConfigs[t.Stage]
+	if !ok || !sc.HasAgent() {
+		return "", fmt.Errorf("stage %q has no agent configured", t.Stage)
+	}
+	if latest, err := agent.Latest(s.Root, ticketID); err == nil {
+		if !latest.Status.IsTerminal() && runner.Alive(latest.Session) {
+			return "", fmt.Errorf("agent already running (session %s)", latest.Session)
+		}
+	}
+	return spawnAgent(t, sc, s.Root, mon, runner)
+}
+
 // --- agent spawner ---
 
-func spawnAgent(t ticket.Ticket, sc stage.Config, root string, mon *agent.Monitor, runner *agent.PTYRunner) {
+func spawnAgent(t ticket.Ticket, sc stage.Config, root string, mon *agent.Monitor, runner *agent.PTYRunner) (string, error) {
 	ac := sc.Agent
 
 	runID, seq, attempt, err := agent.NextRun(root, t.ID, t.Stage)
 	if err != nil {
 		log.Printf("%s: failed to compute next run id: %v", t.ID, err)
-		return
+		return "", fmt.Errorf("computing next run id: %w", err)
 	}
 	sessionName := fmt.Sprintf("%s-%d", t.ID, seq)
 	logFile := agent.LogPath(root, t.ID, runID)
 
 	if runner.Alive(sessionName) {
 		log.Printf("%s/%s: session %s already exists, skipping", t.ID, runID, sessionName)
-		return
+		return sessionName, nil
 	}
 
 	// Create a git worktree if configured.
@@ -347,7 +377,7 @@ func spawnAgent(t ticket.Ticket, sc stage.Config, root string, mon *agent.Monito
 		wtPath, err = worktree.Create(root, t.ID, ac.BaseBranch)
 		if err != nil {
 			log.Printf("%s: failed to create worktree: %v", t.ID, err)
-			return
+			return "", fmt.Errorf("creating worktree: %w", err)
 		}
 		worktree.EnsureGitignored(root)
 		log.Printf("%s: created worktree at %s (branch %s)", t.ID, wtPath, worktree.BranchPrefix+t.ID)
@@ -387,7 +417,7 @@ func spawnAgent(t ticket.Ticket, sc stage.Config, root string, mon *agent.Monito
 	}
 	if err := agent.Write(root, as); err != nil {
 		log.Printf("%s/%s: failed to write agent status: %v", t.ID, runID, err)
-		return
+		return "", fmt.Errorf("writing agent status: %w", err)
 	}
 
 	// Write agent info into the ticket frontmatter so Obsidian users
@@ -403,7 +433,7 @@ func spawnAgent(t ticket.Ticket, sc stage.Config, root string, mon *agent.Monito
 
 	if err := os.MkdirAll(agent.RunsDir(root, t.ID), 0o755); err != nil {
 		log.Printf("%s/%s: failed to create runs dir: %v", t.ID, runID, err)
-		return
+		return "", fmt.Errorf("creating runs dir: %w", err)
 	}
 
 	// Pin the starting directory: worktree if configured, otherwise
@@ -419,14 +449,14 @@ func spawnAgent(t ticket.Ticket, sc stage.Config, root string, mon *agent.Monito
 	fullArgv := append([]string{ac.Command}, argv...)
 
 	if err := runner.Start(sessionName, cwd, fullArgv, logFile); err != nil {
-		log.Printf("%s �� %s: failed to start agent session: %v", t.ID, t.Stage, err)
+		log.Printf("%s → %s: failed to start agent session: %v", t.ID, t.Stage, err)
 		as.Status = agent.StatusErrored
 		as.Error = err.Error()
 		agent.Write(root, as) // best-effort
 		t.AgentStatus = string(agent.StatusErrored)
 		t.AgentSession = ""
 		t.WriteFile() // best-effort
-		return
+		return "", fmt.Errorf("starting agent session: %w", err)
 	}
 
 	wtInfo := ""
@@ -441,6 +471,7 @@ func spawnAgent(t ticket.Ticket, sc stage.Config, root string, mon *agent.Monito
 
 	mon.TrackRun(t.ID, runID)
 	go waitForSession(t, runID, ac.Command, sessionName, root, mon, runner)
+	return sessionName, nil
 }
 
 // waitForSession blocks until the PTY session exits and updates the

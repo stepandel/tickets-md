@@ -8,6 +8,7 @@ import {
 	TFolder,
 	Menu,
 	Modal,
+	Notice,
 	Setting,
 	parseYaml,
 } from "obsidian";
@@ -631,16 +632,24 @@ class BoardView extends ItemView {
 				}),
 			);
 		}
-		// "Run agent" — spawn an on-demand interactive session via the terminal server.
-		// Visible on desktop when default_agent is configured and no agent is active.
-		if (!Platform.isMobile && this.config?.default_agent?.command) {
+		// Manual agent triggers — only shown on desktop, and only when the
+		// ticket has no active agent run.
+		if (!Platform.isMobile) {
 			const activeStatuses = ["spawned", "running", "blocked"];
-			if (!ticket.agent_status || !activeStatuses.includes(ticket.agent_status)) {
+			const idle = !ticket.agent_status || !activeStatuses.includes(ticket.agent_status);
+			if (idle) {
 				menu.addItem((item) =>
-					item.setTitle("Run agent").setIcon("bot").onClick(() => {
-						this.spawnAgentRun(ticket);
+					item.setTitle("Re-run stage agent").setIcon("refresh-cw").onClick(() => {
+						this.rerunStageAgent(ticket);
 					}),
 				);
+				if (this.config?.default_agent?.command) {
+					menu.addItem((item) =>
+						item.setTitle("Adhoc agent run").setIcon("bot").onClick(() => {
+							this.spawnAgentRun(ticket);
+						}),
+					);
+				}
 			}
 		}
 		if (ticket.agent_status) {
@@ -699,20 +708,33 @@ class BoardView extends ItemView {
 	}
 
 	private async spawnAgentRun(ticket: Ticket) {
+		await this.postSpawn(ticket, "/spawn", "spawn agent run");
+	}
+
+	private async rerunStageAgent(ticket: Ticket) {
+		await this.postSpawn(ticket, "/rerun-stage-agent", "re-run stage agent");
+	}
+
+	// postSpawn POSTs {ticket_id} to a terminal-server endpoint that returns
+	// { session }, then opens a terminal leaf attached to that session. Used
+	// for both adhoc (/spawn) and stage-agent (/rerun-stage-agent) runs.
+	private async postSpawn(ticket: Ticket, path: string, label: string) {
 		const serverInfo = await this.readServerFile();
 		if (!serverInfo) {
-			return; // terminal server not running
+			new Notice("terminal server not running — start `tickets watch`");
+			return;
 		}
 
 		try {
-			const resp = await fetch(`http://127.0.0.1:${serverInfo.port}/spawn`, {
+			const resp = await fetch(`http://127.0.0.1:${serverInfo.port}${path}`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ ticket_id: ticket.id }),
 			});
 			if (!resp.ok) {
-				const text = await resp.text();
-				console.error("spawn failed:", text);
+				const text = (await resp.text()).trim();
+				console.error(`${label} failed:`, text);
+				new Notice(`${label}: ${text || resp.statusText}`);
 				return;
 			}
 			const { session } = (await resp.json()) as { session: string };
@@ -724,7 +746,8 @@ class BoardView extends ItemView {
 			});
 			this.app.workspace.revealLeaf(leaf);
 		} catch (e) {
-			console.error("spawn agent run:", e);
+			console.error(`${label}:`, e);
+			new Notice(`${label}: ${e instanceof Error ? e.message : String(e)}`);
 		}
 	}
 

@@ -24,6 +24,13 @@ type Server struct {
 	root   string // project root for on-demand agent spawning
 	srv    *http.Server
 	ln     net.Listener
+
+	// RerunStageAgent, if set, spawns the agent configured on the ticket's
+	// current stage (same logic as when a ticket lands in that stage via
+	// the file watcher). Returns the session name on success. Nil means
+	// the watcher did not register a callback, so /rerun-stage-agent is
+	// rejected.
+	RerunStageAgent func(ticketID string) (string, error)
 }
 
 // New creates a terminal server backed by the given PTYRunner.
@@ -45,6 +52,7 @@ func (s *Server) Start() (int, error) {
 	mux.HandleFunc("/terminal/", s.handleTerminal)
 	mux.HandleFunc("/sessions", s.handleSessions)
 	mux.HandleFunc("/spawn", s.handleSpawn)
+	mux.HandleFunc("/rerun-stage-agent", s.handleRerunStageAgent)
 
 	s.srv = &http.Server{Handler: withCORS(mux)}
 	go s.srv.Serve(ln)
@@ -230,4 +238,38 @@ func (s *Server) handleSpawn(w http.ResponseWriter, r *http.Request) {
 	log.Printf("spawned interactive agent session %s for %s", sessionName, req.TicketID)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(spawnResponse{Session: sessionName})
+}
+
+// handleRerunStageAgent spawns the agent configured on the ticket's current
+// stage. Same flow as when the file watcher sees a ticket land in the stage:
+// writes a run YAML, creates a worktree if configured, etc.
+func (s *Server) handleRerunStageAgent(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.RerunStageAgent == nil {
+		http.Error(w, "rerun not available (watcher did not register a callback)", http.StatusServiceUnavailable)
+		return
+	}
+
+	var req spawnRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.TicketID == "" {
+		http.Error(w, "ticket_id is required", http.StatusBadRequest)
+		return
+	}
+
+	session, err := s.RerunStageAgent(req.TicketID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("re-ran stage agent for %s (session %s)", req.TicketID, session)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(spawnResponse{Session: session})
 }
