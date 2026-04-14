@@ -79,8 +79,12 @@ func runWatch(s *ticket.Store) error {
 		}()
 	}
 
-	// Start the agent status monitor.
+	// Start the agent status monitor. The monitor owns the authoritative
+	// run YAMLs; frontmatter is a cache it rewrites via OnStatusChange.
 	mon := agent.NewMonitor(s.Root, runner.Alive, runner.IdleSeconds)
+	mon.OnStatusChange = func(ticketID string) {
+		syncAgentFrontmatter(s.Root, ticketID)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -89,6 +93,11 @@ func runWatch(s *ticket.Store) error {
 	if err != nil {
 		log.Printf("monitor: startup reconciliation failed: %v", err)
 	}
+
+	// Resync every ticket's frontmatter from its latest run YAML. Heals
+	// drift from a prior watcher that crashed between writing a YAML and
+	// writing the md — the YAML is truth, so we rewrite the md to match.
+	syncAllFrontmatter(s)
 
 	// Backfill plan_file for any terminal runs whose session-end
 	// capture missed it. Self-heals runs that finished under an
@@ -467,19 +476,9 @@ func waitForSession(t ticket.Ticket, runID, agentName, sessionName, root string,
 		}
 	}
 
-	// Update ticket frontmatter with the final agent status. The agent
-	// has exited so there is no concurrent write risk. Reload the
-	// ticket fresh because the agent likely modified its body.
-	if store, err := ticket.Open(root); err == nil {
-		if fresh, err := store.Get(t.ID); err == nil {
-			fresh.AgentStatus = string(finalStatus)
-			fresh.AgentRun = runID
-			fresh.AgentSession = ""
-			if err := store.Save(fresh); err != nil {
-				log.Printf("%s/%s: failed to update ticket frontmatter: %v", t.ID, runID, err)
-			}
-		}
-	}
+	// Rewrite frontmatter from the (now-final) run YAML. The YAML is the
+	// source of truth; syncAgentFrontmatter projects it onto the md.
+	syncAgentFrontmatter(root, t.ID)
 }
 
 // backfillPlanFiles walks every recorded run and, for runs that have
@@ -544,6 +543,57 @@ func writeTerminalServerFile(root string, port int) {
 
 func removeTerminalServerFile(root string) {
 	os.Remove(terminalServerFilePath(root))
+}
+
+// syncAllFrontmatter runs syncAgentFrontmatter for every known ticket.
+// Called on watcher startup so any frontmatter that drifted from its
+// YAML (e.g. watcher killed mid-write) self-heals.
+func syncAllFrontmatter(s *ticket.Store) {
+	byStage, err := s.ListAll()
+	if err != nil {
+		log.Printf("startup frontmatter sync: list tickets: %v", err)
+		return
+	}
+	for _, tickets := range byStage {
+		for _, t := range tickets {
+			syncAgentFrontmatter(s.Root, t.ID)
+		}
+	}
+}
+
+// syncAgentFrontmatter rewrites the ticket's agent_* frontmatter fields
+// from the latest run YAML. YAMLs are authoritative; frontmatter is a
+// cached projection that the Obsidian plugin renders from. Called on
+// every run-status change and on watcher startup to heal drift (e.g.
+// if the watcher was killed between writing a YAML and writing the md).
+func syncAgentFrontmatter(root, ticketID string) {
+	store, err := ticket.Open(root)
+	if err != nil {
+		return
+	}
+	t, err := store.Get(ticketID)
+	if err != nil {
+		return
+	}
+
+	var wantStatus, wantRun, wantSession string
+	if latest, err := agent.Latest(root, ticketID); err == nil {
+		wantStatus = string(latest.Status)
+		wantRun = latest.RunID
+		if !latest.Status.IsTerminal() {
+			wantSession = latest.Session
+		}
+	}
+
+	if t.AgentStatus == wantStatus && t.AgentRun == wantRun && t.AgentSession == wantSession {
+		return
+	}
+	t.AgentStatus = wantStatus
+	t.AgentRun = wantRun
+	t.AgentSession = wantSession
+	if err := store.Save(t); err != nil {
+		log.Printf("%s: failed to sync agent frontmatter: %v", ticketID, err)
+	}
 }
 
 // --- shared ---

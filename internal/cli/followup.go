@@ -182,6 +182,7 @@ Examples:
 			if err := agent.Write(s.Root, as); err != nil {
 				fmt.Fprintf(os.Stderr, "warning: failed to record followup run: %v\n", err)
 			}
+			syncAgentFrontmatter(s.Root, ticketID)
 
 			if runErr != nil {
 				return fmt.Errorf("agent exited with code %d", exitCode)

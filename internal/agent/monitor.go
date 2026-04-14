@@ -32,6 +32,11 @@ type Monitor struct {
 	check     SessionChecker
 	idleCheck IdleChecker
 
+	// OnStatusChange fires after the monitor successfully writes a run
+	// YAML. The watcher uses it to resync the ticket's frontmatter from
+	// the latest run. Optional; nil means no callback.
+	OnStatusChange func(ticketID string)
+
 	mu       sync.Mutex
 	watching map[string]struct{} // "<ticket>/<run>" with active wait goroutines
 }
@@ -49,6 +54,18 @@ func NewMonitor(root string, check SessionChecker, idle IdleChecker) *Monitor {
 
 func runKey(ticketID, runID string) string {
 	return ticketID + "/" + runID
+}
+
+// writeAndNotify persists as and, on success, fires OnStatusChange so
+// callers can resync derived state (e.g. ticket frontmatter).
+func (m *Monitor) writeAndNotify(as AgentStatus) error {
+	if err := Write(m.root, as); err != nil {
+		return err
+	}
+	if m.OnStatusChange != nil {
+		m.OnStatusChange(as.TicketID)
+	}
+	return nil
 }
 
 // TrackRun registers a (ticket, run) pair as having an active
@@ -97,7 +114,7 @@ func (m *Monitor) Reconcile() ([]AliveStatus, error) {
 		if m.check(as.Session) {
 			if as.Status == StatusSpawned {
 				as.Status = StatusRunning
-				if err := Write(m.root, as); err != nil {
+				if err := m.writeAndNotify(as); err != nil {
 					log.Printf("monitor: failed to promote %s/%s to running: %v", as.TicketID, as.RunID, err)
 				}
 			}
@@ -105,7 +122,7 @@ func (m *Monitor) Reconcile() ([]AliveStatus, error) {
 		} else {
 			as.Status = StatusFailed
 			as.Error = "session not found on watcher restart"
-			if err := Write(m.root, as); err != nil {
+			if err := m.writeAndNotify(as); err != nil {
 				log.Printf("monitor: failed to mark %s/%s failed: %v", as.TicketID, as.RunID, err)
 			} else {
 				log.Printf("monitor: reconciled %s/%s as failed (stale status)", as.TicketID, as.RunID)
@@ -160,14 +177,14 @@ func (m *Monitor) poll() {
 			switch as.Status {
 			case StatusSpawned:
 				as.Status = StatusRunning
-				if err := Write(m.root, as); err != nil {
+				if err := m.writeAndNotify(as); err != nil {
 					log.Printf("monitor: failed to promote %s/%s to running: %v", as.TicketID, as.RunID, err)
 				}
 			case StatusRunning:
 				if idle >= blockedThreshold {
 					as.Status = StatusBlocked
 					as.Error = fmt.Sprintf("pane idle for %ds, likely waiting for input", idle)
-					if err := Write(m.root, as); err != nil {
+					if err := m.writeAndNotify(as); err != nil {
 						log.Printf("monitor: failed to mark %s/%s blocked: %v", as.TicketID, as.RunID, err)
 					} else {
 						log.Printf("monitor: %s/%s marked blocked (idle %ds)", as.TicketID, as.RunID, idle)
@@ -177,7 +194,7 @@ func (m *Monitor) poll() {
 				if idle < blockedThreshold {
 					as.Status = StatusRunning
 					as.Error = ""
-					if err := Write(m.root, as); err != nil {
+					if err := m.writeAndNotify(as); err != nil {
 						log.Printf("monitor: failed to unblock %s/%s: %v", as.TicketID, as.RunID, err)
 					} else {
 						log.Printf("monitor: %s/%s resumed (no longer idle)", as.TicketID, as.RunID)
@@ -187,7 +204,7 @@ func (m *Monitor) poll() {
 		} else if !m.isTracked(as.TicketID, as.RunID) {
 			as.Status = StatusFailed
 			as.Error = "session disappeared"
-			if err := Write(m.root, as); err != nil {
+			if err := m.writeAndNotify(as); err != nil {
 				log.Printf("monitor: failed to mark %s/%s failed: %v", as.TicketID, as.RunID, err)
 			} else {
 				log.Printf("monitor: %s/%s marked failed (session gone, no watcher)", as.TicketID, as.RunID)
