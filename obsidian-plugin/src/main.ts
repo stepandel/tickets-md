@@ -878,47 +878,35 @@ class BoardView extends ItemView {
 	}
 
 	private async spawnAgentRun(ticket: Ticket) {
-		await this.postSpawn(ticket, "/spawn", "spawn agent run");
+		await this.openSpawningTerminal(ticket, "/spawn", "spawn agent run");
 	}
 
 	private async rerunStageAgent(ticket: Ticket) {
-		await this.postSpawn(ticket, "/rerun-stage-agent", "re-run stage agent");
+		await this.openSpawningTerminal(ticket, "/rerun-stage-agent", "re-run stage agent");
 	}
 
-	// postSpawn POSTs {ticket_id} to a terminal-server endpoint that returns
-	// { session }, then opens a terminal leaf attached to that session. Used
-	// for both adhoc (/spawn) and stage-agent (/rerun-stage-agent) runs.
-	private async postSpawn(ticket: Ticket, path: string, label: string) {
+	// openSpawningTerminal opens a TerminalView leaf in "pending spawn"
+	// mode: the view measures its container, posts {ticket_id, rows, cols}
+	// to the given terminal-server endpoint, and only then connects the
+	// WebSocket. Threading the geometry through avoids the first-second
+	// 24x120 wrap that happens when the PTY starts before the client's
+	// first resize message.
+	private async openSpawningTerminal(ticket: Ticket, path: string, label: string) {
 		const serverInfo = await this.readServerFile();
 		if (!serverInfo) {
 			new Notice("terminal server not running — start `tickets watch`");
 			return;
 		}
-
-		try {
-			const resp = await fetch(`http://127.0.0.1:${serverInfo.port}${path}`, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ ticket_id: ticket.id }),
-			});
-			if (!resp.ok) {
-				const text = (await resp.text()).trim();
-				console.error(`${label} failed:`, text);
-				new Notice(`${label}: ${text || resp.statusText}`);
-				return;
-			}
-			const { session } = (await resp.json()) as { session: string };
-
-			const leaf = this.app.workspace.getLeaf("split");
-			await leaf.setViewState({
-				type: TERMINAL_VIEW_TYPE,
-				state: { sessionName: session, ticketId: ticket.id },
-			});
-			this.app.workspace.revealLeaf(leaf);
-		} catch (e) {
-			console.error(`${label}:`, e);
-			new Notice(`${label}: ${e instanceof Error ? e.message : String(e)}`);
-		}
+		const leaf = this.app.workspace.getLeaf("split");
+		await leaf.setViewState({
+			type: TERMINAL_VIEW_TYPE,
+			state: {
+				ticketId: ticket.id,
+				spawnPath: path,
+				spawnLabel: label,
+			},
+		});
+		this.app.workspace.revealLeaf(leaf);
 	}
 
 	// ── Diff ──────────────────────────────────────────────────────────
@@ -1102,6 +1090,8 @@ class TerminalView extends ItemView {
 	private ws: WebSocket | null = null;
 	private sessionName = "";
 	private ticketId = "";
+	private spawnPath = "";
+	private spawnLabel = "";
 	private resizeObserver: ResizeObserver | null = null;
 
 	getViewType(): string {
@@ -1119,11 +1109,15 @@ class TerminalView extends ItemView {
 	async setState(state: Record<string, unknown>, result: ViewStateResult) {
 		this.sessionName = (state.sessionName as string) ?? "";
 		this.ticketId = (state.ticketId as string) ?? "";
+		this.spawnPath = (state.spawnPath as string) ?? "";
+		this.spawnLabel = (state.spawnLabel as string) ?? "";
 		await super.setState(state, result);
-		this.connect();
+		this.start();
 	}
 
 	getState(): Record<string, unknown> {
+		// Persist only the attached session — re-running a spawn after a
+		// reload would create a duplicate run, so we drop spawnPath here.
 		return { sessionName: this.sessionName, ticketId: this.ticketId };
 	}
 
@@ -1131,7 +1125,7 @@ class TerminalView extends ItemView {
 		this.contentEl.addClass("tb-terminal-container");
 	}
 
-	private async connect() {
+	private async start() {
 		const serverInfo = await this.readServerFile();
 		if (!serverInfo) {
 			this.showError("No terminal server running. Is `tickets watch` active?");
@@ -1153,7 +1147,70 @@ class TerminalView extends ItemView {
 		this.terminal.open(this.contentEl);
 		this.fitAddon.fit();
 
-		const url = `ws://127.0.0.1:${serverInfo.port}/terminal/${this.sessionName}`;
+		// In spawn mode the PTY hasn't been created yet — POST the
+		// measured geometry first so the agent's first output already
+		// fits the visible viewport.
+		if (this.spawnPath) {
+			const session = await this.postSpawn(serverInfo.port);
+			if (!session) return;
+			this.sessionName = session;
+			this.spawnPath = "";
+		}
+
+		this.connectWebSocket(serverInfo.port);
+
+		this.terminal.onData((data: string) => {
+			if (this.ws?.readyState === WebSocket.OPEN) {
+				this.ws.send(new TextEncoder().encode(data));
+			}
+		});
+
+		this.resizeObserver = new ResizeObserver(() => {
+			this.fitAddon?.fit();
+			this.sendResize();
+		});
+		this.resizeObserver.observe(this.contentEl);
+	}
+
+	private async postSpawn(port: number): Promise<string | null> {
+		const label = this.spawnLabel || "spawn agent";
+		try {
+			const resp = await fetch(`http://127.0.0.1:${port}${this.spawnPath}`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					ticket_id: this.ticketId,
+					rows: this.terminal?.rows ?? 0,
+					cols: this.terminal?.cols ?? 0,
+				}),
+			});
+			if (!resp.ok) {
+				const text = (await resp.text()).trim();
+				console.error(`${label} failed:`, text);
+				new Notice(`${label}: ${text || resp.statusText}`);
+				this.showError(`${label}: ${text || resp.statusText}`);
+				return null;
+			}
+			const { session } = (await resp.json()) as { session: string };
+			return session;
+		} catch (e) {
+			console.error(`${label}:`, e);
+			const msg = e instanceof Error ? e.message : String(e);
+			new Notice(`${label}: ${msg}`);
+			this.showError(`${label}: ${msg}`);
+			return null;
+		}
+	}
+
+	private connectWebSocket(port: number) {
+		// Pass initial geometry on the upgrade so the PTY resizes before
+		// the replay buffer is rendered (matters for sessions that were
+		// started by the file watcher with no client geometry available).
+		const rows = this.terminal?.rows ?? 0;
+		const cols = this.terminal?.cols ?? 0;
+		const url =
+			`ws://127.0.0.1:${port}/terminal/${this.sessionName}` +
+			`?rows=${rows}&cols=${cols}`;
 		this.ws = new WebSocket(url);
 		this.ws.binaryType = "arraybuffer";
 
@@ -1174,18 +1231,6 @@ class TerminalView extends ItemView {
 		this.ws.onerror = () => {
 			this.showError("Connection lost to terminal server.");
 		};
-
-		this.terminal.onData((data: string) => {
-			if (this.ws?.readyState === WebSocket.OPEN) {
-				this.ws.send(new TextEncoder().encode(data));
-			}
-		});
-
-		this.resizeObserver = new ResizeObserver(() => {
-			this.fitAddon?.fit();
-			this.sendResize();
-		});
-		this.resizeObserver.observe(this.contentEl);
 	}
 
 	private sendResize() {
