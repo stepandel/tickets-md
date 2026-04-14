@@ -67,6 +67,12 @@ type boardModel struct {
 	colWidth int
 	gap      int
 
+	// Scroll offset (first visible card index) per column.
+	scrollOff []int
+	// Most recently measured visible-card capacity per column; written
+	// during View(), read by keyboard scroll handlers.
+	visibleCards []int
+
 	// Drag state.
 	dragging    bool
 	dragID      string
@@ -94,6 +100,8 @@ func newBoardModel(s *ticket.Store) (*boardModel, error) {
 		stages:        s.Config.Stages,
 		gap:           1,
 		agentStatuses: make(map[string]agent.AgentStatus),
+		scrollOff:     make([]int, len(s.Config.Stages)),
+		visibleCards:  make([]int, len(s.Config.Stages)),
 	}
 	if err := m.reload(); err != nil {
 		return nil, err
@@ -159,6 +167,21 @@ func (m *boardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.MouseReleaseMsg:
 		return m.handleMouseRelease(msg)
+
+	case tea.MouseWheelMsg:
+		// Point scroll at whatever column the cursor is over so the
+		// wheel scrolls where the user is looking, not the active column.
+		targetCol := m.xToCol(msg.X)
+		if targetCol < 0 || targetCol >= len(m.stages) {
+			return m, nil
+		}
+		switch msg.Button {
+		case tea.MouseWheelUp:
+			m.scrollCol(targetCol, -3)
+		case tea.MouseWheelDown:
+			m.scrollCol(targetCol, 3)
+		}
+		return m, nil
 	}
 	return m, nil
 }
@@ -180,15 +203,23 @@ func (m *boardModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "j", "down":
 		if m.activeRow < len(m.columns[m.activeCol])-1 {
 			m.activeRow++
+			m.ensureVisible()
 		}
 	case "k", "up":
 		if m.activeRow > 0 {
 			m.activeRow--
+			m.ensureVisible()
 		}
 	case "L", "shift+right":
 		m.moveCard(1)
 	case "H", "shift+left":
 		m.moveCard(-1)
+	case "ctrl+d", "pgdown":
+		m.halfPageScroll(1)
+	case "ctrl+u", "pgup":
+		m.halfPageScroll(-1)
+	case "G":
+		m.jumpToEnd()
 	case "r":
 		m.err = m.reload()
 		m.refreshStatus()
@@ -362,6 +393,7 @@ func (m *boardModel) submitTicket() (tea.Model, tea.Cmd) {
 			break
 		}
 	}
+	m.ensureVisible()
 	return m, nil
 }
 
@@ -410,6 +442,7 @@ func (m *boardModel) handleMouseRelease(msg tea.MouseReleaseMsg) (tea.Model, tea
 			break
 		}
 	}
+	m.ensureVisible()
 	return m, nil
 }
 
@@ -423,10 +456,14 @@ func (m *boardModel) hitTest(x, y int) (col, row int, ok bool) {
 	// (border-top + 2 content lines + border-bottom + margin-bottom).
 	cardStartY := 3
 	cardHeight := 5
-	if y < cardStartY {
-		return col, 0, true
+	off := 0
+	if col < len(m.scrollOff) {
+		off = m.scrollOff[col]
 	}
-	row = (y - cardStartY) / cardHeight
+	if y < cardStartY {
+		return col, off, true
+	}
+	row = off + (y-cardStartY)/cardHeight
 	maxRow := len(m.columns[col]) - 1
 	if maxRow < 0 {
 		maxRow = 0
@@ -499,6 +536,7 @@ func (m *boardModel) moveCard(dir int) {
 			break
 		}
 	}
+	m.ensureVisible()
 }
 
 func (m *boardModel) clampRow() {
@@ -508,6 +546,110 @@ func (m *boardModel) clampRow() {
 	}
 	if m.activeRow > max {
 		m.activeRow = max
+	}
+	m.ensureVisible()
+}
+
+// ensureVisible adjusts scrollOff for the active column so the active
+// row is within the viewport. Uses the most recent visibleCards
+// measurement; pre-View() (when visibleCards is 0) it falls back to
+// pinning scroll at the active row.
+func (m *boardModel) ensureVisible() {
+	if m.activeCol < 0 || m.activeCol >= len(m.scrollOff) {
+		return
+	}
+	capv := 0
+	if m.activeCol < len(m.visibleCards) {
+		capv = m.visibleCards[m.activeCol]
+	}
+	if capv <= 0 {
+		return
+	}
+	off := m.scrollOff[m.activeCol]
+	if m.activeRow < off {
+		off = m.activeRow
+	}
+	if m.activeRow >= off+capv {
+		off = m.activeRow - capv + 1
+	}
+	if off < 0 {
+		off = 0
+	}
+	m.scrollOff[m.activeCol] = off
+}
+
+// halfPageScroll scrolls the active column by half its visible capacity
+// in the given direction (+1 down, -1 up).
+func (m *boardModel) halfPageScroll(dir int) {
+	capv := 0
+	if m.activeCol < len(m.visibleCards) {
+		capv = m.visibleCards[m.activeCol]
+	}
+	step := capv / 2
+	if step < 1 {
+		step = 1
+	}
+	m.scrollActive(dir * step)
+}
+
+// jumpToEnd moves the cursor to the last card in the active column.
+func (m *boardModel) jumpToEnd() {
+	total := len(m.columns[m.activeCol])
+	if total == 0 {
+		return
+	}
+	m.activeRow = total - 1
+	m.ensureVisible()
+}
+
+// scrollCol shifts column `col`'s scroll by `delta` rows without moving
+// the cursor. Used by mouse wheel when the pointer is over a
+// non-active column.
+func (m *boardModel) scrollCol(col, delta int) {
+	if col < 0 || col >= len(m.scrollOff) {
+		return
+	}
+	capv := 0
+	if col < len(m.visibleCards) {
+		capv = m.visibleCards[col]
+	}
+	if capv <= 0 {
+		return
+	}
+	total := len(m.columns[col])
+	maxOff := total - capv
+	if maxOff < 0 {
+		maxOff = 0
+	}
+	off := m.scrollOff[col] + delta
+	if off < 0 {
+		off = 0
+	}
+	if off > maxOff {
+		off = maxOff
+	}
+	m.scrollOff[col] = off
+}
+
+// scrollActive scrolls the active column and pulls the cursor along
+// so it stays in view. Used by ctrl+d / ctrl+u.
+func (m *boardModel) scrollActive(delta int) {
+	m.scrollCol(m.activeCol, delta)
+	capv := 0
+	if m.activeCol < len(m.visibleCards) {
+		capv = m.visibleCards[m.activeCol]
+	}
+	if capv <= 0 {
+		return
+	}
+	off := m.scrollOff[m.activeCol]
+	if m.activeRow < off {
+		m.activeRow = off
+	} else if m.activeRow >= off+capv {
+		m.activeRow = off + capv - 1
+	}
+	if m.activeRow < 0 {
+		m.activeRow = 0
 	}
 }
 
@@ -562,9 +704,56 @@ func (m *boardModel) View() tea.View {
 	m.colWidth = colWidth
 	cardWidth := colWidth - 4
 
+	// Column frame height: screen minus status bar and help bar.
+	contentHeight := m.height - 6
+	if contentHeight < 5 {
+		contentHeight = 5
+	}
+	// Inner body rows available after borders (2) and header (1).
+	bodyRows := contentHeight - 3
+	if bodyRows < 1 {
+		bodyRows = 1
+	}
+	// Each card is 5 rows (border-top + 2 content lines + border-bottom + margin-bottom).
+	cardsPerPage := bodyRows / 5
+	if cardsPerPage < 1 {
+		cardsPerPage = 1
+	}
+
 	var renderedCols []string
 	for i, st := range m.stages {
 		isActiveCol := i == m.activeCol
+		total := len(m.columns[i])
+
+		// Reserve one card slot for the input/new-ticket button in column 0
+		// if the input is active OR if we're scrolled to the bottom.
+		capv := cardsPerPage
+		// Record capacity for keyboard scroll math.
+		if i < len(m.visibleCards) {
+			m.visibleCards[i] = capv
+		}
+
+		// Clamp scroll to valid range for current content.
+		if i < len(m.scrollOff) {
+			maxOff := total - capv
+			if maxOff < 0 {
+				maxOff = 0
+			}
+			if m.scrollOff[i] > maxOff {
+				m.scrollOff[i] = maxOff
+			}
+			if m.scrollOff[i] < 0 {
+				m.scrollOff[i] = 0
+			}
+		}
+		off := 0
+		if i < len(m.scrollOff) {
+			off = m.scrollOff[i]
+		}
+		end := off + capv
+		if end > total {
+			end = total
+		}
 
 		// Header.
 		hStyle := lipgloss.NewStyle().
@@ -576,14 +765,20 @@ func (m *boardModel) View() tea.View {
 		if isActiveCol {
 			hStyle = hStyle.Background(accent)
 		}
-		count := len(m.columns[i])
-		header := hStyle.Width(colWidth - 4).Render(
-			fmt.Sprintf("%s (%d)", st, count),
-		)
+		// Append scroll indicators to the count when needed.
+		countLabel := fmt.Sprintf("%s (%d)", st, total)
+		if off > 0 {
+			countLabel = "▲ " + countLabel
+		}
+		if end < total {
+			countLabel = countLabel + " ▼"
+		}
+		header := hStyle.Width(colWidth - 4).Render(countLabel)
 
 		// Cards.
 		var cards []string
-		for j, t := range m.columns[i] {
+		for j := off; j < end; j++ {
+			t := m.columns[i][j]
 			isActiveCard := isActiveCol && j == m.activeRow
 			isDragged := m.dragging && t.ID == m.dragID
 
@@ -626,7 +821,10 @@ func (m *boardModel) View() tea.View {
 			cards = append(cards, cStyle.Render(cardContent))
 		}
 		// Show inline input or [+] button at the bottom of the first column.
-		if i == 0 {
+		// Only when scrolled to the bottom (or input is active, which
+		// forces it into view so the user can see what they're typing).
+		showInputSlot := i == 0 && (m.inputStep > 0 || end >= total)
+		if showInputSlot {
 			if m.inputStep == 1 {
 				// Title input.
 				cursor := "█"
@@ -679,7 +877,6 @@ func (m *boardModel) View() tea.View {
 			cs = cs.BorderForeground(accent)
 		}
 		colContent := header + "\n" + body
-		contentHeight := m.height - 6 // room for status bar + help bar
 		cs = cs.Width(colWidth - 2).Height(contentHeight)
 
 		renderedCols = append(renderedCols, cs.Render(colContent))
@@ -688,7 +885,7 @@ func (m *boardModel) View() tea.View {
 	board := lipgloss.JoinHorizontal(lipgloss.Top, renderedCols...)
 
 	// --- Help bar ---
-	helpText := "h/l·j/k move  H/L shift  enter open  n new  p prio  D del  y copy  R/b link  u unlink  A/S agent  g log  f follow  d diff  q"
+	helpText := "h/l·j/k move  H/L shift  ^d/^u·G scroll  enter open  n new  p prio  D del  y copy  R/b link  u unlink  A/S agent  g log  f follow  d diff  q"
 	if m.inputStep == 1 {
 		helpText = "type a title, then enter to continue • esc to cancel"
 	} else if m.inputStep == 2 {
