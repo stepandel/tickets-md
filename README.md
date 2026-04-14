@@ -65,19 +65,29 @@ tickets -C ~/work/acme list
 
 ## Commands
 
-| Command                       | What it does                                   |
-| ----------------------------- | ---------------------------------------------- |
-| `tickets init`                | Create `.tickets/config.yml` + stage folders   |
-| `tickets new <title...>`      | Create a ticket in the default stage           |
-| `tickets list [--stage X]`    | List tickets, grouped by stage (alias: `ls`)   |
-| `tickets show <id>`           | Print a ticket's contents                      |
-| `tickets move <id> <stage>`   | Move a ticket to another stage (alias: `mv`)   |
-| `tickets edit <id>`           | Open the ticket file in your editor            |
-| `tickets rm <id> [--force]`   | Delete a ticket                                |
-| `tickets board`               | Interactive kanban board TUI (alias: `tui`)    |
-| `tickets watch`               | Watch for ticket movements and spawn agents    |
-| `tickets agents`              | List active agent runs                         |
-| `tickets agents monitor <id>` | Follow one agent's status and output           |
+| Command                                 | What it does                                       |
+| --------------------------------------- | -------------------------------------------------- |
+| `tickets init`                          | Create `.tickets/config.yml` + stage folders       |
+| `tickets new <title...> [--priority P]` | Create a ticket in the default stage               |
+| `tickets list [--stage X]`              | List tickets, grouped by stage (alias: `ls`)       |
+| `tickets show <id>`                     | Print a ticket's contents                          |
+| `tickets move <id> <stage>`             | Move a ticket to another stage (alias: `mv`)       |
+| `tickets edit <id>`                     | Open the ticket file in your editor                |
+| `tickets set <id> <field> <value...>`   | Update a scalar field (`priority`, `title`)        |
+| `tickets rm <id> [--force]`             | Delete a ticket                                    |
+| `tickets link <a> <b> [--blocks]`       | Link two tickets (related, or directional blocks)  |
+| `tickets unlink <a> <b> [--blocks]`     | Remove a link                                      |
+| `tickets doctor [--dry-run]`            | Find and fix broken ticket links                   |
+| `tickets board`                         | Interactive kanban board TUI (alias: `tui`)        |
+| `tickets watch`                         | Watch for ticket movements and spawn agents        |
+| `tickets agents [-a] [--history]`       | List agent runs                                    |
+| `tickets agents log <id> [run]`         | Print the captured output for a run                |
+| `tickets agents plan <id> [run]`        | Open the plan file written by a Claude Code run    |
+| `tickets agents followup <id> [--run R] [--message M]` | Spawn a followup session with prior run's context |
+| `tickets agents run <id>`               | Start an interactive agent session for a ticket    |
+| `tickets worktree list`                 | List active per-ticket git worktrees (alias: `wt`) |
+| `tickets worktree open <id>`            | Open a ticket's worktree in your editor            |
+| `tickets worktree clean [ids...\|--all]`| Remove worktrees                                   |
 
 `init` accepts `--prefix` and `--stages` to override the defaults at
 creation time. When run interactively without `--stages`, it walks
@@ -123,27 +133,46 @@ uncomment:
 agent:
   command: claude
   args: ["--print"]
+  worktree: true              # isolate work in .worktrees/<id> on branch tickets/<id>
+  base_branch: main           # branch to create the worktree from (default: HEAD)
   prompt: |
+    You are working in {{worktree}} on branch tickets/{{id}}.
     Read the ticket at {{path}} and implement what it describes.
-    Update the ticket with your progress when done.
 ```
 
 - **command** — the CLI binary to invoke (`claude`, `codex`, `aider`,
   etc.)
 - **args** — extra flags placed before the prompt (e.g. `["--print"]`
   for non-interactive mode)
+- **worktree** — when true, each run gets its own git worktree under
+  `.worktrees/<ticket-id>` on a `tickets/<ticket-id>` branch, so
+  concurrent agents don't trample one another's changes
+- **base_branch** — the branch the worktree is cut from
 - **prompt** — a template string rendered with ticket metadata and
   passed as the final argument
 
 Template variables available in the prompt:
 
-| Variable      | Value                                       |
-| ------------- | ------------------------------------------- |
-| `{{path}}`    | Absolute path to the ticket file            |
-| `{{id}}`      | Ticket ID (e.g. `TIC-001`)                  |
-| `{{title}}`   | Ticket title from frontmatter               |
-| `{{stage}}`   | Destination stage name                      |
-| `{{body}}`    | Ticket body (markdown after frontmatter)    |
+| Variable        | Value                                                |
+| --------------- | ---------------------------------------------------- |
+| `{{path}}`      | Absolute path to the ticket file                     |
+| `{{id}}`        | Ticket ID (e.g. `TIC-001`)                           |
+| `{{title}}`     | Ticket title from frontmatter                        |
+| `{{stage}}`     | Destination stage name                               |
+| `{{body}}`      | Ticket body (markdown after frontmatter)             |
+| `{{worktree}}`  | Absolute path to the worktree (empty if disabled)    |
+| `{{links}}`     | Human-readable summary of the ticket's links         |
+
+A stage can also be configured for automatic **cleanup** on ticket
+arrival — useful for a "done" stage that should release git artifacts
+without manual `tickets worktree clean`:
+
+```yaml
+# .tickets/done/.stage.yml
+cleanup:
+  worktree: true    # remove .worktrees/<id>
+  branch: true      # delete tickets/<id>
+```
 
 ### Running the watcher
 
@@ -168,22 +197,26 @@ Then in another terminal:
 tickets move TIC-001 execute
 ```
 
-The watcher detects the arrival, spawns the agent in the background,
-and appends the agent's output to the ticket file when it finishes:
+The watcher detects the arrival, spawns the agent in a PTY, and
+streams its output to a per-run log:
 
 ```
-2026/04/09 18:15:21 TIC-001 → execute: spawning claude (pid 4821)
-2026/04/09 18:15:45 TIC-001: agent claude finished
-2026/04/09 18:15:45 TIC-001: output appended to TIC-001.md
+2026/04/09 18:15:21 TIC-001 → execute: agent running (view with: tickets agents log TIC-001) [worktree: tickets/TIC-001]
+2026/04/09 18:15:45 TIC-001/001-execute: agent claude finished (session TIC-001-1 closed)
 ```
 
-The ticket file will have a new section at the end:
+Run artifacts live under `.tickets/.agents/<ticket>/`:
 
-```markdown
-## Agent Output (claude, 2026-04-09 18:15:45)
-
-<agent's response here>
 ```
+.tickets/.agents/TIC-001/
+├── 001-execute.yml          # run status: spawned/running/blocked/done/failed
+└── runs/
+    └── 001-execute.log      # captured PTY output
+```
+
+The ticket's frontmatter is also updated with `agent_status`,
+`agent_run`, and `agent_session` so the Obsidian view always reflects
+the latest run without re-reading the YAML.
 
 Multiple agents can run concurrently for different tickets. The
 watcher also picks up manual file moves (`mv`, Finder, git) — it
@@ -194,20 +227,59 @@ watches the filesystem directly, not just the `tickets move` command.
 List currently active agent runs:
 
 ```sh
-tickets agents
+tickets agents              # non-terminal runs only
+tickets agents -a            # include completed and failed
+tickets agents --history     # one row per run (not just latest per ticket)
 ```
 
-Follow one agent's status changes and streamed output until it exits:
+Print a run's captured output:
 
 ```sh
-tickets agents monitor TIC-001
+tickets agents log TIC-001                # latest run
+tickets agents log TIC-001 002-execute    # specific run
 ```
 
-That gives you a read-only progress view. You can also tail the raw
-log file directly:
+Or tail the raw log file directly:
 
 ```sh
 tail -f .tickets/.agents/TIC-001/runs/001-execute.log
+```
+
+If the agent was Claude Code running in plan mode, open the plan file
+it produced:
+
+```sh
+tickets agents plan TIC-001
+```
+
+### Follow-up sessions
+
+Spawn a fresh agent session enriched with the previous run's git diff,
+PTY log, and ticket body — useful for "one more tweak" iterations:
+
+```sh
+tickets agents followup TIC-001 --message "also add tests"
+tickets agents followup TIC-001 --run 002-execute
+tickets agents followup TIC-001                       # interactive, context only
+```
+
+### On-demand agents
+
+For tickets that aren't wired to a stage, you can launch an agent
+manually in the current terminal:
+
+```sh
+tickets agents run TIC-001
+```
+
+This reads the full ticket into the prompt and tells the agent to wait
+for your first message before acting. Configure the command in
+`.tickets/config.yml`:
+
+```yaml
+default_agent:
+  command: claude
+  args: []
 ```
 
 ## Editor
@@ -228,6 +300,54 @@ The first-run prompt only shows editors actually present on your
 `PATH`, so every option will work. You can also type a custom command
 like `subl -w` instead of picking from the list.
 
+## Priority
+
+Tickets carry an optional `priority` field, rendered on the board and
+`list` views. Set it at creation or change it later:
+
+```sh
+tickets new --priority high "Fix login bug on Safari"
+tickets set TIC-001 priority critical
+tickets set TIC-001 priority -          # clear the field
+```
+
+Any string is accepted (`low`, `high`, `P0`, …) but the board styling
+knows about `critical`, `high`, `medium`, `low`.
+
+## Links
+
+Tickets can reference each other via symmetric `related` links or
+directional `blocks`/`blocked_by` links:
+
+```sh
+tickets link TIC-001 TIC-002            # related (both sides)
+tickets link TIC-001 TIC-002 --blocks   # TIC-001 blocks TIC-002
+tickets unlink TIC-001 TIC-002
+```
+
+`tickets doctor` scans the whole store for link integrity issues and
+fixes them by default (or reports with `--dry-run`):
+
+- dangling references to tickets that no longer exist
+- one-sided links where the reciprocal is missing
+- self-referential links
+
+## Worktrees
+
+When a stage agent sets `worktree: true`, each run gets its own git
+worktree under `.worktrees/<ticket-id>` on a `tickets/<ticket-id>`
+branch. Manage them directly:
+
+```sh
+tickets worktree list               # or: tickets wt ls
+tickets worktree open TIC-001       # open the worktree in your editor
+tickets worktree clean TIC-001      # remove one worktree
+tickets worktree clean --all        # remove every worktree
+```
+
+A stage can release worktrees automatically with `cleanup: { worktree:
+true, branch: true }` (see the Agents section above).
+
 ## Ticket file format
 
 Each ticket is a markdown file with a YAML frontmatter block:
@@ -237,8 +357,14 @@ Each ticket is a markdown file with a YAML frontmatter block:
 id: TIC-001
 title: Fix login bug on Safari
 priority: high
+related: [TIC-004]
+blocked_by: [TIC-002]
+blocks: [TIC-009]
 created_at: 2026-04-09T22:08:14Z
 updated_at: 2026-04-09T22:08:14Z
+agent_status: running
+agent_run: 001-execute
+agent_session: TIC-001-1
 ---
 
 ## Description
@@ -251,9 +377,16 @@ The login button doesn't respond on Safari 17...
 - [ ] Regression test added
 ```
 
-The **stage is not stored in the frontmatter** — it's the parent
-directory's name. That means you can `mv` ticket files in Finder and
-the CLI will see them in the right column on the next `list`.
+Most fields are optional. The **stage is not stored in the
+frontmatter** — it's the parent directory's name. That means you can
+`mv` ticket files in Finder and the CLI will see them in the right
+column on the next `list`.
+
+The `agent_*` fields are a cache written by `tickets watch`; the
+authoritative run state lives in `.tickets/.agents/<id>/<run>.yml`. If
+the two ever drift (e.g. the watcher was killed mid-write), the YAML
+is truth and the frontmatter is rewritten from it on the next run
+transition.
 
 ## Configuration
 
@@ -267,6 +400,10 @@ stages:
   - execute
   - review
   - done
+# Optional — the agent used by `tickets agents run`.
+# default_agent:
+#   command: claude
+#   args: []
 ```
 
 - **prefix** — alphabetic prefix for ticket IDs (`TIC-001`, `TIC-002`, ...)
@@ -274,6 +411,8 @@ stages:
   the default stage for newly created tickets. Reorder, rename, or add
   stages by editing this file; the CLI picks the changes up on the next
   invocation.
+- **default_agent** — optional. The command `tickets agents run` uses
+  to launch an interactive session for any ticket.
 
 The store always lives at `<project>/.tickets/`, the same way `.git/`
 always lives at the repo root.
@@ -286,15 +425,19 @@ desync a counter.
 
 ```
 cmd/tickets/main.go           # CLI entry point
-internal/config/              # config.yml loader
-internal/stage/               # per-stage .stage.yml loader
+internal/config/              # .tickets/config.yml loader
+internal/stage/               # per-stage .stage.yml loader (agent + cleanup)
 internal/userconfig/          # per-user ~/.config/tickets/config.yml
 internal/ticket/
   ├── ticket.go               # Ticket struct + frontmatter (de)serialize
-  └── store.go                # FS-backed CRUD: List/Get/Create/Move/Save/Delete
+  └── store.go                # FS-backed CRUD: List/Get/Create/Move/Link/Doctor/…
+internal/agent/               # PTY runner, run status files, monitor, claude helpers
+internal/terminal/            # WebSocket bridge to live PTY sessions (for Obsidian)
+internal/worktree/            # per-ticket git worktree management
 internal/cli/                 # cobra subcommands (one file per command)
+obsidian-plugin/              # companion Obsidian plugin (TypeScript)
 ```
 
-The CLI is a thin shell over `internal/ticket.Store`. A TUI (Bubble
-Tea, tview) can be added later by driving the same `Store` API
-directly — no business logic lives in the command files.
+Both `tickets board` (a Bubble Tea TUI) and the CLI drive the same
+`internal/ticket.Store` API — no business logic lives in the command
+files.
