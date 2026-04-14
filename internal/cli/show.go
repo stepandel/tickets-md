@@ -26,6 +26,9 @@ func newShowCmd() *cobra.Command {
 				return err
 			}
 			fmt.Printf("# %s — %s   [%s]\n", t.ID, t.Title, t.Stage)
+			if t.Priority != "" {
+				fmt.Printf("# Priority: %s\n", t.Priority)
+			}
 			if t.HasLinks() {
 				fmt.Printf("# Links: %s\n", t.LinksText())
 			}
