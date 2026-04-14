@@ -109,6 +109,13 @@ const defaultStageYML = `# Stage configuration — uncomment to enable an agent 
 #   prompt: |                # template with {{path}}, {{id}}, {{title}}, {{stage}}, {{body}}, {{worktree}}, {{links}}
 #     You are working in {{worktree}} on branch tickets/{{id}}.
 #     Read the ticket at {{path}} and implement what it describes.
+#
+# Auto-cleanup on arrival — handy for "done" so shipped tickets release
+# their git artifacts without manual ` + "`tickets worktree clean`" + `.
+#
+# cleanup:
+#   worktree: true           # remove .worktrees/<id>
+#   branch: true             # delete tickets/<id>
 `
 
 // RenderPrompt replaces template placeholders in the agent prompt
