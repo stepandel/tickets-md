@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/coder/websocket"
@@ -27,10 +28,11 @@ type Server struct {
 
 	// RerunStageAgent, if set, spawns the agent configured on the ticket's
 	// current stage (same logic as when a ticket lands in that stage via
-	// the file watcher). Returns the session name on success. Nil means
-	// the watcher did not register a callback, so /rerun-stage-agent is
-	// rejected.
-	RerunStageAgent func(ticketID string) (string, error)
+	// the file watcher). rows/cols set the initial PTY window size; pass
+	// 0 to use the runner's default. Returns the session name on success.
+	// Nil means the watcher did not register a callback, so
+	// /rerun-stage-agent is rejected.
+	RerunStageAgent func(ticketID string, rows, cols uint16) (string, error)
 }
 
 // New creates a terminal server backed by the given PTYRunner.
@@ -109,6 +111,21 @@ func withCORS(next http.Handler) http.Handler {
 	})
 }
 
+// parseSize parses rows/cols query string values. Returns ok=false if
+// either is missing, non-numeric, zero, or larger than the uint16 PTY
+// winsize fields can hold.
+func parseSize(rowsStr, colsStr string) (rows, cols uint16, ok bool) {
+	if rowsStr == "" || colsStr == "" {
+		return 0, 0, false
+	}
+	r, rerr := strconv.ParseUint(rowsStr, 10, 16)
+	c, cerr := strconv.ParseUint(colsStr, 10, 16)
+	if rerr != nil || cerr != nil || r == 0 || c == 0 {
+		return 0, 0, false
+	}
+	return uint16(r), uint16(c), true
+}
+
 // resizeMsg is the JSON payload for PTY resize requests.
 type resizeMsg struct {
 	Type string `json:"type"`
@@ -128,6 +145,14 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 	if !s.runner.Alive(sessionName) {
 		http.Error(w, "session not found", http.StatusNotFound)
 		return
+	}
+
+	// Apply ?rows=&cols= before the upgrade so watcher-spawned PTYs
+	// (where the geometry isn't known at spawn) resize before the
+	// replay buffer is sent — otherwise the first second of output
+	// is wrapped at the default 24x120.
+	if rows, cols, ok := parseSize(r.URL.Query().Get("rows"), r.URL.Query().Get("cols")); ok {
+		s.runner.Resize(sessionName, rows, cols)
 	}
 
 	if !originAllowed(r.Header.Get("Origin")) {
@@ -206,9 +231,13 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(s.runner.Sessions())
 }
 
-// spawnRequest is the JSON body for POST /spawn.
+// spawnRequest is the JSON body for POST /spawn and POST /rerun-stage-agent.
+// Rows/Cols are optional; when zero the PTY uses the runner's default size
+// and resizes once the client sends its first resize message.
 type spawnRequest struct {
 	TicketID string `json:"ticket_id"`
+	Rows     uint16 `json:"rows,omitempty"`
+	Cols     uint16 `json:"cols,omitempty"`
 }
 
 // spawnResponse is returned by POST /spawn.
@@ -261,7 +290,7 @@ func (s *Server) handleSpawn(w http.ResponseWriter, r *http.Request) {
 	}
 	logPath := filepath.Join(logDir, sessionName+".log")
 
-	if err := s.runner.Start(sessionName, s.root, argv, logPath); err != nil {
+	if err := s.runner.Start(sessionName, s.root, argv, logPath, req.Rows, req.Cols); err != nil {
 		http.Error(w, "spawn failed: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -294,7 +323,7 @@ func (s *Server) handleRerunStageAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, err := s.RerunStageAgent(req.TicketID)
+	session, err := s.RerunStageAgent(req.TicketID, req.Rows, req.Cols)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return

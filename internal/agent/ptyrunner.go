@@ -58,13 +58,24 @@ func NewPTYRunner() *PTYRunner {
 // Start launches a command with a real PTY, capturing all output to
 // logPath. The session is registered under name and can be queried
 // with Alive/IdleSeconds or stopped with Kill.
-func (r *PTYRunner) Start(name, cwd string, argv []string, logPath string) error {
+//
+// rows and cols set the initial PTY window size; pass 0 for either
+// to fall back to the default 24x120 (the agent will get a SIGWINCH
+// once a client subscribes and sends Resize).
+func (r *PTYRunner) Start(name, cwd string, argv []string, logPath string, rows, cols uint16) error {
 	r.mu.Lock()
 	if _, exists := r.sessions[name]; exists {
 		r.mu.Unlock()
 		return fmt.Errorf("session %s already exists", name)
 	}
 	r.mu.Unlock()
+
+	if rows == 0 {
+		rows = 24
+	}
+	if cols == 0 {
+		cols = 120
+	}
 
 	logF, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
@@ -74,7 +85,7 @@ func (r *PTYRunner) Start(name, cwd string, argv []string, logPath string) error
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Dir = cwd
 
-	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 24, Cols: 120})
+	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: rows, Cols: cols})
 	if err != nil {
 		logF.Close()
 		return fmt.Errorf("starting pty: %w", err)
