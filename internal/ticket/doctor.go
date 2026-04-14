@@ -30,7 +30,7 @@ func (k IssueKind) String() string {
 type LinkField int
 
 const (
-	FieldRelated   LinkField = iota
+	FieldRelated LinkField = iota
 	FieldBlockedBy
 	FieldBlocks
 )

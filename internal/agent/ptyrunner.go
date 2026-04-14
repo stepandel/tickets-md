@@ -38,7 +38,7 @@ type ptySession struct {
 	exitCode *int
 	exitErr  error
 	copyDone sync.WaitGroup // tracks output-copy goroutine
-	done     chan struct{}   // closed when fully finished
+	done     chan struct{}  // closed when fully finished
 }
 
 // PTYRunner manages agent processes in PTYs. It replaces all tmux

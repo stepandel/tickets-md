@@ -625,4 +625,3 @@ func syncAgentFrontmatter(root, ticketID string) {
 }
 
 // --- shared ---
-

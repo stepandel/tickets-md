@@ -66,23 +66,23 @@ func Transition(from, to Status) error {
 // AgentStatus is the persistent record of a single agent run, stored
 // as a YAML file on disk.
 type AgentStatus struct {
-	TicketID  string    `yaml:"ticket_id"`
-	RunID     string    `yaml:"run_id"`            // e.g. "002-execute"
-	Seq       int       `yaml:"seq"`               // monotonic per-ticket
-	Attempt   int       `yaml:"attempt"`           // per-stage attempt counter
-	Stage     string    `yaml:"stage"`
-	Agent     string    `yaml:"agent"`
-	Session   string    `yaml:"session"`
-	Status    Status    `yaml:"status"`
-	SpawnedAt time.Time `yaml:"spawned_at"`
-	UpdatedAt time.Time `yaml:"updated_at"`
-	ExitCode *int   `yaml:"exit_code,omitempty"`
-	Error    string `yaml:"error,omitempty"`
-	LogFile  string `yaml:"log_file"`
-	Worktree    string `yaml:"worktree,omitempty"`
-	SessionUUID string `yaml:"session_uuid,omitempty"`
-	PlanFile    string `yaml:"plan_file,omitempty"`
-	ResumedFrom string `yaml:"resumed_from,omitempty"`
+	TicketID    string    `yaml:"ticket_id"`
+	RunID       string    `yaml:"run_id"`  // e.g. "002-execute"
+	Seq         int       `yaml:"seq"`     // monotonic per-ticket
+	Attempt     int       `yaml:"attempt"` // per-stage attempt counter
+	Stage       string    `yaml:"stage"`
+	Agent       string    `yaml:"agent"`
+	Session     string    `yaml:"session"`
+	Status      Status    `yaml:"status"`
+	SpawnedAt   time.Time `yaml:"spawned_at"`
+	UpdatedAt   time.Time `yaml:"updated_at"`
+	ExitCode    *int      `yaml:"exit_code,omitempty"`
+	Error       string    `yaml:"error,omitempty"`
+	LogFile     string    `yaml:"log_file"`
+	Worktree    string    `yaml:"worktree,omitempty"`
+	SessionUUID string    `yaml:"session_uuid,omitempty"`
+	PlanFile    string    `yaml:"plan_file,omitempty"`
+	ResumedFrom string    `yaml:"resumed_from,omitempty"`
 }
 
 const agentsDir = ".agents"
