@@ -143,6 +143,35 @@ make install
   surprising invariant). Do not restate what well-named code already
   says.
 
+## Agent integrations
+
+`internal/agent/integration.go` defines an optional per-agent hook
+(`PrepareArgs` before spawn, `ExtractPlan` after exit). Agents with no
+integration still work — they run as plain subprocesses configured via
+`.stage.yml`. The interface exists so core code never hardcodes a
+specific agent's name.
+
+Only **Claude Code** has an integration today. It fits because Claude
+lets the caller pre-generate a session UUID (`--session-id`), persists
+its transcript at a path derivable from cwd + session id, and has a
+first-class plan mode that writes to `~/.claude/plans/` — so we can
+link a run back to its plan file deterministically.
+
+**Codex CLI does not have an integration, and that is intentional.**
+Codex auto-generates its own thread ids (not injectable), has no plan
+file concept, and its rollout filenames are not predictable from
+inputs. Forcing it through the current interface would require
+inventing conventions Codex does not have. Codex runs fine as a plain
+subprocess; add an integration only when there is a concrete feature
+we want Codex runs to gain (e.g. capturing its thread id from stdout
+for `thread/resume`-style followups) — and expect the interface to
+grow a new hook at that point rather than shoehorning into the two
+existing ones.
+
+Rule of thumb: an integration must deliver a user-visible feature
+(like `tickets agents plan`). An empty or speculative integration is
+worse than none — it advertises capability that does not exist.
+
 ## Agent lifecycle (for orientation)
 
 1. `tickets watch` observes a `Create` event in a stage directory.
