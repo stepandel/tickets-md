@@ -89,14 +89,18 @@ go install github.com/stepandel/tickets-md/cmd/tickets@latest
 echo 'export PATH="$HOME/go/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
 ```
 
-Building from a local checkout (rebuilds the embedded Obsidian plugin
-bundle first):
+Building from a local checkout:
 
 ```sh
 git clone https://github.com/stepandel/tickets-md.git
 cd tickets-md
 make install
 ```
+
+The Obsidian plugin is no longer embedded in the CLI binary — it is
+fetched on demand by `tickets obsidian install` from the GitHub
+release matching your CLI version. See the [Obsidian plugin](#obsidian-plugin)
+section for the dev/offline flow (`--from <dir>`).
 
 ### Shell completions
 
@@ -514,7 +518,6 @@ agent runs. Source lives under
 
 ### Install (one command)
 
-The `tickets` CLI embeds the plugin bundle, so you never need npm.
 From the repo root where you ran `tickets init`:
 
 ```sh
@@ -530,8 +533,10 @@ That single command does three things:
    If you already opened the repo as a vault elsewhere (a
    `.obsidian/` at or above the project root), that vault is reused
    instead.
-2. Writes `main.js`, `manifest.json`, and `styles.css` into
-   `<vault>/.obsidian/plugins/tickets-board/`.
+2. Downloads `tickets-board-plugin.zip` from the GitHub release
+   matching your CLI version (cached under the user cache dir so
+   reinstalls are offline) and writes `main.js`, `manifest.json`,
+   and `styles.css` into `<vault>/.obsidian/plugins/tickets-board/`.
 3. Appends `tickets-board` to `<vault>/.obsidian/community-plugins.json`
    so Obsidian marks the plugin as enabled once you turn community
    plugins on.
@@ -551,16 +556,20 @@ manual (the install command prints them too):
 ### Upgrades and housekeeping
 
 ```sh
-tickets obsidian install           # also the upgrade path — overwrites bundled files
-tickets obsidian status            # installed vs. bundled version + enabled flag
+tickets obsidian install           # re-run after upgrading the CLI to sync the vault
+tickets obsidian status            # installed plugin version vs. this CLI's expected version
 tickets obsidian uninstall         # removes plugin dir and community-plugins.json entry
 tickets obsidian install --no-enable   # copy files but don't touch community-plugins.json
 tickets obsidian install --vault ~/Vaults/Work   # install into a specific vault
+tickets obsidian install --from ./obsidian-plugin  # install from a local build (dev flow)
 ```
 
-The bundled plugin version is locked to the CLI version — `brew
-upgrade tickets` (or `go install …@latest`) and rerun
-`tickets obsidian install` to keep them in sync.
+The plugin version is locked to the CLI version — `brew upgrade
+tickets` (or `go install …@latest`) and rerun
+`tickets obsidian install` to keep them in sync. The download is
+cached under the user cache directory (`$XDG_CACHE_HOME/tickets/plugin/<version>/`
+on Linux, `~/Library/Caches/tickets/plugin/<version>/` on macOS), so
+a second install of the same version is offline.
 
 ## Ticket file format
 

@@ -4,8 +4,7 @@
 	"private": true,
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
-		"build": "node esbuild.config.mjs production",
-		"install-plugin": "node esbuild.config.mjs production && cp main.js manifest.json styles.css ../.tickets/.obsidian/plugins/tickets-board/"
+		"build": "node esbuild.config.mjs production"
 	},
 	"devDependencies": {
 		"@types/node": "^20.0.0",

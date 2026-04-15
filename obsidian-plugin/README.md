@@ -21,20 +21,30 @@ without leaving the editor.
 
 ## Install
 
-For everyday development against a real vault, the package script
-builds and copies the plugin into the vault's plugin folder:
+End users install via the `tickets` CLI, which fetches the matching
+plugin build from the GitHub release:
+
+```sh
+tickets obsidian install
+```
+
+See the root [README](../README.md#obsidian-plugin) for the full
+flow.
+
+For plugin development against a local build:
 
 ```sh
 cd obsidian-plugin
 npm ci
-npm run install-plugin
+npm run build
+tickets obsidian install --from .
 ```
 
-`install-plugin` writes `main.js`, `manifest.json`, and `styles.css`
-into `../.tickets/.obsidian/plugins/tickets-board/` — that path
-assumes the repo's own `.tickets/` is the vault. Adjust the script in
-`package.json` if your vault lives elsewhere, or copy the three
-artefacts manually.
+`--from` reads `main.js`, `manifest.json`, and `styles.css` from the
+given directory and copies them into the vault's
+`.obsidian/plugins/tickets-board/` directory — no network, no cache,
+no release tag required. Works with any CLI version (including
+`dev` builds).
 
 After installing, enable **Tickets Board** in Obsidian under
 *Settings → Community plugins*.
