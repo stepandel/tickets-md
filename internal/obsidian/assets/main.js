@@ -11733,18 +11733,100 @@ var AGENT_BADGES = {
 var VIEW_TYPE = "tickets-board";
 var TERMINAL_VIEW_TYPE = "tickets-terminal";
 var DIFF_VIEW_TYPE = "tickets-diff";
+var AGENTS_VIEW_TYPE = "tickets-agents";
 var CONFIG_PATH = "config.yml";
 var TERMINAL_SERVER_PATH = ".terminal-server";
+var ACTIVE_AGENT_STATUSES = ["spawned", "running", "blocked"];
+async function loadConfig(app) {
+  const file = app.vault.getAbstractFileByPath(CONFIG_PATH);
+  if (!(file instanceof import_obsidian.TFile)) return null;
+  const raw = await app.vault.read(file);
+  return (0, import_obsidian.parseYaml)(raw);
+}
+async function parseTicket(app, file, stage) {
+  const content = await app.vault.read(file);
+  const match = content.match(/^---\n([\s\S]*?)\n---/);
+  if (!match) return null;
+  try {
+    const fm = (0, import_obsidian.parseYaml)(match[1]);
+    return {
+      id: fm.id ?? file.basename,
+      title: fm.title ?? file.basename,
+      priority: fm.priority,
+      related: fm.related,
+      blocked_by: fm.blocked_by,
+      blocks: fm.blocks,
+      created_at: fm.created_at,
+      updated_at: fm.updated_at,
+      agent_status: fm.agent_status,
+      agent_session: fm.agent_session,
+      file,
+      stage
+    };
+  } catch {
+    return null;
+  }
+}
+async function loadTickets(app, stages) {
+  const tickets = [];
+  for (const stage of stages) {
+    const folder = app.vault.getAbstractFileByPath(stage);
+    if (!(folder instanceof import_obsidian.TFolder)) continue;
+    for (const child of folder.children) {
+      if (!(child instanceof import_obsidian.TFile) || child.extension !== "md") continue;
+      if (child.name.startsWith(".")) continue;
+      const ticket = await parseTicket(app, child, stage);
+      if (ticket) tickets.push(ticket);
+    }
+  }
+  return tickets;
+}
+async function readServerFile(app) {
+  const adapter = app.vault.adapter;
+  if (!await adapter.exists(TERMINAL_SERVER_PATH)) return null;
+  try {
+    const raw = await adapter.read(TERMINAL_SERVER_PATH);
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+async function openTerminal(app, ticket) {
+  const leaf = app.workspace.getLeaf(import_obsidian.Platform.isMobile ? "tab" : "split");
+  await leaf.setViewState({
+    type: TERMINAL_VIEW_TYPE,
+    state: {
+      sessionName: ticket.agent_session,
+      ticketId: ticket.id
+    }
+  });
+  app.workspace.revealLeaf(leaf);
+}
+async function openDiff(app, ticket) {
+  const leaf = app.workspace.getLeaf(import_obsidian.Platform.isMobile ? "tab" : "split");
+  await leaf.setViewState({
+    type: DIFF_VIEW_TYPE,
+    state: { ticketId: ticket.id }
+  });
+  app.workspace.revealLeaf(leaf);
+}
 var TicketsBoardPlugin = class extends import_obsidian.Plugin {
   async onload() {
     this.registerView(VIEW_TYPE, (leaf) => new BoardView(leaf));
     this.registerView(TERMINAL_VIEW_TYPE, (leaf) => new TerminalView(leaf));
     this.registerView(DIFF_VIEW_TYPE, (leaf) => new DiffView(leaf));
+    this.registerView(AGENTS_VIEW_TYPE, (leaf) => new AgentsView(leaf));
     this.addRibbonIcon("kanban", "Tickets Board", () => this.activateView());
+    this.addRibbonIcon("bot", "Tickets Agents", () => this.activateAgentsView());
     this.addCommand({
       id: "open-tickets-board",
       name: "Open Tickets Board",
       callback: () => this.activateView()
+    });
+    this.addCommand({
+      id: "open-tickets-agents",
+      name: "Open Tickets Agents",
+      callback: () => this.activateAgentsView()
     });
   }
   async activateView() {
@@ -11753,6 +11835,15 @@ var TicketsBoardPlugin = class extends import_obsidian.Plugin {
     if (!leaf) {
       leaf = workspace.getLeaf("tab");
       await leaf.setViewState({ type: VIEW_TYPE, active: true });
+    }
+    workspace.revealLeaf(leaf);
+  }
+  async activateAgentsView() {
+    const { workspace } = this.app;
+    let leaf = workspace.getLeavesOfType(AGENTS_VIEW_TYPE)[0];
+    if (!leaf) {
+      leaf = workspace.getLeaf("tab");
+      await leaf.setViewState({ type: AGENTS_VIEW_TYPE, active: true });
     }
     workspace.revealLeaf(leaf);
   }
@@ -11792,50 +11883,6 @@ var BoardView = class extends import_obsidian.ItemView {
     }));
   }
   // ── Data Loading ───────────────────────────────────────────────────
-  async loadConfig() {
-    const file = this.app.vault.getAbstractFileByPath(CONFIG_PATH);
-    if (!(file instanceof import_obsidian.TFile)) return null;
-    const raw = await this.app.vault.read(file);
-    return (0, import_obsidian.parseYaml)(raw);
-  }
-  async loadTickets(stages) {
-    const tickets = [];
-    for (const stage of stages) {
-      const folder = this.app.vault.getAbstractFileByPath(stage);
-      if (!(folder instanceof import_obsidian.TFolder)) continue;
-      for (const child of folder.children) {
-        if (!(child instanceof import_obsidian.TFile) || child.extension !== "md") continue;
-        if (child.name.startsWith(".")) continue;
-        const ticket = await this.parseTicket(child, stage);
-        if (ticket) tickets.push(ticket);
-      }
-    }
-    return tickets;
-  }
-  async parseTicket(file, stage) {
-    const content = await this.app.vault.read(file);
-    const match = content.match(/^---\n([\s\S]*?)\n---/);
-    if (!match) return null;
-    try {
-      const fm = (0, import_obsidian.parseYaml)(match[1]);
-      return {
-        id: fm.id ?? file.basename,
-        title: fm.title ?? file.basename,
-        priority: fm.priority,
-        related: fm.related,
-        blocked_by: fm.blocked_by,
-        blocks: fm.blocks,
-        created_at: fm.created_at,
-        updated_at: fm.updated_at,
-        agent_status: fm.agent_status,
-        agent_session: fm.agent_session,
-        file,
-        stage
-      };
-    } catch {
-      return null;
-    }
-  }
   async updateTicketFrontmatter(file, mutate) {
     const content = await this.app.vault.read(file);
     const match = content.match(/^---\n([\s\S]*?)\n---/);
@@ -11873,7 +11920,7 @@ var BoardView = class extends import_obsidian.ItemView {
   }
   // ── Rendering ──────────────────────────────────────────────────────
   async refresh() {
-    const config = await this.loadConfig();
+    const config = await loadConfig(this.app);
     if (!config) {
       this.contentEl.empty();
       this.contentEl.createEl("p", {
@@ -11884,7 +11931,7 @@ var BoardView = class extends import_obsidian.ItemView {
     }
     this.config = config;
     this.stages = config.stages;
-    this.tickets = await this.loadTickets(this.stages);
+    this.tickets = await loadTickets(this.app, this.stages);
     this.agentStages = await this.loadAgentStages(this.stages);
     this.render();
   }
@@ -12351,13 +12398,12 @@ var BoardView = class extends import_obsidian.ItemView {
     if (!import_obsidian.Platform.isMobile && ticket.agent_session && ticket.agent_status && !["done", "failed", "errored"].includes(ticket.agent_status)) {
       menu.addItem(
         (item) => item.setTitle("Open terminal").setIcon("terminal-square").onClick(() => {
-          this.openTerminal(ticket);
+          openTerminal(this.app, ticket);
         })
       );
     }
     if (!import_obsidian.Platform.isMobile) {
-      const activeStatuses = ["spawned", "running", "blocked"];
-      const idle = !ticket.agent_status || !activeStatuses.includes(ticket.agent_status);
+      const idle = !ticket.agent_status || !ACTIVE_AGENT_STATUSES.includes(ticket.agent_status);
       if (idle) {
         menu.addItem(
           (item) => item.setTitle("Re-run stage agent").setIcon("refresh-cw").onClick(() => {
@@ -12376,7 +12422,7 @@ var BoardView = class extends import_obsidian.ItemView {
     if (ticket.agent_status) {
       menu.addItem(
         (item) => item.setTitle("View diff").setIcon("git-compare").onClick(() => {
-          this.openDiff(ticket);
+          openDiff(this.app, ticket);
         })
       );
     }
@@ -12415,62 +12461,32 @@ var BoardView = class extends import_obsidian.ItemView {
     return menu;
   }
   // ── Terminal ───────────────────────────────────────────────────────
-  async openTerminal(ticket) {
-    const leaf = this.app.workspace.getLeaf(import_obsidian.Platform.isMobile ? "tab" : "split");
-    await leaf.setViewState({
-      type: TERMINAL_VIEW_TYPE,
-      state: {
-        sessionName: ticket.agent_session,
-        ticketId: ticket.id
-      }
-    });
-    this.app.workspace.revealLeaf(leaf);
-  }
   async spawnAgentRun(ticket) {
-    await this.postSpawn(ticket, "/spawn", "spawn agent run");
+    await this.openSpawningTerminal(ticket, "/spawn", "spawn agent run");
   }
   async rerunStageAgent(ticket) {
-    await this.postSpawn(ticket, "/rerun-stage-agent", "re-run stage agent");
+    await this.openSpawningTerminal(ticket, "/rerun-stage-agent", "re-run stage agent");
   }
-  // postSpawn POSTs {ticket_id} to a terminal-server endpoint that returns
-  // { session }, then opens a terminal leaf attached to that session. Used
-  // for both adhoc (/spawn) and stage-agent (/rerun-stage-agent) runs.
-  async postSpawn(ticket, path, label) {
-    const serverInfo = await this.readServerFile();
+  // openSpawningTerminal opens a TerminalView leaf in "pending spawn"
+  // mode: the view measures its container, posts {ticket_id, rows, cols}
+  // to the given terminal-server endpoint, and only then connects the
+  // WebSocket. Threading the geometry through avoids the first-second
+  // 24x120 wrap that happens when the PTY starts before the client's
+  // first resize message.
+  async openSpawningTerminal(ticket, path, label) {
+    const serverInfo = await readServerFile(this.app);
     if (!serverInfo) {
       new import_obsidian.Notice("terminal server not running \u2014 start `tickets watch`");
       return;
     }
-    try {
-      const resp = await fetch(`http://127.0.0.1:${serverInfo.port}${path}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ticket_id: ticket.id })
-      });
-      if (!resp.ok) {
-        const text = (await resp.text()).trim();
-        console.error(`${label} failed:`, text);
-        new import_obsidian.Notice(`${label}: ${text || resp.statusText}`);
-        return;
-      }
-      const { session } = await resp.json();
-      const leaf = this.app.workspace.getLeaf("split");
-      await leaf.setViewState({
-        type: TERMINAL_VIEW_TYPE,
-        state: { sessionName: session, ticketId: ticket.id }
-      });
-      this.app.workspace.revealLeaf(leaf);
-    } catch (e) {
-      console.error(`${label}:`, e);
-      new import_obsidian.Notice(`${label}: ${e instanceof Error ? e.message : String(e)}`);
-    }
-  }
-  // ── Diff ──────────────────────────────────────────────────────────
-  async openDiff(ticket) {
-    const leaf = this.app.workspace.getLeaf(import_obsidian.Platform.isMobile ? "tab" : "split");
+    const leaf = this.app.workspace.getLeaf("split");
     await leaf.setViewState({
-      type: DIFF_VIEW_TYPE,
-      state: { ticketId: ticket.id }
+      type: TERMINAL_VIEW_TYPE,
+      state: {
+        ticketId: ticket.id,
+        spawnPath: path,
+        spawnLabel: label
+      }
     });
     this.app.workspace.revealLeaf(leaf);
   }
@@ -12538,7 +12554,7 @@ var BoardView = class extends import_obsidian.ItemView {
   }
   // ── Stage Operations ───────────────────────────────────────────────
   async createStage(name) {
-    const config = await this.loadConfig();
+    const config = await loadConfig(this.app);
     if (!config) return;
     const slug = name.toLowerCase().replace(/[^a-z0-9_-]/g, "-");
     if (config.stages.includes(slug)) return;
@@ -12548,7 +12564,7 @@ var BoardView = class extends import_obsidian.ItemView {
   }
   // ── Ticket Creation ────────────────────────────────────────────────
   async nextTicketId() {
-    const config = await this.loadConfig();
+    const config = await loadConfig(this.app);
     if (!config) return "TIC-001";
     const prefix = config.prefix ?? "TIC";
     const pattern = new RegExp(`^${prefix}-(\\d+)$`);
@@ -12585,7 +12601,7 @@ var BoardView = class extends import_obsidian.ItemView {
     await this.previewLeaf.openFile(file);
   }
   async renameStage(oldName, newName) {
-    const config = await this.loadConfig();
+    const config = await loadConfig(this.app);
     if (!config) return;
     const slug = newName.toLowerCase().replace(/[^a-z0-9_-]/g, "-");
     if (slug === oldName || config.stages.includes(slug)) return;
@@ -12594,16 +12610,6 @@ var BoardView = class extends import_obsidian.ItemView {
     await this.app.vault.rename(folder, slug);
     config.stages = config.stages.map((s15) => s15 === oldName ? slug : s15);
     await this.saveConfig(config);
-  }
-  async readServerFile() {
-    const adapter = this.app.vault.adapter;
-    if (!await adapter.exists(TERMINAL_SERVER_PATH)) return null;
-    try {
-      const raw = await adapter.read(TERMINAL_SERVER_PATH);
-      return JSON.parse(raw);
-    } catch {
-      return null;
-    }
   }
   async onClose() {
   }
@@ -12614,6 +12620,8 @@ var TerminalView = class extends import_obsidian.ItemView {
   ws = null;
   sessionName = "";
   ticketId = "";
+  spawnPath = "";
+  spawnLabel = "";
   resizeObserver = null;
   getViewType() {
     return TERMINAL_VIEW_TYPE;
@@ -12627,8 +12635,10 @@ var TerminalView = class extends import_obsidian.ItemView {
   async setState(state, result) {
     this.sessionName = state.sessionName ?? "";
     this.ticketId = state.ticketId ?? "";
+    this.spawnPath = state.spawnPath ?? "";
+    this.spawnLabel = state.spawnLabel ?? "";
     await super.setState(state, result);
-    this.connect();
+    this.start();
   }
   getState() {
     return { sessionName: this.sessionName, ticketId: this.ticketId };
@@ -12636,8 +12646,8 @@ var TerminalView = class extends import_obsidian.ItemView {
   async onOpen() {
     this.contentEl.addClass("tb-terminal-container");
   }
-  async connect() {
-    const serverInfo = await this.readServerFile();
+  async start() {
+    const serverInfo = await readServerFile(this.app);
     if (!serverInfo) {
       this.showError("No terminal server running. Is `tickets watch` active?");
       return;
@@ -12656,7 +12666,57 @@ var TerminalView = class extends import_obsidian.ItemView {
     this.terminal.loadAddon(this.fitAddon);
     this.terminal.open(this.contentEl);
     this.fitAddon.fit();
-    const url = `ws://127.0.0.1:${serverInfo.port}/terminal/${this.sessionName}`;
+    if (this.spawnPath) {
+      const session = await this.postSpawn(serverInfo.port);
+      if (!session) return;
+      this.sessionName = session;
+      this.spawnPath = "";
+    }
+    this.connectWebSocket(serverInfo.port);
+    this.terminal.onData((data) => {
+      if (this.ws?.readyState === WebSocket.OPEN) {
+        this.ws.send(new TextEncoder().encode(data));
+      }
+    });
+    this.resizeObserver = new ResizeObserver(() => {
+      this.fitAddon?.fit();
+      this.sendResize();
+    });
+    this.resizeObserver.observe(this.contentEl);
+  }
+  async postSpawn(port) {
+    const label = this.spawnLabel || "spawn agent";
+    try {
+      const resp = await fetch(`http://127.0.0.1:${port}${this.spawnPath}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ticket_id: this.ticketId,
+          rows: this.terminal?.rows ?? 0,
+          cols: this.terminal?.cols ?? 0
+        })
+      });
+      if (!resp.ok) {
+        const text = (await resp.text()).trim();
+        console.error(`${label} failed:`, text);
+        new import_obsidian.Notice(`${label}: ${text || resp.statusText}`);
+        this.showError(`${label}: ${text || resp.statusText}`);
+        return null;
+      }
+      const { session } = await resp.json();
+      return session;
+    } catch (e) {
+      console.error(`${label}:`, e);
+      const msg = e instanceof Error ? e.message : String(e);
+      new import_obsidian.Notice(`${label}: ${msg}`);
+      this.showError(`${label}: ${msg}`);
+      return null;
+    }
+  }
+  connectWebSocket(port) {
+    const rows = this.terminal?.rows ?? 0;
+    const cols = this.terminal?.cols ?? 0;
+    const url = `ws://127.0.0.1:${port}/terminal/${this.sessionName}?rows=${rows}&cols=${cols}`;
     this.ws = new WebSocket(url);
     this.ws.binaryType = "arraybuffer";
     this.ws.onopen = () => {
@@ -12673,16 +12733,6 @@ var TerminalView = class extends import_obsidian.ItemView {
     this.ws.onerror = () => {
       this.showError("Connection lost to terminal server.");
     };
-    this.terminal.onData((data) => {
-      if (this.ws?.readyState === WebSocket.OPEN) {
-        this.ws.send(new TextEncoder().encode(data));
-      }
-    });
-    this.resizeObserver = new ResizeObserver(() => {
-      this.fitAddon?.fit();
-      this.sendResize();
-    });
-    this.resizeObserver.observe(this.contentEl);
   }
   sendResize() {
     if (this.ws?.readyState === WebSocket.OPEN && this.terminal) {
@@ -12692,16 +12742,6 @@ var TerminalView = class extends import_obsidian.ItemView {
         cols: this.terminal.cols
       });
       this.ws.send(msg);
-    }
-  }
-  async readServerFile() {
-    const adapter = this.app.vault.adapter;
-    if (!await adapter.exists(TERMINAL_SERVER_PATH)) return null;
-    try {
-      const raw = await adapter.read(TERMINAL_SERVER_PATH);
-      return JSON.parse(raw);
-    } catch {
-      return null;
     }
   }
   showError(msg) {
@@ -12797,6 +12837,182 @@ var DiffView = class extends import_obsidian.ItemView {
   showMessage(msg) {
     this.contentEl.empty();
     this.contentEl.createEl("p", { text: msg, cls: "tb-diff-empty" });
+  }
+  async onClose() {
+  }
+};
+var AgentsView = class extends import_obsidian.ItemView {
+  tickets = [];
+  previewLeaf = null;
+  getViewType() {
+    return AGENTS_VIEW_TYPE;
+  }
+  getDisplayText() {
+    return "Tickets Agents";
+  }
+  getIcon() {
+    return "bot";
+  }
+  async onOpen() {
+    await this.refresh();
+    this.registerEvent(this.app.vault.on("create", () => this.refresh()));
+    this.registerEvent(this.app.vault.on("delete", () => this.refresh()));
+    this.registerEvent(this.app.vault.on("rename", () => this.refresh()));
+    this.registerEvent(this.app.vault.on("modify", (f) => {
+      if (f instanceof import_obsidian.TFile && (f.extension === "md" || f.path === CONFIG_PATH)) {
+        this.refresh();
+      }
+    }));
+  }
+  async refresh() {
+    const config = await loadConfig(this.app);
+    if (!config) {
+      this.contentEl.empty();
+      this.contentEl.createEl("p", {
+        text: "Could not load config.yml \u2014 is this a tickets-md vault?",
+        cls: "tb-error"
+      });
+      return;
+    }
+    const all = await loadTickets(this.app, config.stages);
+    this.tickets = all.filter((t) => t.agent_status && ACTIVE_AGENT_STATUSES.includes(t.agent_status)).sort((a, b2) => {
+      const au = a.updated_at ?? "";
+      const bu = b2.updated_at ?? "";
+      if (au !== bu) return au < bu ? 1 : -1;
+      return a.id.localeCompare(b2.id, void 0, { numeric: true });
+    });
+    this.render();
+  }
+  render() {
+    const container = this.contentEl;
+    container.empty();
+    container.addClass("tb-agents-container");
+    const header = container.createDiv({ cls: "tb-header" });
+    header.createEl("h2", { text: "Agents", cls: "tb-board-title" });
+    const actions = header.createDiv({ cls: "tb-header-actions" });
+    const count = actions.createEl("span", {
+      text: String(this.tickets.length),
+      cls: "tb-count"
+    });
+    count.setAttribute("aria-label", `${this.tickets.length} active agents`);
+    const refreshBtn = actions.createEl("button", {
+      cls: "tb-header-btn",
+      attr: { "aria-label": "Refresh agents" }
+    });
+    refreshBtn.textContent = "\u21BB";
+    refreshBtn.addEventListener("click", () => this.refresh());
+    if (this.tickets.length === 0) {
+      container.createDiv({ cls: "tb-empty", text: "No active agents" });
+      return;
+    }
+    const list = container.createDiv({ cls: "tb-agents-list" });
+    for (const ticket of this.tickets) {
+      this.renderRow(list, ticket);
+    }
+  }
+  renderRow(parent, ticket) {
+    const row = parent.createDiv({ cls: "tb-agent-row" });
+    row.addEventListener("click", async () => {
+      if (!this.previewLeaf || !this.previewLeaf.view?.containerEl?.isConnected) {
+        this.previewLeaf = this.app.workspace.getLeaf(import_obsidian.Platform.isMobile ? "tab" : "split");
+      }
+      await this.previewLeaf.openFile(ticket.file);
+    });
+    row.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      this.buildRowMenu(ticket).showAtMouseEvent(e);
+    });
+    if (import_obsidian.Platform.isMobile) {
+      this.onLongPress(row, (x, y) => {
+        this.buildRowMenu(ticket).showAtPosition({ x, y });
+      });
+    }
+    const left = row.createDiv({ cls: "tb-agent-row-left" });
+    if (ticket.agent_status && AGENT_BADGES[ticket.agent_status]) {
+      const badge = AGENT_BADGES[ticket.agent_status];
+      left.createEl("span", {
+        text: badge.icon,
+        cls: `tb-agent-badge ${badge.cls}`,
+        attr: { "aria-label": ticket.agent_status }
+      });
+    }
+    left.createEl("span", { text: ticket.id, cls: "tb-ticket-id" });
+    left.createEl("span", { text: ticket.title, cls: "tb-agent-row-title" });
+    const right = row.createDiv({ cls: "tb-agent-row-right" });
+    right.createEl("span", { text: ticket.stage, cls: "tb-stage-name" });
+    if (ticket.agent_session) {
+      right.createEl("span", {
+        text: ticket.agent_session,
+        cls: "tb-agent-session"
+      });
+    }
+    if (ticket.updated_at) {
+      right.createEl("time", {
+        text: ticket.updated_at,
+        cls: "tb-agent-updated",
+        attr: { datetime: ticket.updated_at }
+      });
+    }
+  }
+  buildRowMenu(ticket) {
+    const menu = new import_obsidian.Menu();
+    menu.addItem(
+      (item) => item.setTitle("Open ticket").setIcon("file-text").onClick(async () => {
+        if (!this.previewLeaf || !this.previewLeaf.view?.containerEl?.isConnected) {
+          this.previewLeaf = this.app.workspace.getLeaf(import_obsidian.Platform.isMobile ? "tab" : "split");
+        }
+        await this.previewLeaf.openFile(ticket.file);
+      })
+    );
+    if (ticket.agent_session) {
+      menu.addItem(
+        (item) => item.setTitle("Open terminal").setIcon("terminal-square").onClick(() => {
+          openTerminal(this.app, ticket);
+        })
+      );
+    }
+    menu.addItem(
+      (item) => item.setTitle("View diff").setIcon("git-compare").onClick(() => {
+        openDiff(this.app, ticket);
+      })
+    );
+    return menu;
+  }
+  onLongPress(el2, callback, delay = 500) {
+    let timeout = null;
+    let startX = 0;
+    let startY = 0;
+    el2.addEventListener("touchstart", (e) => {
+      if (e.touches.length !== 1) return;
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+      timeout = setTimeout(() => {
+        timeout = null;
+        navigator.vibrate?.(50);
+        callback(startX, startY);
+      }, delay);
+    });
+    el2.addEventListener("touchmove", (e) => {
+      if (!timeout) return;
+      const dx = e.touches[0].clientX - startX;
+      const dy = e.touches[0].clientY - startY;
+      if (Math.sqrt(dx * dx + dy * dy) > 10) {
+        clearTimeout(timeout);
+        timeout = null;
+      }
+    });
+    el2.addEventListener("touchend", () => {
+      if (timeout) {
+        clearTimeout(timeout);
+        timeout = null;
+      }
+    });
+    el2.addEventListener("touchcancel", () => {
+      if (timeout) {
+        clearTimeout(timeout);
+        timeout = null;
+      }
+    });
   }
   async onClose() {
   }

@@ -65,8 +65,95 @@ interface StageAgentConfig {
 const VIEW_TYPE = "tickets-board";
 const TERMINAL_VIEW_TYPE = "tickets-terminal";
 const DIFF_VIEW_TYPE = "tickets-diff";
+const AGENTS_VIEW_TYPE = "tickets-agents";
 const CONFIG_PATH = "config.yml";
 const TERMINAL_SERVER_PATH = ".terminal-server";
+
+const ACTIVE_AGENT_STATUSES = ["spawned", "running", "blocked"];
+
+// ── Shared helpers ─────────────────────────────────────────────────────
+
+async function loadConfig(app: import("obsidian").App): Promise<TicketsConfig | null> {
+	const file = app.vault.getAbstractFileByPath(CONFIG_PATH);
+	if (!(file instanceof TFile)) return null;
+	const raw = await app.vault.read(file);
+	return parseYaml(raw) as TicketsConfig;
+}
+
+async function parseTicket(app: import("obsidian").App, file: TFile, stage: string): Promise<Ticket | null> {
+	const content = await app.vault.read(file);
+	const match = content.match(/^---\n([\s\S]*?)\n---/);
+	if (!match) return null;
+
+	try {
+		const fm = parseYaml(match[1]);
+		return {
+			id: fm.id ?? file.basename,
+			title: fm.title ?? file.basename,
+			priority: fm.priority,
+			related: fm.related,
+			blocked_by: fm.blocked_by,
+			blocks: fm.blocks,
+			created_at: fm.created_at,
+			updated_at: fm.updated_at,
+			agent_status: fm.agent_status,
+			agent_session: fm.agent_session,
+			file,
+			stage,
+		};
+	} catch {
+		return null;
+	}
+}
+
+async function loadTickets(app: import("obsidian").App, stages: string[]): Promise<Ticket[]> {
+	const tickets: Ticket[] = [];
+	for (const stage of stages) {
+		const folder = app.vault.getAbstractFileByPath(stage);
+		if (!(folder instanceof TFolder)) continue;
+
+		for (const child of folder.children) {
+			if (!(child instanceof TFile) || child.extension !== "md") continue;
+			if (child.name.startsWith(".")) continue;
+
+			const ticket = await parseTicket(app, child, stage);
+			if (ticket) tickets.push(ticket);
+		}
+	}
+	return tickets;
+}
+
+async function readServerFile(app: import("obsidian").App): Promise<{ port: number; pid: number } | null> {
+	const adapter = app.vault.adapter;
+	if (!(await adapter.exists(TERMINAL_SERVER_PATH))) return null;
+	try {
+		const raw = await adapter.read(TERMINAL_SERVER_PATH);
+		return JSON.parse(raw);
+	} catch {
+		return null;
+	}
+}
+
+async function openTerminal(app: import("obsidian").App, ticket: Ticket) {
+	const leaf = app.workspace.getLeaf(Platform.isMobile ? "tab" : "split");
+	await leaf.setViewState({
+		type: TERMINAL_VIEW_TYPE,
+		state: {
+			sessionName: ticket.agent_session,
+			ticketId: ticket.id,
+		},
+	});
+	app.workspace.revealLeaf(leaf);
+}
+
+async function openDiff(app: import("obsidian").App, ticket: Ticket) {
+	const leaf = app.workspace.getLeaf(Platform.isMobile ? "tab" : "split");
+	await leaf.setViewState({
+		type: DIFF_VIEW_TYPE,
+		state: { ticketId: ticket.id },
+	});
+	app.workspace.revealLeaf(leaf);
+}
 
 // ── Plugin ─────────────────────────────────────────────────────────────
 
@@ -75,13 +162,21 @@ export default class TicketsBoardPlugin extends Plugin {
 		this.registerView(VIEW_TYPE, (leaf) => new BoardView(leaf));
 		this.registerView(TERMINAL_VIEW_TYPE, (leaf) => new TerminalView(leaf));
 		this.registerView(DIFF_VIEW_TYPE, (leaf) => new DiffView(leaf));
+		this.registerView(AGENTS_VIEW_TYPE, (leaf) => new AgentsView(leaf));
 
 		this.addRibbonIcon("kanban", "Tickets Board", () => this.activateView());
+		this.addRibbonIcon("bot", "Tickets Agents", () => this.activateAgentsView());
 
 		this.addCommand({
 			id: "open-tickets-board",
 			name: "Open Tickets Board",
 			callback: () => this.activateView(),
+		});
+
+		this.addCommand({
+			id: "open-tickets-agents",
+			name: "Open Tickets Agents",
+			callback: () => this.activateAgentsView(),
 		});
 	}
 
@@ -93,6 +188,17 @@ export default class TicketsBoardPlugin extends Plugin {
 		if (!leaf) {
 			leaf = workspace.getLeaf("tab");
 			await leaf.setViewState({ type: VIEW_TYPE, active: true });
+		}
+		workspace.revealLeaf(leaf);
+	}
+
+	async activateAgentsView() {
+		const { workspace } = this.app;
+
+		let leaf = workspace.getLeavesOfType(AGENTS_VIEW_TYPE)[0];
+		if (!leaf) {
+			leaf = workspace.getLeaf("tab");
+			await leaf.setViewState({ type: AGENTS_VIEW_TYPE, active: true });
 		}
 		workspace.revealLeaf(leaf);
 	}
@@ -145,58 +251,6 @@ class BoardView extends ItemView {
 
 	// ── Data Loading ───────────────────────────────────────────────────
 
-	private async loadConfig(): Promise<TicketsConfig | null> {
-		const file = this.app.vault.getAbstractFileByPath(CONFIG_PATH);
-		if (!(file instanceof TFile)) return null;
-		const raw = await this.app.vault.read(file);
-		return parseYaml(raw) as TicketsConfig;
-	}
-
-	private async loadTickets(stages: string[]): Promise<Ticket[]> {
-		const tickets: Ticket[] = [];
-
-		for (const stage of stages) {
-			const folder = this.app.vault.getAbstractFileByPath(stage);
-			if (!(folder instanceof TFolder)) continue;
-
-			for (const child of folder.children) {
-				if (!(child instanceof TFile) || child.extension !== "md") continue;
-				if (child.name.startsWith(".")) continue;
-
-				const ticket = await this.parseTicket(child, stage);
-				if (ticket) tickets.push(ticket);
-			}
-		}
-
-		return tickets;
-	}
-
-	private async parseTicket(file: TFile, stage: string): Promise<Ticket | null> {
-		const content = await this.app.vault.read(file);
-		const match = content.match(/^---\n([\s\S]*?)\n---/);
-		if (!match) return null;
-
-		try {
-			const fm = parseYaml(match[1]);
-			return {
-				id: fm.id ?? file.basename,
-				title: fm.title ?? file.basename,
-				priority: fm.priority,
-				related: fm.related,
-				blocked_by: fm.blocked_by,
-				blocks: fm.blocks,
-				created_at: fm.created_at,
-				updated_at: fm.updated_at,
-				agent_status: fm.agent_status,
-				agent_session: fm.agent_session,
-				file,
-				stage,
-			};
-		} catch {
-			return null;
-		}
-	}
-
 	private async updateTicketFrontmatter(
 		file: TFile,
 		mutate: (fm: Record<string, any>) => void,
@@ -239,7 +293,7 @@ class BoardView extends ItemView {
 	// ── Rendering ──────────────────────────────────────────────────────
 
 	private async refresh() {
-		const config = await this.loadConfig();
+		const config = await loadConfig(this.app);
 		if (!config) {
 			this.contentEl.empty();
 			this.contentEl.createEl("p", {
@@ -251,7 +305,7 @@ class BoardView extends ItemView {
 
 		this.config = config;
 		this.stages = config.stages;
-		this.tickets = await this.loadTickets(this.stages);
+		this.tickets = await loadTickets(this.app, this.stages);
 		this.agentStages = await this.loadAgentStages(this.stages);
 		this.render();
 	}
@@ -798,15 +852,14 @@ class BoardView extends ItemView {
 			&& !["done", "failed", "errored"].includes(ticket.agent_status)) {
 			menu.addItem((item) =>
 				item.setTitle("Open terminal").setIcon("terminal-square").onClick(() => {
-					this.openTerminal(ticket);
+					openTerminal(this.app, ticket);
 				}),
 			);
 		}
 		// Manual agent triggers — only shown on desktop, and only when the
 		// ticket has no active agent run.
 		if (!Platform.isMobile) {
-			const activeStatuses = ["spawned", "running", "blocked"];
-			const idle = !ticket.agent_status || !activeStatuses.includes(ticket.agent_status);
+			const idle = !ticket.agent_status || !ACTIVE_AGENT_STATUSES.includes(ticket.agent_status);
 			if (idle) {
 				menu.addItem((item) =>
 					item.setTitle("Re-run stage agent").setIcon("refresh-cw").onClick(() => {
@@ -825,7 +878,7 @@ class BoardView extends ItemView {
 		if (ticket.agent_status) {
 			menu.addItem((item) =>
 				item.setTitle("View diff").setIcon("git-compare").onClick(() => {
-					this.openDiff(ticket);
+					openDiff(this.app, ticket);
 				}),
 			);
 		}
@@ -865,18 +918,6 @@ class BoardView extends ItemView {
 
 	// ── Terminal ───────────────────────────────────────────────────────
 
-	private async openTerminal(ticket: Ticket) {
-		const leaf = this.app.workspace.getLeaf(Platform.isMobile ? "tab" : "split");
-		await leaf.setViewState({
-			type: TERMINAL_VIEW_TYPE,
-			state: {
-				sessionName: ticket.agent_session,
-				ticketId: ticket.id,
-			},
-		});
-		this.app.workspace.revealLeaf(leaf);
-	}
-
 	private async spawnAgentRun(ticket: Ticket) {
 		await this.openSpawningTerminal(ticket, "/spawn", "spawn agent run");
 	}
@@ -892,7 +933,7 @@ class BoardView extends ItemView {
 	// 24x120 wrap that happens when the PTY starts before the client's
 	// first resize message.
 	private async openSpawningTerminal(ticket: Ticket, path: string, label: string) {
-		const serverInfo = await this.readServerFile();
+		const serverInfo = await readServerFile(this.app);
 		if (!serverInfo) {
 			new Notice("terminal server not running — start `tickets watch`");
 			return;
@@ -905,17 +946,6 @@ class BoardView extends ItemView {
 				spawnPath: path,
 				spawnLabel: label,
 			},
-		});
-		this.app.workspace.revealLeaf(leaf);
-	}
-
-	// ── Diff ──────────────────────────────────────────────────────────
-
-	private async openDiff(ticket: Ticket) {
-		const leaf = this.app.workspace.getLeaf(Platform.isMobile ? "tab" : "split");
-		await leaf.setViewState({
-			type: DIFF_VIEW_TYPE,
-			state: { ticketId: ticket.id },
 		});
 		this.app.workspace.revealLeaf(leaf);
 	}
@@ -995,7 +1025,7 @@ class BoardView extends ItemView {
 	// ── Stage Operations ───────────────────────────────────────────────
 
 	private async createStage(name: string) {
-		const config = await this.loadConfig();
+		const config = await loadConfig(this.app);
 		if (!config) return;
 
 		const slug = name.toLowerCase().replace(/[^a-z0-9_-]/g, "-");
@@ -1009,7 +1039,7 @@ class BoardView extends ItemView {
 	// ── Ticket Creation ────────────────────────────────────────────────
 
 	private async nextTicketId(): Promise<string> {
-		const config = await this.loadConfig();
+		const config = await loadConfig(this.app);
 		if (!config) return "TIC-001";
 
 		const prefix = config.prefix ?? "TIC";
@@ -1054,7 +1084,7 @@ class BoardView extends ItemView {
 	}
 
 	private async renameStage(oldName: string, newName: string) {
-		const config = await this.loadConfig();
+		const config = await loadConfig(this.app);
 		if (!config) return;
 
 		const slug = newName.toLowerCase().replace(/[^a-z0-9_-]/g, "-");
@@ -1066,17 +1096,6 @@ class BoardView extends ItemView {
 		await this.app.vault.rename(folder, slug);
 		config.stages = config.stages.map((s) => (s === oldName ? slug : s));
 		await this.saveConfig(config);
-	}
-
-	private async readServerFile(): Promise<{ port: number; pid: number } | null> {
-		const adapter = this.app.vault.adapter;
-		if (!(await adapter.exists(TERMINAL_SERVER_PATH))) return null;
-		try {
-			const raw = await adapter.read(TERMINAL_SERVER_PATH);
-			return JSON.parse(raw);
-		} catch {
-			return null;
-		}
 	}
 
 	async onClose() {}
@@ -1126,7 +1145,7 @@ class TerminalView extends ItemView {
 	}
 
 	private async start() {
-		const serverInfo = await this.readServerFile();
+		const serverInfo = await readServerFile(this.app);
 		if (!serverInfo) {
 			this.showError("No terminal server running. Is `tickets watch` active?");
 			return;
@@ -1244,17 +1263,6 @@ class TerminalView extends ItemView {
 		}
 	}
 
-	private async readServerFile(): Promise<{ port: number; pid: number } | null> {
-		const adapter = this.app.vault.adapter;
-		if (!(await adapter.exists(TERMINAL_SERVER_PATH))) return null;
-		try {
-			const raw = await adapter.read(TERMINAL_SERVER_PATH);
-			return JSON.parse(raw);
-		} catch {
-			return null;
-		}
-	}
-
 	private showError(msg: string) {
 		this.contentEl.empty();
 		this.contentEl.addClass("tb-terminal-container");
@@ -1366,6 +1374,200 @@ class DiffView extends ItemView {
 	private showMessage(msg: string) {
 		this.contentEl.empty();
 		this.contentEl.createEl("p", { text: msg, cls: "tb-diff-empty" });
+	}
+
+	async onClose() {}
+}
+
+// ── Agents View ───────────────────────────────────────────────────────
+
+class AgentsView extends ItemView {
+	private tickets: Ticket[] = [];
+	private previewLeaf: WorkspaceLeaf | null = null;
+
+	getViewType(): string {
+		return AGENTS_VIEW_TYPE;
+	}
+
+	getDisplayText(): string {
+		return "Tickets Agents";
+	}
+
+	getIcon(): string {
+		return "bot";
+	}
+
+	async onOpen() {
+		await this.refresh();
+
+		this.registerEvent(this.app.vault.on("create", () => this.refresh()));
+		this.registerEvent(this.app.vault.on("delete", () => this.refresh()));
+		this.registerEvent(this.app.vault.on("rename", () => this.refresh()));
+		this.registerEvent(this.app.vault.on("modify", (f) => {
+			if (f instanceof TFile && (f.extension === "md" || f.path === CONFIG_PATH)) {
+				this.refresh();
+			}
+		}));
+	}
+
+	private async refresh() {
+		const config = await loadConfig(this.app);
+		if (!config) {
+			this.contentEl.empty();
+			this.contentEl.createEl("p", {
+				text: "Could not load config.yml — is this a tickets-md vault?",
+				cls: "tb-error",
+			});
+			return;
+		}
+
+		const all = await loadTickets(this.app, config.stages);
+		this.tickets = all
+			.filter((t) => t.agent_status && ACTIVE_AGENT_STATUSES.includes(t.agent_status))
+			.sort((a, b) => {
+				const au = a.updated_at ?? "";
+				const bu = b.updated_at ?? "";
+				if (au !== bu) return au < bu ? 1 : -1;
+				return a.id.localeCompare(b.id, undefined, { numeric: true });
+			});
+		this.render();
+	}
+
+	private render() {
+		const container = this.contentEl;
+		container.empty();
+		container.addClass("tb-agents-container");
+
+		const header = container.createDiv({ cls: "tb-header" });
+		header.createEl("h2", { text: "Agents", cls: "tb-board-title" });
+		const actions = header.createDiv({ cls: "tb-header-actions" });
+		const count = actions.createEl("span", {
+			text: String(this.tickets.length),
+			cls: "tb-count",
+		});
+		count.setAttribute("aria-label", `${this.tickets.length} active agents`);
+		const refreshBtn = actions.createEl("button", {
+			cls: "tb-header-btn",
+			attr: { "aria-label": "Refresh agents" },
+		});
+		refreshBtn.textContent = "\u21BB";
+		refreshBtn.addEventListener("click", () => this.refresh());
+
+		if (this.tickets.length === 0) {
+			container.createDiv({ cls: "tb-empty", text: "No active agents" });
+			return;
+		}
+
+		const list = container.createDiv({ cls: "tb-agents-list" });
+		for (const ticket of this.tickets) {
+			this.renderRow(list, ticket);
+		}
+	}
+
+	private renderRow(parent: HTMLElement, ticket: Ticket) {
+		const row = parent.createDiv({ cls: "tb-agent-row" });
+
+		row.addEventListener("click", async () => {
+			if (!this.previewLeaf || !this.previewLeaf.view?.containerEl?.isConnected) {
+				this.previewLeaf = this.app.workspace.getLeaf(Platform.isMobile ? "tab" : "split");
+			}
+			await this.previewLeaf.openFile(ticket.file);
+		});
+
+		row.addEventListener("contextmenu", (e) => {
+			e.preventDefault();
+			this.buildRowMenu(ticket).showAtMouseEvent(e);
+		});
+		if (Platform.isMobile) {
+			this.onLongPress(row, (x, y) => {
+				this.buildRowMenu(ticket).showAtPosition({ x, y });
+			});
+		}
+
+		const left = row.createDiv({ cls: "tb-agent-row-left" });
+		if (ticket.agent_status && AGENT_BADGES[ticket.agent_status]) {
+			const badge = AGENT_BADGES[ticket.agent_status];
+			left.createEl("span", {
+				text: badge.icon,
+				cls: `tb-agent-badge ${badge.cls}`,
+				attr: { "aria-label": ticket.agent_status },
+			});
+		}
+		left.createEl("span", { text: ticket.id, cls: "tb-ticket-id" });
+		left.createEl("span", { text: ticket.title, cls: "tb-agent-row-title" });
+
+		const right = row.createDiv({ cls: "tb-agent-row-right" });
+		right.createEl("span", { text: ticket.stage, cls: "tb-stage-name" });
+		if (ticket.agent_session) {
+			right.createEl("span", {
+				text: ticket.agent_session,
+				cls: "tb-agent-session",
+			});
+		}
+		if (ticket.updated_at) {
+			right.createEl("time", {
+				text: ticket.updated_at,
+				cls: "tb-agent-updated",
+				attr: { datetime: ticket.updated_at },
+			});
+		}
+	}
+
+	private buildRowMenu(ticket: Ticket): Menu {
+		const menu = new Menu();
+		menu.addItem((item) =>
+			item.setTitle("Open ticket").setIcon("file-text").onClick(async () => {
+				if (!this.previewLeaf || !this.previewLeaf.view?.containerEl?.isConnected) {
+					this.previewLeaf = this.app.workspace.getLeaf(Platform.isMobile ? "tab" : "split");
+				}
+				await this.previewLeaf.openFile(ticket.file);
+			}),
+		);
+		if (ticket.agent_session) {
+			menu.addItem((item) =>
+				item.setTitle("Open terminal").setIcon("terminal-square").onClick(() => {
+					openTerminal(this.app, ticket);
+				}),
+			);
+		}
+		menu.addItem((item) =>
+			item.setTitle("View diff").setIcon("git-compare").onClick(() => {
+				openDiff(this.app, ticket);
+			}),
+		);
+		return menu;
+	}
+
+	private onLongPress(el: HTMLElement, callback: (x: number, y: number) => void, delay = 500) {
+		let timeout: ReturnType<typeof setTimeout> | null = null;
+		let startX = 0;
+		let startY = 0;
+
+		el.addEventListener("touchstart", (e) => {
+			if (e.touches.length !== 1) return;
+			startX = e.touches[0].clientX;
+			startY = e.touches[0].clientY;
+			timeout = setTimeout(() => {
+				timeout = null;
+				navigator.vibrate?.(50);
+				callback(startX, startY);
+			}, delay);
+		});
+		el.addEventListener("touchmove", (e) => {
+			if (!timeout) return;
+			const dx = e.touches[0].clientX - startX;
+			const dy = e.touches[0].clientY - startY;
+			if (Math.sqrt(dx * dx + dy * dy) > 10) {
+				clearTimeout(timeout);
+				timeout = null;
+			}
+		});
+		el.addEventListener("touchend", () => {
+			if (timeout) { clearTimeout(timeout); timeout = null; }
+		});
+		el.addEventListener("touchcancel", () => {
+			if (timeout) { clearTimeout(timeout); timeout = null; }
+		});
 	}
 
 	async onClose() {}
