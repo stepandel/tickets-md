@@ -15,13 +15,11 @@ import (
 	"strings"
 
 	"github.com/coder/websocket"
-
-	"github.com/stepandel/tickets-md/internal/agent"
 )
 
 // Server exposes PTY sessions over WebSocket.
 type Server struct {
-	runner *agent.PTYRunner
+	runner PTYRunner
 	root   string // project root for on-demand agent spawning
 	srv    *http.Server
 	ln     net.Listener
@@ -37,7 +35,7 @@ type Server struct {
 
 // New creates a terminal server backed by the given PTYRunner.
 // root is the project root, used to spawn on-demand agent sessions.
-func New(runner *agent.PTYRunner, root string) *Server {
+func New(runner PTYRunner, root string) *Server {
 	return &Server{runner: runner, root: root}
 }
 
