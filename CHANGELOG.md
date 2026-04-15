@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- The CLI now checks for a newer GitHub release at most once per 24
+  hours on interactive runs, caches the result in the per-user
+  config, and prints a one-line stderr upgrade reminder. Set
+  `TICKETS_NO_UPDATE_CHECK=1` to disable it.
+
 ## [0.1.7] - 2026-04-14
 
 ### Changed

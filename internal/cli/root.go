@@ -31,6 +31,9 @@ markdown file with YAML frontmatter, and every stage is a directory.
 Move tickets between stages by renaming the file across folders.`,
 		SilenceUsage: true,
 		Version:      version,
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			return maybeNagForUpdate(cmd)
+		},
 	}
 	cmd.PersistentFlags().StringVarP(&globalFlags.root, "root", "C", ".",
 		"project root containing the .tickets directory")
