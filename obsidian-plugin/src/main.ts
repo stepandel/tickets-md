@@ -24,6 +24,7 @@ import { html as diff2html } from "diff2html";
 interface TicketsConfig {
 	name?: string;
 	prefix: string;
+	project_prefix?: string;
 	stages: string[];
 	default_agent?: { command: string; args?: string[] };
 }
@@ -32,6 +33,7 @@ interface Ticket {
 	id: string;
 	title: string;
 	priority?: string;
+	project?: string;
 	related?: string[];
 	blocked_by?: string[];
 	blocks?: string[];
@@ -43,6 +45,16 @@ interface Ticket {
 	agent_session?: string;
 	file: TFile;
 	stage: string;
+}
+
+interface Project {
+	id: string;
+	title: string;
+	status?: string;
+	created_at?: string;
+	updated_at?: string;
+	body: string;
+	file: TFile;
 }
 
 const AGENT_BADGES: Record<string, { icon: string; cls: string }> = {
@@ -68,8 +80,10 @@ const VIEW_TYPE = "tickets-board";
 const TERMINAL_VIEW_TYPE = "tickets-terminal";
 const DIFF_VIEW_TYPE = "tickets-diff";
 const AGENTS_VIEW_TYPE = "tickets-agents";
+const PROJECTS_VIEW_TYPE = "tickets-projects";
 const CONFIG_PATH = "config.yml";
 const TERMINAL_SERVER_PATH = ".terminal-server";
+const PROJECTS_DIR = "projects";
 
 const ACTIVE_AGENT_STATUSES = ["spawned", "running", "blocked"];
 const AGENTS_VIEW_STATUSES = [...ACTIVE_AGENT_STATUSES, "failed", "errored"];
@@ -83,6 +97,49 @@ async function loadConfig(app: import("obsidian").App): Promise<TicketsConfig | 
 	return parseYaml(raw) as TicketsConfig;
 }
 
+function nowTimestamp(): string {
+	return new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+
+async function readFrontmatterFile(
+	app: import("obsidian").App,
+	file: TFile,
+): Promise<{ frontmatter: Record<string, any>; body: string } | null> {
+	const content = await app.vault.read(file);
+	const match = content.match(/^---\n([\s\S]*?)\n---/);
+	if (!match) return null;
+	try {
+		return {
+			frontmatter: (parseYaml(match[1]) ?? {}) as Record<string, any>,
+			body: content.slice(match[0].length),
+		};
+	} catch {
+		return null;
+	}
+}
+
+function serializeFrontmatterContent(frontmatter: Record<string, any>, body: string): string {
+	return "---\n" + stringifyYaml(frontmatter) + "---" + body;
+}
+
+async function updateFrontmatterFile(
+	app: import("obsidian").App,
+	file: TFile,
+	mutate: (fm: Record<string, any>) => void,
+): Promise<void> {
+	const parsed = await readFrontmatterFile(app, file);
+	if (!parsed) return;
+	mutate(parsed.frontmatter);
+	parsed.frontmatter.updated_at = nowTimestamp();
+	for (const key of Object.keys(parsed.frontmatter)) {
+		const value = parsed.frontmatter[key];
+		if (value === undefined || value === null || value === "" || (Array.isArray(value) && value.length === 0)) {
+			delete parsed.frontmatter[key];
+		}
+	}
+	await app.vault.modify(file, serializeFrontmatterContent(parsed.frontmatter, parsed.body));
+}
+
 async function parseTicket(app: import("obsidian").App, file: TFile, stage: string): Promise<Ticket | null> {
 	const content = await app.vault.read(file);
 	const match = content.match(/^---\n([\s\S]*?)\n---/);
@@ -94,6 +151,7 @@ async function parseTicket(app: import("obsidian").App, file: TFile, stage: stri
 			id: fm.id ?? file.basename,
 			title: fm.title ?? file.basename,
 			priority: fm.priority,
+			project: fm.project,
 			related: fm.related,
 			blocked_by: fm.blocked_by,
 			blocks: fm.blocks,
@@ -109,6 +167,78 @@ async function parseTicket(app: import("obsidian").App, file: TFile, stage: stri
 	} catch {
 		return null;
 	}
+}
+
+async function parseProject(app: import("obsidian").App, file: TFile): Promise<Project | null> {
+	const parsed = await readFrontmatterFile(app, file);
+	if (!parsed) return null;
+
+	try {
+		const fm = parsed.frontmatter;
+		return {
+			id: fm.id ?? file.basename,
+			title: fm.title ?? file.basename,
+			status: fm.status,
+			created_at: fm.created_at,
+			updated_at: fm.updated_at,
+			body: parsed.body.trimStart(),
+			file,
+		};
+	} catch {
+		return null;
+	}
+}
+
+async function loadProjects(app: import("obsidian").App, config: TicketsConfig): Promise<Project[]> {
+	const projects: Project[] = [];
+	const folder = app.vault.getAbstractFileByPath(PROJECTS_DIR);
+	if (!(folder instanceof TFolder)) return projects;
+
+	const prefix = config.project_prefix ?? "PRJ";
+	const pattern = new RegExp(`^${escapeRegExp(prefix)}-\\d+\\.md$`);
+
+	for (const child of folder.children) {
+		if (!(child instanceof TFile) || child.extension !== "md") continue;
+		if (!pattern.test(child.name)) continue;
+
+		const project = await parseProject(app, child);
+		if (project) projects.push(project);
+	}
+
+	return projects.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+}
+
+function escapeRegExp(text: string): string {
+	return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+async function nextProjectId(app: import("obsidian").App, config: TicketsConfig): Promise<string> {
+	const prefix = config.project_prefix ?? "PRJ";
+	const pattern = new RegExp(`^${escapeRegExp(prefix)}-(\\d+)\\.md$`);
+	const folder = app.vault.getAbstractFileByPath(PROJECTS_DIR);
+	if (!(folder instanceof TFolder)) {
+		return `${prefix}-001`;
+	}
+
+	let max = 0;
+	for (const child of folder.children) {
+		if (!(child instanceof TFile)) continue;
+		const match = child.name.match(pattern);
+		if (!match) continue;
+		const n = Number.parseInt(match[1], 10);
+		if (!Number.isNaN(n) && n > max) {
+			max = n;
+		}
+	}
+
+	return `${prefix}-${String(max + 1).padStart(3, "0")}`;
+}
+
+function openPreviewLeaf(app: import("obsidian").App, previewLeaf: WorkspaceLeaf | null): WorkspaceLeaf {
+	if (previewLeaf?.view?.containerEl?.isConnected) {
+		return previewLeaf;
+	}
+	return app.workspace.getLeaf(Platform.isMobile ? "tab" : "split");
 }
 
 async function loadTickets(app: import("obsidian").App, stages: string[]): Promise<Ticket[]> {
@@ -204,9 +334,11 @@ export default class TicketsBoardPlugin extends Plugin {
 		this.registerView(TERMINAL_VIEW_TYPE, (leaf) => new TerminalView(leaf));
 		this.registerView(DIFF_VIEW_TYPE, (leaf) => new DiffView(leaf));
 		this.registerView(AGENTS_VIEW_TYPE, (leaf) => new AgentsView(leaf));
+		this.registerView(PROJECTS_VIEW_TYPE, (leaf) => new ProjectsView(leaf));
 
 		this.addRibbonIcon("kanban", "Tickets Board", () => this.activateView());
 		this.addRibbonIcon("bot", "Tickets Agents", () => this.activateAgentsView());
+		this.addRibbonIcon("folder-open", "Tickets Projects", () => this.activateProjectsView());
 
 		this.addCommand({
 			id: "open-tickets-board",
@@ -218,6 +350,12 @@ export default class TicketsBoardPlugin extends Plugin {
 			id: "open-tickets-agents",
 			name: "Open Tickets Agents",
 			callback: () => this.activateAgentsView(),
+		});
+
+		this.addCommand({
+			id: "open-tickets-projects",
+			name: "Open Tickets Projects",
+			callback: () => this.activateProjectsView(),
 		});
 	}
 
@@ -240,6 +378,17 @@ export default class TicketsBoardPlugin extends Plugin {
 		if (!leaf) {
 			leaf = workspace.getLeaf("tab");
 			await leaf.setViewState({ type: AGENTS_VIEW_TYPE, active: true });
+		}
+		workspace.revealLeaf(leaf);
+	}
+
+	async activateProjectsView() {
+		const { workspace } = this.app;
+
+		let leaf = workspace.getLeavesOfType(PROJECTS_VIEW_TYPE)[0];
+		if (!leaf) {
+			leaf = workspace.getLeaf("tab");
+			await leaf.setViewState({ type: PROJECTS_VIEW_TYPE, active: true });
 		}
 		workspace.revealLeaf(leaf);
 	}
@@ -296,21 +445,7 @@ class BoardView extends ItemView {
 		file: TFile,
 		mutate: (fm: Record<string, any>) => void,
 	): Promise<void> {
-		const content = await this.app.vault.read(file);
-		const match = content.match(/^---\n([\s\S]*?)\n---/);
-		if (!match) return;
-		const body = content.slice(match[0].length);
-		const fm = (parseYaml(match[1]) ?? {}) as Record<string, any>;
-		mutate(fm);
-		fm.updated_at = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
-		for (const key of Object.keys(fm)) {
-			const v = fm[key];
-			if (v === undefined || v === null || v === "" || (Array.isArray(v) && v.length === 0)) {
-				delete fm[key];
-			}
-		}
-		const newContent = "---\n" + stringifyYaml(fm) + "---" + body;
-		await this.app.vault.modify(file, newContent);
+		await updateFrontmatterFile(this.app, file, mutate);
 	}
 
 	private async loadAgentStages(stages: string[]): Promise<Set<string>> {
@@ -1599,9 +1734,7 @@ class AgentsView extends ItemView {
 				this.longPressTriggered = false;
 				return;
 			}
-			if (!this.previewLeaf || !this.previewLeaf.view?.containerEl?.isConnected) {
-				this.previewLeaf = this.app.workspace.getLeaf(Platform.isMobile ? "tab" : "split");
-			}
+			this.previewLeaf = openPreviewLeaf(this.app, this.previewLeaf);
 			await this.previewLeaf.openFile(ticket.file);
 		});
 
@@ -1648,9 +1781,7 @@ class AgentsView extends ItemView {
 		const menu = new Menu();
 		menu.addItem((item) =>
 			item.setTitle("Open ticket").setIcon("file-text").onClick(async () => {
-				if (!this.previewLeaf || !this.previewLeaf.view?.containerEl?.isConnected) {
-					this.previewLeaf = this.app.workspace.getLeaf(Platform.isMobile ? "tab" : "split");
-				}
+				this.previewLeaf = openPreviewLeaf(this.app, this.previewLeaf);
 				await this.previewLeaf.openFile(ticket.file);
 			}),
 		);
@@ -1674,6 +1805,328 @@ class AgentsView extends ItemView {
 			}),
 		);
 		return menu;
+	}
+
+	private onLongPress(el: HTMLElement, callback: (x: number, y: number) => void, delay = 500) {
+		let timeout: ReturnType<typeof setTimeout> | null = null;
+		let startX = 0;
+		let startY = 0;
+
+		el.addEventListener("touchstart", (e) => {
+			if (e.touches.length !== 1) return;
+			startX = e.touches[0].clientX;
+			startY = e.touches[0].clientY;
+			timeout = setTimeout(() => {
+				timeout = null;
+				this.longPressTriggered = true;
+				navigator.vibrate?.(50);
+				callback(startX, startY);
+			}, delay);
+		});
+		el.addEventListener("touchmove", (e) => {
+			if (!timeout) return;
+			const dx = e.touches[0].clientX - startX;
+			const dy = e.touches[0].clientY - startY;
+			if (Math.sqrt(dx * dx + dy * dy) > 10) {
+				clearTimeout(timeout);
+				timeout = null;
+			}
+		});
+		el.addEventListener("touchend", () => {
+			if (timeout) { clearTimeout(timeout); timeout = null; }
+			if (this.longPressTriggered) {
+				setTimeout(() => { this.longPressTriggered = false; }, 0);
+			}
+		});
+		el.addEventListener("touchcancel", () => {
+			if (timeout) { clearTimeout(timeout); timeout = null; }
+			this.longPressTriggered = false;
+		});
+	}
+
+	async onClose() {}
+}
+
+class ProjectsView extends ItemView {
+	private config: TicketsConfig | null = null;
+	private projects: Project[] = [];
+	private tickets: Ticket[] = [];
+	private previewLeaf: WorkspaceLeaf | null = null;
+	private longPressTriggered = false;
+
+	getViewType(): string {
+		return PROJECTS_VIEW_TYPE;
+	}
+
+	getDisplayText(): string {
+		return "Tickets Projects";
+	}
+
+	getIcon(): string {
+		return "folder-open";
+	}
+
+	async onOpen() {
+		await this.refresh();
+
+		this.registerEvent(this.app.vault.on("create", () => this.refresh()));
+		this.registerEvent(this.app.vault.on("delete", () => this.refresh()));
+		this.registerEvent(this.app.vault.on("rename", () => this.refresh()));
+		this.registerEvent(this.app.vault.on("modify", (f) => {
+			if (f instanceof TFile && (f.extension === "md" || f.path === CONFIG_PATH)) {
+				this.refresh();
+			}
+		}));
+	}
+
+	private async refresh() {
+		const config = await loadConfig(this.app);
+		if (!config) {
+			this.contentEl.empty();
+			this.contentEl.createEl("p", {
+				text: "Could not load config.yml — is this a tickets-md vault?",
+				cls: "tb-error",
+			});
+			return;
+		}
+
+		this.config = config;
+		this.projects = await loadProjects(this.app, config);
+		this.tickets = await loadTickets(this.app, config.stages);
+		this.render();
+	}
+
+	private render() {
+		const container = this.contentEl;
+		container.empty();
+		container.addClass("tb-projects-container");
+
+		const header = container.createDiv({ cls: "tb-header" });
+		header.createEl("h2", { text: "Projects", cls: "tb-board-title" });
+		const actions = header.createDiv({ cls: "tb-header-actions" });
+		const count = actions.createEl("span", {
+			text: String(this.projects.length),
+			cls: "tb-count",
+		});
+		count.setAttribute("aria-label", `${this.projects.length} projects`);
+
+		const refreshBtn = actions.createEl("button", {
+			cls: "tb-header-btn",
+			attr: { "aria-label": "Refresh projects" },
+		});
+		refreshBtn.textContent = "\u21BB";
+		refreshBtn.addEventListener("click", () => this.refresh());
+
+		const createBtn = actions.createEl("button", {
+			cls: "tb-header-btn",
+			text: "+ New project",
+			attr: { "aria-label": "Create project" },
+		});
+		createBtn.addClass("tb-projects-create-btn");
+		createBtn.addEventListener("click", () => this.createProject());
+
+		if (this.projects.length === 0) {
+			container.createDiv({ cls: "tb-empty", text: "No projects yet" });
+			return;
+		}
+
+		const list = container.createDiv({ cls: "tb-projects-list" });
+		for (const project of this.projects) {
+			this.renderRow(list, project);
+		}
+	}
+
+	private renderRow(parent: HTMLElement, project: Project) {
+		const assignedCount = this.tickets.filter((ticket) => ticket.project === project.id).length;
+		const row = parent.createDiv({ cls: "tb-project-row" });
+
+		row.addEventListener("click", async () => {
+			if (this.longPressTriggered) {
+				this.longPressTriggered = false;
+				return;
+			}
+			this.previewLeaf = openPreviewLeaf(this.app, this.previewLeaf);
+			await this.previewLeaf.openFile(project.file);
+		});
+
+		row.addEventListener("contextmenu", (e) => {
+			e.preventDefault();
+			this.buildRowMenu(project).showAtMouseEvent(e);
+		});
+		if (Platform.isMobile) {
+			this.onLongPress(row, (x, y) => {
+				this.buildRowMenu(project).showAtPosition({ x, y });
+			});
+		}
+
+		const left = row.createDiv({ cls: "tb-project-row-left" });
+		const meta = left.createDiv({ cls: "tb-project-row-meta" });
+		meta.createEl("span", { text: project.id, cls: "tb-ticket-id" });
+		if (project.status) {
+			meta.createEl("span", { text: project.status, cls: "tb-project-status" });
+		}
+		left.createEl("span", { text: project.title, cls: "tb-project-row-title" });
+
+		const right = row.createDiv({ cls: "tb-project-row-right" });
+		right.createEl("span", {
+			text: `${assignedCount} ticket${assignedCount === 1 ? "" : "s"}`,
+			cls: "tb-project-count",
+		});
+		if (project.updated_at) {
+			right.createEl("time", {
+				text: project.updated_at,
+				cls: "tb-agent-updated",
+				attr: { datetime: project.updated_at },
+			});
+		}
+	}
+
+	private buildRowMenu(project: Project): Menu {
+		const menu = new Menu();
+		menu.addItem((item) =>
+			item.setTitle("Open project").setIcon("file-text").onClick(async () => {
+				this.previewLeaf = openPreviewLeaf(this.app, this.previewLeaf);
+				await this.previewLeaf.openFile(project.file);
+			}),
+		);
+		menu.addItem((item) =>
+			item.setTitle("Rename").setIcon("pencil").onClick(() => {
+				new TextInputModal(
+					this.app,
+					"Rename project",
+					"Project title",
+					project.title,
+					async (title) => {
+						await updateFrontmatterFile(this.app, project.file, (fm) => {
+							fm.title = title;
+						});
+						await this.refresh();
+					},
+				).open();
+			}),
+		);
+		menu.addItem((item) =>
+			item.setTitle("Set status").setIcon("circle-dot").onClick(() => {
+				new TextInputModal(
+					this.app,
+					"Project status",
+					"active",
+					project.status ?? "",
+					async (status) => {
+						await updateFrontmatterFile(this.app, project.file, (fm) => {
+							fm.status = status;
+						});
+						await this.refresh();
+					},
+					true,
+				).open();
+			}),
+		);
+		menu.addItem((item) =>
+			item.setTitle("Show assigned tickets").setIcon("list-todo").onClick(() => {
+				this.showAssignedTickets(project);
+			}),
+		);
+		menu.addItem((item) =>
+			item.setTitle("Delete project").setIcon("trash").onClick(() => {
+				new ConfirmProjectDeleteModal(this.app, project, async () => {
+					const failures: string[] = [];
+					for (const ticket of this.tickets.filter((candidate) => candidate.project === project.id)) {
+						try {
+							await updateFrontmatterFile(this.app, ticket.file, (fm) => {
+								delete fm.project;
+							});
+						} catch {
+							failures.push(ticket.id);
+						}
+					}
+					await this.app.vault.trash(project.file, false);
+					if (failures.length > 0) {
+						new Notice(`Deleted ${project.id} but could not clear assignment on: ${failures.join(", ")}`);
+					}
+					await this.refresh();
+				}).open();
+			}),
+		);
+		return menu;
+	}
+
+	private showAssignedTickets(project: Project) {
+		const assigned = this.tickets
+			.filter((ticket) => ticket.project === project.id)
+			.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+		if (assigned.length === 0) {
+			new Notice(`${project.id} has no assigned tickets`);
+			return;
+		}
+		new FuzzyPickerModal(
+			this.app,
+			assigned,
+			(ticket) => `${ticket.id} ${ticket.title}`,
+			(ticket) => {
+				this.previewLeaf = openPreviewLeaf(this.app, this.previewLeaf);
+				void this.previewLeaf.openFile(ticket.file).catch((err) => {
+					new Notice(`Could not open ${ticket.id}: ${err instanceof Error ? err.message : String(err)}`);
+				});
+			},
+		).open();
+	}
+
+	private async createProject() {
+		if (!this.config) return;
+
+		new TextInputModal(
+			this.app,
+			"New project",
+			"Project title",
+			"",
+			async (title) => {
+				try {
+					await this.ensureProjectsDir();
+					for (let attempt = 0; attempt < 1000; attempt++) {
+						const id = await nextProjectId(this.app, this.config!);
+						const path = `${PROJECTS_DIR}/${id}.md`;
+						if (this.app.vault.getAbstractFileByPath(path)) {
+							continue;
+						}
+						const timestamp = nowTimestamp();
+						const content = serializeFrontmatterContent(
+							{
+								id,
+								title,
+								created_at: timestamp,
+								updated_at: timestamp,
+							},
+							"\n\n## Description\n\n_Describe the project here._\n",
+						);
+						try {
+							const file = await this.app.vault.create(path, content);
+							this.previewLeaf = openPreviewLeaf(this.app, this.previewLeaf);
+							await this.previewLeaf.openFile(file);
+							await this.refresh();
+							return;
+						} catch (error) {
+							if (error instanceof Error && error.message.includes("already exists")) {
+								continue;
+							}
+							throw error;
+						}
+					}
+					new Notice("Could not allocate a new project ID");
+				} catch (error) {
+					new Notice(error instanceof Error ? error.message : "Could not create project");
+				}
+			},
+		).open();
+	}
+
+	private async ensureProjectsDir() {
+		const existing = this.app.vault.getAbstractFileByPath(PROJECTS_DIR);
+		if (existing instanceof TFolder) return;
+		if (existing instanceof TFile) {
+			throw new Error(`${PROJECTS_DIR} already exists as a file`);
+		}
+		await this.app.vault.createFolder(PROJECTS_DIR);
 	}
 
 	private onLongPress(el: HTMLElement, callback: (x: number, y: number) => void, delay = 500) {
@@ -1868,19 +2321,59 @@ class ConfirmDeleteModal extends Modal {
 	}
 }
 
+class ConfirmProjectDeleteModal extends Modal {
+	private readonly project: Project;
+	private readonly onConfirm: () => Promise<void>;
+
+	constructor(
+		app: import("obsidian").App,
+		project: Project,
+		onConfirm: () => Promise<void>,
+	) {
+		super(app);
+		this.project = project;
+		this.onConfirm = onConfirm;
+	}
+
+	onOpen() {
+		const { contentEl } = this;
+		this.modalEl.addClass("tb-confirm-delete-modal");
+
+		contentEl.createEl("h3", { text: "Delete project" });
+		contentEl.createEl("p", {
+			text: `Are you sure you want to delete ${this.project.id} (${this.project.title})? Assigned tickets will be unassigned first.`,
+		});
+
+		new Setting(contentEl).addButton((btn) =>
+			btn.setButtonText("Delete").setWarning().onClick(async () => {
+				await this.onConfirm();
+				this.close();
+			}),
+		).addButton((btn) =>
+			btn.setButtonText("Cancel").onClick(() => this.close()),
+		);
+	}
+
+	onClose() {
+		this.contentEl.empty();
+	}
+}
+
 class TextInputModal extends Modal {
 	private result: string;
 	private readonly title: string;
 	private readonly placeholder: string;
 	private readonly defaultValue: string;
-	private readonly onSubmit: (value: string) => void;
+	private readonly onSubmit: (value: string) => void | Promise<void>;
+	private readonly allowEmpty: boolean;
 
 	constructor(
 		app: import("obsidian").App,
 		title: string,
 		placeholder: string,
 		defaultValue: string,
-		onSubmit: (value: string) => void,
+		onSubmit: (value: string) => void | Promise<void>,
+		allowEmpty = false,
 	) {
 		super(app);
 		this.title = title;
@@ -1888,6 +2381,7 @@ class TextInputModal extends Modal {
 		this.defaultValue = defaultValue;
 		this.result = defaultValue;
 		this.onSubmit = onSubmit;
+		this.allowEmpty = allowEmpty;
 	}
 
 	onOpen() {
@@ -1906,10 +2400,10 @@ class TextInputModal extends Modal {
 		});
 
 		new Setting(contentEl).addButton((btn) =>
-			btn.setButtonText("Confirm").setCta().onClick(() => {
+			btn.setButtonText("Confirm").setCta().onClick(async () => {
 				const trimmed = this.result.trim();
-				if (trimmed) {
-					this.onSubmit(trimmed);
+				if (trimmed || this.allowEmpty) {
+					await this.onSubmit(trimmed);
 				}
 				this.close();
 			}),
