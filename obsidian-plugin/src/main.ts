@@ -70,6 +70,7 @@ const CONFIG_PATH = "config.yml";
 const TERMINAL_SERVER_PATH = ".terminal-server";
 
 const ACTIVE_AGENT_STATUSES = ["spawned", "running", "blocked"];
+const AGENTS_VIEW_STATUSES = [...ACTIVE_AGENT_STATUSES, "failed", "errored"];
 
 // ── Shared helpers ─────────────────────────────────────────────────────
 
@@ -123,6 +124,14 @@ async function loadTickets(app: import("obsidian").App, stages: string[]): Promi
 	return tickets;
 }
 
+function hasActiveAgent(ticket: Ticket): boolean {
+	return !!ticket.agent_status && ACTIVE_AGENT_STATUSES.includes(ticket.agent_status);
+}
+
+function canRerunStageAgent(ticket: Ticket): boolean {
+	return !ticket.agent_status || !hasActiveAgent(ticket);
+}
+
 async function readServerFile(app: import("obsidian").App): Promise<{ port: number; pid: number } | null> {
 	const adapter = app.vault.adapter;
 	if (!(await adapter.exists(TERMINAL_SERVER_PATH))) return null;
@@ -153,6 +162,34 @@ async function openDiff(app: import("obsidian").App, ticket: Ticket) {
 		state: { ticketId: ticket.id },
 	});
 	app.workspace.revealLeaf(leaf);
+}
+
+// openSpawningTerminal opens a TerminalView leaf in "pending spawn"
+// mode: the view measures its container, posts {ticket_id, rows, cols}
+// to the given terminal-server endpoint, and only then connects the
+// WebSocket. Threading the geometry through avoids the first-second
+// 24x120 wrap that happens when the PTY starts before the client's
+// first resize message.
+async function openSpawningTerminal(app: import("obsidian").App, ticket: Ticket, path: string, label: string) {
+	const serverInfo = await readServerFile(app);
+	if (!serverInfo) {
+		new Notice("terminal server not running — start `tickets watch`");
+		return;
+	}
+	const leaf = app.workspace.getLeaf("split");
+	await leaf.setViewState({
+		type: TERMINAL_VIEW_TYPE,
+		state: {
+			ticketId: ticket.id,
+			spawnPath: path,
+			spawnLabel: label,
+		},
+	});
+	app.workspace.revealLeaf(leaf);
+}
+
+async function rerunStageAgent(app: import("obsidian").App, ticket: Ticket) {
+	await openSpawningTerminal(app, ticket, "/rerun-stage-agent", "re-run stage agent");
 }
 
 // ── Plugin ─────────────────────────────────────────────────────────────
@@ -859,17 +896,16 @@ class BoardView extends ItemView {
 		// Manual agent triggers — only shown on desktop, and only when the
 		// ticket has no active agent run.
 		if (!Platform.isMobile) {
-			const idle = !ticket.agent_status || !ACTIVE_AGENT_STATUSES.includes(ticket.agent_status);
-			if (idle) {
+			if (canRerunStageAgent(ticket)) {
 				menu.addItem((item) =>
 					item.setTitle("Re-run stage agent").setIcon("refresh-cw").onClick(() => {
-						this.rerunStageAgent(ticket);
+						rerunStageAgent(this.app, ticket);
 					}),
 				);
 				if (this.config?.default_agent?.command) {
 					menu.addItem((item) =>
 						item.setTitle("Adhoc agent run").setIcon("bot").onClick(() => {
-							this.spawnAgentRun(ticket);
+							openSpawningTerminal(this.app, ticket, "/spawn", "spawn agent run");
 						}),
 					);
 				}
@@ -918,37 +954,6 @@ class BoardView extends ItemView {
 
 	// ── Terminal ───────────────────────────────────────────────────────
 
-	private async spawnAgentRun(ticket: Ticket) {
-		await this.openSpawningTerminal(ticket, "/spawn", "spawn agent run");
-	}
-
-	private async rerunStageAgent(ticket: Ticket) {
-		await this.openSpawningTerminal(ticket, "/rerun-stage-agent", "re-run stage agent");
-	}
-
-	// openSpawningTerminal opens a TerminalView leaf in "pending spawn"
-	// mode: the view measures its container, posts {ticket_id, rows, cols}
-	// to the given terminal-server endpoint, and only then connects the
-	// WebSocket. Threading the geometry through avoids the first-second
-	// 24x120 wrap that happens when the PTY starts before the client's
-	// first resize message.
-	private async openSpawningTerminal(ticket: Ticket, path: string, label: string) {
-		const serverInfo = await readServerFile(this.app);
-		if (!serverInfo) {
-			new Notice("terminal server not running — start `tickets watch`");
-			return;
-		}
-		const leaf = this.app.workspace.getLeaf("split");
-		await leaf.setViewState({
-			type: TERMINAL_VIEW_TYPE,
-			state: {
-				ticketId: ticket.id,
-				spawnPath: path,
-				spawnLabel: label,
-			},
-		});
-		this.app.workspace.revealLeaf(leaf);
-	}
 
 	// ── Config Writing ─────────────────────────────────────────────────
 
@@ -1424,7 +1429,7 @@ class AgentsView extends ItemView {
 
 		const all = await loadTickets(this.app, config.stages);
 		this.tickets = all
-			.filter((t) => t.agent_status && ACTIVE_AGENT_STATUSES.includes(t.agent_status))
+			.filter((t) => t.agent_status && AGENTS_VIEW_STATUSES.includes(t.agent_status))
 			.sort((a, b) => {
 				const au = a.updated_at ?? "";
 				const bu = b.updated_at ?? "";
@@ -1532,6 +1537,13 @@ class AgentsView extends ItemView {
 			menu.addItem((item) =>
 				item.setTitle("Open terminal").setIcon("terminal-square").onClick(() => {
 					openTerminal(this.app, ticket);
+				}),
+			);
+		}
+		if (!Platform.isMobile && canRerunStageAgent(ticket)) {
+			menu.addItem((item) =>
+				item.setTitle("Re-run stage agent").setIcon("refresh-cw").onClick(() => {
+					rerunStageAgent(this.app, ticket);
 				}),
 			);
 		}

@@ -430,20 +430,18 @@ func spawnAgent(t ticket.Ticket, sc stage.Config, root string, mon *agent.Monito
 		log.Printf("%s/%s: failed to write agent status: %v", t.ID, runID, err)
 		return "", fmt.Errorf("writing agent status: %w", err)
 	}
-
-	// Write agent info into the ticket frontmatter so Obsidian users
-	// can see it. This happens before the session starts, so there is
-	// no concurrent write with the agent.
-	t.AgentStatus = string(agent.StatusRunning)
-	t.AgentRun = runID
-	t.AgentSession = sessionName
-	t.UpdatedAt = time.Now().UTC().Truncate(time.Second)
-	if err := t.WriteFile(); err != nil {
-		log.Printf("%s/%s: failed to update ticket frontmatter: %v", t.ID, runID, err)
-	}
+	mon.TrackRun(t.ID, runID)
+	tracked := true
+	defer func() {
+		if tracked {
+			mon.UntrackRun(t.ID, runID)
+		}
+	}()
+	syncAgentFrontmatter(root, t.ID)
 
 	if err := os.MkdirAll(agent.RunsDir(root, t.ID), 0o755); err != nil {
 		log.Printf("%s/%s: failed to create runs dir: %v", t.ID, runID, err)
+		markSpawnErrored(root, t.ID, runID, fmt.Errorf("creating runs dir: %w", err))
 		return "", fmt.Errorf("creating runs dir: %w", err)
 	}
 
@@ -460,12 +458,7 @@ func spawnAgent(t ticket.Ticket, sc stage.Config, root string, mon *agent.Monito
 
 	if err := runner.Start(sessionName, cwd, fullArgv, logFile, rows, cols); err != nil {
 		log.Printf("%s → %s: failed to start agent session: %v", t.ID, t.Stage, err)
-		as.Status = agent.StatusErrored
-		as.Error = err.Error()
-		agent.Write(root, as) // best-effort
-		t.AgentStatus = string(agent.StatusErrored)
-		t.AgentSession = ""
-		t.WriteFile() // best-effort
+		markSpawnErrored(root, t.ID, runID, err)
 		return "", fmt.Errorf("starting agent session: %w", err)
 	}
 
@@ -479,9 +472,23 @@ func spawnAgent(t ticket.Ticket, sc stage.Config, root string, mon *agent.Monito
 	}
 	log.Printf("%s → %s%s: agent running (view with: tickets agents log %s)%s", t.ID, t.Stage, attemptInfo, t.ID, wtInfo)
 
-	mon.TrackRun(t.ID, runID)
+	tracked = false
 	go waitForSession(t, runID, ac.Command, sessionName, root, mon, runner)
 	return sessionName, nil
+}
+
+func markSpawnErrored(root, ticketID, runID string, cause error) {
+	as, err := agent.ReadRun(root, ticketID, runID)
+	if err != nil {
+		log.Printf("%s/%s: failed to reload agent status after spawn error: %v", ticketID, runID, err)
+		return
+	}
+	as.Status = agent.StatusErrored
+	as.Error = cause.Error()
+	if err := agent.Write(root, as); err != nil {
+		log.Printf("%s/%s: failed to mark spawn errored: %v", ticketID, runID, err)
+	}
+	syncAgentFrontmatter(root, ticketID)
 }
 
 // waitForSession blocks until the PTY session exits and updates the
