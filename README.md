@@ -208,7 +208,7 @@ setup steps.
 | Command                                 | What it does                                       |
 | --------------------------------------- | -------------------------------------------------- |
 | `tickets init`                          | Create `.tickets/config.yml` + stage folders       |
-| `tickets new <title...> [--priority P] [--parent ID]` | Create a ticket in the default stage      |
+| `tickets new <title...> [--priority P] [--parent ID] [--body MD]` | Create a ticket in the default stage |
 | `tickets projects <subcommand>`         | Create, list, show, update, assign, and delete projects |
 | `tickets list [--stage X] [--project P]`| List tickets, grouped by stage (alias: `ls`)       |
 | `tickets show <id>`                     | Print a ticket's contents                          |
