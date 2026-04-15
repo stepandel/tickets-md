@@ -15,6 +15,8 @@ const (
 	OneSided
 	// DanglingProject means the referenced project does not exist.
 	DanglingProject
+	// StaleBlock means a completed ticket still claims to block peers.
+	StaleBlock
 )
 
 func (k IssueKind) String() string {
@@ -25,6 +27,8 @@ func (k IssueKind) String() string {
 		return "one-sided"
 	case DanglingProject:
 		return "dangling-project"
+	case StaleBlock:
+		return "stale-block"
 	default:
 		return "unknown"
 	}
@@ -81,6 +85,8 @@ func (i Issue) String() string {
 			action = "added reciprocal"
 		case DanglingProject:
 			action = "cleared"
+		case StaleBlock:
+			action = "cleared"
 		}
 	}
 	return fmt.Sprintf("[doctor] %s: %s %s ref %s — %s", i.TicketID, i.Kind, i.Field, i.TargetID, action)
@@ -115,6 +121,59 @@ func (s *Store) Doctor(dryRun bool) ([]Issue, error) {
 
 	modified := make(map[string]bool)
 	var issues []Issue
+
+	if len(s.Config.CompleteStages) > 0 {
+		// Pass 1: clear Blocks on every ticket sitting in a complete stage,
+		// plus the reciprocal BlockedBy on each named peer.
+		for _, id := range ids {
+			t := tickets[id]
+			if !s.Config.IsCompleteStage(t.Stage) || len(t.Blocks) == 0 {
+				continue
+			}
+			for _, ref := range append([]string(nil), t.Blocks...) {
+				issues = append(issues, Issue{Kind: StaleBlock, Field: FieldBlocks, TicketID: t.ID, TargetID: ref})
+				if dryRun {
+					continue
+				}
+				if peer, ok := tickets[ref]; ok && containsID(peer.BlockedBy, t.ID) {
+					peer.BlockedBy = removeID(peer.BlockedBy, t.ID)
+					modified[ref] = true
+				}
+			}
+			if !dryRun {
+				t.Blocks = nil
+				modified[t.ID] = true
+			}
+		}
+
+		// Pass 2: catch the asymmetric case where a user already cleared the
+		// complete ticket's Blocks by hand but left the peer's BlockedBy
+		// pointing at it. Without this, the main loop's OneSided repair
+		// would re-materialize the link on t.Blocks.
+		for _, id := range ids {
+			t := tickets[id]
+			if len(t.BlockedBy) == 0 {
+				continue
+			}
+			for _, ref := range append([]string(nil), t.BlockedBy...) {
+				peer, ok := tickets[ref]
+				if !ok || !s.Config.IsCompleteStage(peer.Stage) {
+					continue
+				}
+				// Both sides populated cases are already emitted by pass 1;
+				// this pass only catches asymmetric residue.
+				if containsID(peer.Blocks, t.ID) {
+					continue
+				}
+				issues = append(issues, Issue{Kind: StaleBlock, Field: FieldBlocks, TicketID: peer.ID, TargetID: t.ID})
+				if dryRun {
+					continue
+				}
+				t.BlockedBy = removeID(t.BlockedBy, ref)
+				modified[t.ID] = true
+			}
+		}
+	}
 
 	for _, id := range ids {
 		t := tickets[id]

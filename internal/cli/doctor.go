@@ -22,6 +22,7 @@ Checks performed:
     - Dangling references to tickets that no longer exist
     - One-sided links where the reciprocal is missing
     - Self-referential links
+    - Stale blocks on a ticket sitting in a complete stage
 
   Harness drift (HarnessDoctor):
     - Stale non-terminal runs → marked failed

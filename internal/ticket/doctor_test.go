@@ -1,8 +1,29 @@
 package ticket
 
 import (
+	"os"
 	"testing"
 )
+
+func moveTicketFileToStage(t *testing.T, s *Store, ticketID, stage string) {
+	t.Helper()
+
+	tk, err := s.Get(ticketID)
+	if err != nil {
+		t.Fatalf("Get(%s): %v", ticketID, err)
+	}
+	dst := s.ticketPath(stage, ticketID)
+	if err := os.Rename(tk.Path, dst); err != nil {
+		t.Fatalf("Rename(%s -> %s): %v", tk.Path, dst, err)
+	}
+	tk, err = s.Get(ticketID)
+	if err != nil {
+		t.Fatalf("Get(%s) after rename: %v", ticketID, err)
+	}
+	if tk.Stage != stage {
+		t.Fatalf("Stage = %q, want %q", tk.Stage, stage)
+	}
+}
 
 func TestDoctorClean(t *testing.T) {
 	s := newTestStore(t)
@@ -534,5 +555,316 @@ func TestDoctorDanglingProject(t *testing.T) {
 	a, _ = s.Get(a.ID)
 	if a.Project != "" {
 		t.Fatalf("expected project to be cleared, got %q", a.Project)
+	}
+}
+
+func TestDoctorStaleBlocksInCompleteStage(t *testing.T) {
+	s := newTestStoreWithCompleteStages(t, "done")
+	a, _ := s.Create("Alpha")
+	b, _ := s.Create("Beta")
+
+	a.Blocks = []string{b.ID}
+	b.BlockedBy = []string{a.ID}
+	if err := s.Save(a); err != nil {
+		t.Fatalf("Save(a): %v", err)
+	}
+	if err := s.Save(b); err != nil {
+		t.Fatalf("Save(b): %v", err)
+	}
+
+	moveTicketFileToStage(t, s, a.ID, "done")
+
+	issues, err := s.Doctor(false)
+	if err != nil {
+		t.Fatalf("Doctor: %v", err)
+	}
+	if len(issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d: %v", len(issues), issues)
+	}
+	if issues[0].Kind != StaleBlock || issues[0].Field != FieldBlocks {
+		t.Fatalf("expected stale block issue, got %+v", issues[0])
+	}
+	if !issues[0].Fixed {
+		t.Fatal("expected stale block issue to be fixed")
+	}
+
+	a, _ = s.Get(a.ID)
+	b, _ = s.Get(b.ID)
+	if len(a.Blocks) != 0 {
+		t.Fatalf("a.Blocks = %v, want empty", a.Blocks)
+	}
+	if len(b.BlockedBy) != 0 {
+		t.Fatalf("b.BlockedBy = %v, want empty", b.BlockedBy)
+	}
+}
+
+func TestDoctorStaleBlocksMultiplePeers(t *testing.T) {
+	s := newTestStoreWithCompleteStages(t, "done")
+	a, _ := s.Create("Alpha")
+	b1, _ := s.Create("Beta 1")
+	b2, _ := s.Create("Beta 2")
+
+	a.Blocks = []string{b1.ID, b2.ID}
+	b1.BlockedBy = []string{a.ID}
+	b2.BlockedBy = []string{a.ID}
+	if err := s.Save(a); err != nil {
+		t.Fatalf("Save(a): %v", err)
+	}
+	if err := s.Save(b1); err != nil {
+		t.Fatalf("Save(b1): %v", err)
+	}
+	if err := s.Save(b2); err != nil {
+		t.Fatalf("Save(b2): %v", err)
+	}
+
+	moveTicketFileToStage(t, s, a.ID, "done")
+
+	issues, err := s.Doctor(false)
+	if err != nil {
+		t.Fatalf("Doctor: %v", err)
+	}
+	if len(issues) != 2 {
+		t.Fatalf("expected 2 issues, got %d: %v", len(issues), issues)
+	}
+	for _, issue := range issues {
+		if issue.Kind != StaleBlock || issue.Field != FieldBlocks || !issue.Fixed {
+			t.Fatalf("unexpected issue: %+v", issue)
+		}
+	}
+
+	a, _ = s.Get(a.ID)
+	b1, _ = s.Get(b1.ID)
+	b2, _ = s.Get(b2.ID)
+	if len(a.Blocks) != 0 {
+		t.Fatalf("a.Blocks = %v, want empty", a.Blocks)
+	}
+	if len(b1.BlockedBy) != 0 {
+		t.Fatalf("b1.BlockedBy = %v, want empty", b1.BlockedBy)
+	}
+	if len(b2.BlockedBy) != 0 {
+		t.Fatalf("b2.BlockedBy = %v, want empty", b2.BlockedBy)
+	}
+}
+
+func TestDoctorStaleBlocksMissingPeer(t *testing.T) {
+	s := newTestStoreWithCompleteStages(t, "done")
+	a, _ := s.Create("Alpha")
+
+	a.Blocks = []string{"T-999"}
+	if err := s.Save(a); err != nil {
+		t.Fatalf("Save(a): %v", err)
+	}
+
+	moveTicketFileToStage(t, s, a.ID, "done")
+
+	issues, err := s.Doctor(false)
+	if err != nil {
+		t.Fatalf("Doctor: %v", err)
+	}
+	if len(issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d: %v", len(issues), issues)
+	}
+	if issues[0].Kind != StaleBlock || issues[0].Field != FieldBlocks || !issues[0].Fixed {
+		t.Fatalf("unexpected issue: %+v", issues[0])
+	}
+
+	a, _ = s.Get(a.ID)
+	if len(a.Blocks) != 0 {
+		t.Fatalf("a.Blocks = %v, want empty", a.Blocks)
+	}
+}
+
+func TestDoctorStaleBlocksDryRun(t *testing.T) {
+	s := newTestStoreWithCompleteStages(t, "done")
+	a, _ := s.Create("Alpha")
+	b, _ := s.Create("Beta")
+
+	a.Blocks = []string{b.ID}
+	b.BlockedBy = []string{a.ID}
+	if err := s.Save(a); err != nil {
+		t.Fatalf("Save(a): %v", err)
+	}
+	if err := s.Save(b); err != nil {
+		t.Fatalf("Save(b): %v", err)
+	}
+
+	moveTicketFileToStage(t, s, a.ID, "done")
+
+	issues, err := s.Doctor(true)
+	if err != nil {
+		t.Fatalf("Doctor: %v", err)
+	}
+	if len(issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d: %v", len(issues), issues)
+	}
+	if issues[0].Kind != StaleBlock || issues[0].Field != FieldBlocks {
+		t.Fatalf("expected stale block issue, got %+v", issues[0])
+	}
+	if issues[0].Fixed {
+		t.Fatal("expected dry-run issue to remain unfixed")
+	}
+
+	a, _ = s.Get(a.ID)
+	b, _ = s.Get(b.ID)
+	if !containsID(a.Blocks, b.ID) {
+		t.Fatalf("expected a.Blocks to keep %s, got %v", b.ID, a.Blocks)
+	}
+	if !containsID(b.BlockedBy, a.ID) {
+		t.Fatalf("expected b.BlockedBy to keep %s, got %v", a.ID, b.BlockedBy)
+	}
+}
+
+func TestDoctorStaleBlocksIgnoresNonCompleteStage(t *testing.T) {
+	s := newTestStoreWithCompleteStages(t, "done")
+	a, _ := s.Create("Alpha")
+	b, _ := s.Create("Beta")
+
+	a.Blocks = []string{b.ID}
+	b.BlockedBy = []string{a.ID}
+	if err := s.Save(a); err != nil {
+		t.Fatalf("Save(a): %v", err)
+	}
+	if err := s.Save(b); err != nil {
+		t.Fatalf("Save(b): %v", err)
+	}
+
+	issues, err := s.Doctor(false)
+	if err != nil {
+		t.Fatalf("Doctor: %v", err)
+	}
+	for _, issue := range issues {
+		if issue.Kind == StaleBlock {
+			t.Fatalf("unexpected stale block issue: %+v", issue)
+		}
+	}
+}
+
+func TestDoctorStaleBlocksOptInOnly(t *testing.T) {
+	s := newTestStore(t)
+	a, _ := s.Create("Alpha")
+	b, _ := s.Create("Beta")
+
+	a.Blocks = []string{b.ID}
+	b.BlockedBy = []string{a.ID}
+	if err := s.Save(a); err != nil {
+		t.Fatalf("Save(a): %v", err)
+	}
+	if err := s.Save(b); err != nil {
+		t.Fatalf("Save(b): %v", err)
+	}
+
+	moveTicketFileToStage(t, s, a.ID, "done")
+
+	issues, err := s.Doctor(false)
+	if err != nil {
+		t.Fatalf("Doctor: %v", err)
+	}
+	for _, issue := range issues {
+		if issue.Kind == StaleBlock {
+			t.Fatalf("unexpected stale block issue: %+v", issue)
+		}
+	}
+}
+
+func TestDoctorStaleBlocksAsymmetricPartialCleanup(t *testing.T) {
+	s := newTestStoreWithCompleteStages(t, "done")
+	a, _ := s.Create("Alpha")
+	b, _ := s.Create("Beta")
+
+	// Simulate a partial manual cleanup: a.Blocks already empty, but
+	// b.BlockedBy still carries the stale reciprocal.
+	b.BlockedBy = []string{a.ID}
+	if err := s.Save(a); err != nil {
+		t.Fatalf("Save(a): %v", err)
+	}
+	if err := s.Save(b); err != nil {
+		t.Fatalf("Save(b): %v", err)
+	}
+
+	moveTicketFileToStage(t, s, a.ID, "done")
+
+	issues, err := s.Doctor(false)
+	if err != nil {
+		t.Fatalf("Doctor: %v", err)
+	}
+	if len(issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d: %v", len(issues), issues)
+	}
+	if issues[0].Kind != StaleBlock || issues[0].Field != FieldBlocks || !issues[0].Fixed {
+		t.Fatalf("unexpected issue: %+v", issues[0])
+	}
+
+	a, _ = s.Get(a.ID)
+	b, _ = s.Get(b.ID)
+	if len(a.Blocks) != 0 {
+		t.Fatalf("a.Blocks = %v, want empty", a.Blocks)
+	}
+	if len(b.BlockedBy) != 0 {
+		t.Fatalf("b.BlockedBy = %v, want empty", b.BlockedBy)
+	}
+}
+
+func TestDoctorStaleBlocksSelfBlock(t *testing.T) {
+	s := newTestStoreWithCompleteStages(t, "done")
+	a, _ := s.Create("Alpha")
+
+	a.Blocks = []string{a.ID}
+	a.BlockedBy = []string{a.ID}
+	if err := s.Save(a); err != nil {
+		t.Fatalf("Save(a): %v", err)
+	}
+
+	moveTicketFileToStage(t, s, a.ID, "done")
+
+	issues, err := s.Doctor(false)
+	if err != nil {
+		t.Fatalf("Doctor: %v", err)
+	}
+	if len(issues) != 1 {
+		t.Fatalf("expected exactly 1 issue, got %d: %v", len(issues), issues)
+	}
+	if issues[0].Kind != StaleBlock || issues[0].Field != FieldBlocks || !issues[0].Fixed {
+		t.Fatalf("unexpected issue: %+v", issues[0])
+	}
+
+	a, _ = s.Get(a.ID)
+	if len(a.Blocks) != 0 {
+		t.Fatalf("a.Blocks = %v, want empty", a.Blocks)
+	}
+	if len(a.BlockedBy) != 0 {
+		t.Fatalf("a.BlockedBy = %v, want empty", a.BlockedBy)
+	}
+}
+
+func TestDoctorStaleBlocksIdempotent(t *testing.T) {
+	s := newTestStoreWithCompleteStages(t, "done")
+	a, _ := s.Create("Alpha")
+	b, _ := s.Create("Beta")
+
+	a.Blocks = []string{b.ID}
+	b.BlockedBy = []string{a.ID}
+	if err := s.Save(a); err != nil {
+		t.Fatalf("Save(a): %v", err)
+	}
+	if err := s.Save(b); err != nil {
+		t.Fatalf("Save(b): %v", err)
+	}
+
+	moveTicketFileToStage(t, s, a.ID, "done")
+
+	first, err := s.Doctor(false)
+	if err != nil {
+		t.Fatalf("Doctor(first): %v", err)
+	}
+	if len(first) != 1 {
+		t.Fatalf("expected 1 issue on first run, got %d: %v", len(first), first)
+	}
+
+	second, err := s.Doctor(false)
+	if err != nil {
+		t.Fatalf("Doctor(second): %v", err)
+	}
+	if len(second) != 0 {
+		t.Fatalf("expected 0 issues on second run, got %d: %v", len(second), second)
 	}
 }

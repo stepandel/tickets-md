@@ -453,6 +453,8 @@ The checks are:
 
 - **Link integrity** — dangling, one-sided, or self-referential links
   between tickets.
+- **Stale blocks** — `blocks` entries on a ticket sitting in a
+  configured `complete_stages` stage; cleared on both sides.
 - **Stale runs** — non-terminal run YAMLs whose `updated_at` is older
   than `--stale-after`; flipped to `failed`.
 - **Orphan agent dirs** — `.tickets/.agents/<id>/` directories whose
@@ -513,6 +515,8 @@ fixes them by default (or reports with `--dry-run`):
 - dangling references to tickets that no longer exist
 - one-sided links where the reciprocal is missing
 - self-referential links
+- stale `blocks` entries on tickets that have entered a configured
+  `complete_stages` stage (cleared on both sides)
 
 ## Sub-tickets
 
