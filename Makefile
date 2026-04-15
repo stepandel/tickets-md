@@ -1,7 +1,9 @@
 .PHONY: install build check test vet release plugin-bundle plugin-zip
 
 PLUGIN_SRC := obsidian-plugin
-PLUGIN_ZIP := dist/tickets-board-plugin.zip
+# Kept outside dist/ so GoReleaser's `--clean` + "ensure dist is empty"
+# pre-check doesn't trip on the zip our before.hook writes.
+PLUGIN_ZIP := build/tickets-board-plugin.zip
 
 install: build
 	@echo "done — run 'tickets --help' to get started"
@@ -22,7 +24,7 @@ plugin-bundle:
 # GoReleaser uploads as a release asset. `tickets obsidian install`
 # pulls this zip from github.com/stepandel/tickets-md/releases.
 plugin-zip: plugin-bundle
-	@mkdir -p dist
+	@mkdir -p build
 	@rm -f $(PLUGIN_ZIP)
 	cd $(PLUGIN_SRC) && zip -q -j ../$(PLUGIN_ZIP) main.js manifest.json styles.css
 	@echo "wrote $(PLUGIN_ZIP)"

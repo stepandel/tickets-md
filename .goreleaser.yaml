@@ -82,7 +82,7 @@ release:
   draft: false
   prerelease: auto
   extra_files:
-    - glob: dist/tickets-board-plugin.zip
+    - glob: build/tickets-board-plugin.zip
   header: |
     Install the CLI:
 
