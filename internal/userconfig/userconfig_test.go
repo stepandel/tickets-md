@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPath_XDG(t *testing.T) {
@@ -76,7 +77,13 @@ func TestSaveThenLoad(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", xdg)
 	t.Setenv("HOME", t.TempDir())
 
-	want := UserConfig{Editor: "code -w"}
+	want := UserConfig{
+		Editor: "code -w",
+		UpdateCheck: UpdateCheck{
+			LastCheckedAt: time.Date(2026, 4, 15, 12, 0, 0, 0, time.UTC),
+			LatestVersion: "v0.1.8",
+		},
+	}
 	if err := Save(want); err != nil {
 		t.Fatalf("Save: %v", err)
 	}

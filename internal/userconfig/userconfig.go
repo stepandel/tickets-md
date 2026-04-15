@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -30,7 +31,13 @@ type UserConfig struct {
 	// Editor is the command (with optional arguments, e.g. "code -w")
 	// to launch for `tickets edit`. Empty means "not chosen yet" —
 	// the next interactive `tickets edit` will prompt and save.
-	Editor string `yaml:"editor,omitempty"`
+	Editor      string      `yaml:"editor,omitempty"`
+	UpdateCheck UpdateCheck `yaml:"update_check,omitempty"`
+}
+
+type UpdateCheck struct {
+	LastCheckedAt time.Time `yaml:"last_checked_at,omitempty"`
+	LatestVersion string    `yaml:"latest_version,omitempty"`
 }
 
 // Path returns the absolute path to the user config file. It does
