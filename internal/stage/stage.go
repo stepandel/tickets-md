@@ -37,7 +37,8 @@ type AgentConfig struct {
 	// Command is the CLI binary to invoke (e.g. "claude", "codex").
 	Command string `yaml:"command"`
 	// Args are extra CLI flags placed before the rendered prompt
-	// (e.g. ["--print"] for `claude --print "<prompt>"`).
+	// (e.g. ["--dangerously-skip-permissions"] for
+	// `claude --dangerously-skip-permissions "<prompt>"`).
 	Args []string `yaml:"args,omitempty"`
 	// Prompt is a template string rendered with ticket metadata and
 	// appended as the final argument. Supported placeholders:
@@ -103,7 +104,7 @@ const defaultStageYML = `# Stage configuration — uncomment to enable an agent 
 #
 # agent:
 #   command: claude          # CLI binary (claude, codex, aider, etc.)
-#   args: ["--print"]        # extra flags before the prompt
+#   args: ["--dangerously-skip-permissions"]  # extra flags before the prompt
 #   worktree: true           # isolate work in a git worktree per ticket
 #   base_branch: main        # branch to create worktree from (default: HEAD)
 #   prompt: |                # template with {{path}}, {{id}}, {{title}}, {{stage}}, {{body}}, {{worktree}}, {{links}}

@@ -42,7 +42,7 @@ Create a .stage.yml in any stage directory to configure an agent:
   # .tickets/execute/.stage.yml
   agent:
     command: claude
-    args: ["--print"]
+    args: ["--dangerously-skip-permissions"]
     prompt: |
       Read the ticket at {{path}} and implement what it describes.`,
 		RunE: func(cmd *cobra.Command, args []string) error {

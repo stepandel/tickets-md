@@ -255,7 +255,7 @@ uncomment:
 # .tickets/execute/.stage.yml
 agent:
   command: claude
-  args: ["--print"]
+  args: ["--dangerously-skip-permissions"]
   worktree: true              # isolate work in .worktrees/<id> on branch tickets/<id>
   base_branch: main           # branch to create the worktree from (default: HEAD)
   prompt: |
@@ -265,8 +265,9 @@ agent:
 
 - **command** — the CLI binary to invoke (`claude`, `codex`, `aider`,
   etc.)
-- **args** — extra flags placed before the prompt (e.g. `["--print"]`
-  for non-interactive mode)
+- **args** — extra flags placed before the prompt (e.g.
+  `["--dangerously-skip-permissions"]` to let the agent run without
+  approval prompts, or `["--print"]` for non-interactive mode)
 - **worktree** — when true, each run gets its own git worktree under
   `.worktrees/<ticket-id>` on a `tickets/<ticket-id>` branch, so
   concurrent agents don't trample one another's changes
