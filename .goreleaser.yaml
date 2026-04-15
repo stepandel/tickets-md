@@ -4,10 +4,12 @@ project_name: tickets
 
 before:
   hooks:
-    # Trust the committed bundle under internal/obsidian/assets/ —
-    # rebuilding here would mark the tree dirty whenever the CI
-    # toolchain produces byte-different output.
     - go mod tidy -diff
+    # Build the Obsidian plugin and package the three artefacts into
+    # dist/tickets-board-plugin.zip, which is uploaded as a release
+    # asset below. `tickets obsidian install` fetches this zip at
+    # install time rather than embedding the bundle in the binary.
+    - make plugin-zip
 
 builds:
   - id: tickets
@@ -79,13 +81,17 @@ release:
     name: tickets-md
   draft: false
   prerelease: auto
+  extra_files:
+    - glob: dist/tickets-board-plugin.zip
   header: |
-    Install the CLI (which embeds the companion Obsidian plugin):
+    Install the CLI:
 
     ```sh
     go install github.com/stepandel/tickets-md/cmd/tickets@{{ .Tag }}
     ```
 
     Or download a prebuilt binary from the assets below and drop it on
-    `$PATH`. After installing, you can ship the Obsidian plugin into a
-    vault with `tickets obsidian install`.
+    `$PATH`. After installing, ship the companion Obsidian plugin
+    into a vault with `tickets obsidian install` — it fetches the
+    matching `tickets-board-plugin.zip` from this release and caches
+    it locally.
