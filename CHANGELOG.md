@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-04-14
+
+### Changed
+
+- The Obsidian plugin is no longer embedded in the `tickets` binary.
+  `tickets obsidian install` now downloads the matching
+  `tickets-board-plugin.zip` from the GitHub release for your CLI
+  version and caches it under the user cache directory
+  (`$XDG_CACHE_HOME/tickets/plugin/<tag>/` on Linux,
+  `~/Library/Caches/tickets/plugin/<tag>/` on macOS), so repeat
+  installs are offline.
+- `tickets obsidian status` now reports the installed plugin version
+  against the CLI's expected version (previously reported against an
+  embedded bundle version).
+
+### Added
+
+- `tickets obsidian install --from <dir>` installs the plugin from a
+  local build directory — the supported flow for plugin development
+  and for dev / pseudo-version CLI builds that have no matching
+  GitHub release.
+
 ## [0.1.5] - 2026-04-13
 
 ### Changed
