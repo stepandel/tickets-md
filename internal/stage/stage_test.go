@@ -119,3 +119,17 @@ func TestLoadRejectsInvalidYAML(t *testing.T) {
 		t.Error("Load should reject malformed YAML")
 	}
 }
+
+func TestRenderCronPromptSubstitutesEveryVariable(t *testing.T) {
+	tmpl := "root={{root}} worktree={{worktree}} name={{name}} now={{now}}"
+	got := RenderCronPrompt(tmpl, CronPromptVars{
+		Root:     "/repo",
+		Worktree: "/repo/.worktrees/groomer",
+		Name:     "groomer",
+		Now:      "2026-04-15T20:00:00Z",
+	})
+	want := "root=/repo worktree=/repo/.worktrees/groomer name=groomer now=2026-04-15T20:00:00Z"
+	if got != want {
+		t.Errorf("RenderCronPrompt =\n  %q\nwant\n  %q", got, want)
+	}
+}

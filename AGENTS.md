@@ -22,7 +22,10 @@ caught it and update this file.
 - `internal/agent/` — persistent run state under
   `.tickets/.agents/<id>/<run>.yml`, the `Status` state machine, the
   PTY runner, and the reconciliation monitor. **Owns everything under
-  `.tickets/.agents/`**; no other package may read or write there.
+  `.tickets/.agents/`**; ticket-scoped runs live under
+  `.tickets/.agents/<ticket-id>/`, board cron runs under
+  `.tickets/.agents/.cron/<name>/`. No other package may read or
+  write there.
 - `internal/worktree/` — git worktree creation/removal under
   `.worktrees/<id>`. **Owns everything under `.worktrees/`**; no other
   package may read or write there.
@@ -34,7 +37,8 @@ caught it and update this file.
   by `make plugin-bundle`, which bundles `obsidian-plugin/` via npm +
   esbuild and copies the three files into `assets/`.
 - `internal/cli/` — cobra subcommands (one file per command), the
-  `watch` loop, and the glue between everything above.
+  `watch` loop, board-level cron scheduler, and the glue between
+  everything above.
 - `internal/archtest/` — test-only package. Asserts the layer rules
   below with `go/packages`.
 

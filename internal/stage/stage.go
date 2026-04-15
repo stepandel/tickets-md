@@ -134,6 +134,16 @@ func RenderPrompt(prompt string, vars PromptVars) string {
 	return r.Replace(prompt)
 }
 
+func RenderCronPrompt(prompt string, vars CronPromptVars) string {
+	r := strings.NewReplacer(
+		"{{root}}", vars.Root,
+		"{{worktree}}", vars.Worktree,
+		"{{name}}", vars.Name,
+		"{{now}}", vars.Now,
+	)
+	return r.Replace(prompt)
+}
+
 // PromptVars holds the values that can be interpolated into an agent
 // prompt template.
 type PromptVars struct {
@@ -144,4 +154,11 @@ type PromptVars struct {
 	Body     string
 	Worktree string
 	Links    string
+}
+
+type CronPromptVars struct {
+	Root     string
+	Worktree string
+	Name     string
+	Now      string
 }

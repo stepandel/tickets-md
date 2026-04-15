@@ -39,6 +39,20 @@ automation is opt-in via `tickets watch`.
 The whole store lives under a single hidden `.tickets/` directory at
 the project root, the same way `.git/` works.
 
+Board-level cron agents can also be defined in `.tickets/config.yml`
+and are fired by `tickets watch` while it is running:
+
+```yaml
+cron_agents:
+  - name: backlog-groomer
+    schedule: "@every 5m"
+    command: claude
+    args: ["--dangerously-skip-permissions"]
+    prompt: |
+      You are the backlog groomer for {{root}} at {{now}}.
+      Review the backlog and clean up duplicates or outdated tickets.
+```
+
 Moving a ticket between stages is just `mv` — commit `.tickets/` and
 `git log` becomes your audit trail too. When a stage has an agent
 configured, `tickets watch` automatically spawns the agent whenever a

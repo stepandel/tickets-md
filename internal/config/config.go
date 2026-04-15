@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	cron "github.com/robfig/cron/v3"
 	"gopkg.in/yaml.v3"
 )
 
@@ -38,6 +39,21 @@ type CleanupStage struct {
 	Branch    bool   `yaml:"branch,omitempty"`
 }
 
+type CronAgentConfig struct {
+	Name       string   `yaml:"name"`
+	Schedule   string   `yaml:"schedule"`
+	Command    string   `yaml:"command"`
+	Args       []string `yaml:"args,omitempty"`
+	Prompt     string   `yaml:"prompt"`
+	Worktree   bool     `yaml:"worktree,omitempty"`
+	BaseBranch string   `yaml:"base_branch,omitempty"`
+	Enabled    *bool    `yaml:"enabled,omitempty"`
+}
+
+func (c CronAgentConfig) IsEnabled() bool {
+	return c.Enabled == nil || *c.Enabled
+}
+
 // Config describes a ticket store layout. The store always lives
 // under `<root>/.tickets/`, so the only things worth configuring are
 // the ID prefix and the stage list.
@@ -53,11 +69,18 @@ type Config struct {
 	DefaultAgent *DefaultAgentConfig `yaml:"default_agent,omitempty"`
 	// Cleanup configures the optional `tickets cleanup` stage sweep.
 	Cleanup *CleanupConfig `yaml:"cleanup,omitempty"`
+	// CronAgents configures board-level agents fired by `tickets watch`
+	// on a schedule rather than by ticket filesystem events.
+	CronAgents []CronAgentConfig `yaml:"cron_agents,omitempty"`
 }
 
 // HasDefaultAgent reports whether a default agent is configured.
 func (c Config) HasDefaultAgent() bool {
 	return c.DefaultAgent != nil && c.DefaultAgent.Command != ""
+}
+
+func (c Config) HasCronAgents() bool {
+	return len(c.CronAgents) > 0
 }
 
 // Default returns the out-of-the-box configuration used by `tickets init`.
@@ -145,6 +168,34 @@ func (c Config) Validate() error {
 			cleanupSeen[st.Name] = struct{}{}
 		}
 	}
+	cronSeen := make(map[string]struct{}, len(c.CronAgents))
+	for _, ca := range c.CronAgents {
+		if err := ValidateCronName(ca.Name); err != nil {
+			return err
+		}
+		if _, dup := cronSeen[ca.Name]; dup {
+			return fmt.Errorf("duplicate cron agent %q", ca.Name)
+		}
+		cronSeen[ca.Name] = struct{}{}
+		if ca.Schedule == "" {
+			return fmt.Errorf("cron agent %q schedule is empty", ca.Name)
+		}
+		if _, err := cronParser().Parse(ca.Schedule); err != nil {
+			return fmt.Errorf("cron agent %q has invalid schedule %q: %w", ca.Name, ca.Schedule, err)
+		}
+		if ca.Command == "" {
+			return fmt.Errorf("cron agent %q command is empty", ca.Name)
+		}
+		if ca.Prompt == "" {
+			return fmt.Errorf("cron agent %q prompt is empty", ca.Name)
+		}
+		if ca.Worktree {
+			return fmt.Errorf("cron agent %q worktree=true is not supported yet", ca.Name)
+		}
+		if ca.BaseBranch != "" && !ca.Worktree {
+			return fmt.Errorf("cron agent %q base_branch requires worktree=true", ca.Name)
+		}
+	}
 	return nil
 }
 
@@ -166,6 +217,26 @@ func ValidateStageName(name string) error {
 		return fmt.Errorf("stage name %q is not allowed", name)
 	}
 	return nil
+}
+
+func ValidateCronName(name string) error {
+	if name == "" {
+		return errors.New("cron agent names must be non-empty")
+	}
+	if strings.ContainsAny(name, `/\`) {
+		return fmt.Errorf("cron agent name %q must not contain path separators", name)
+	}
+	if strings.HasPrefix(name, ".") {
+		return fmt.Errorf("cron agent name %q must not start with a dot", name)
+	}
+	if name == ".." {
+		return fmt.Errorf("cron agent name %q is not allowed", name)
+	}
+	return nil
+}
+
+func cronParser() cron.Parser {
+	return cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
 }
 
 // DefaultStage returns the first stage, used when creating new tickets.

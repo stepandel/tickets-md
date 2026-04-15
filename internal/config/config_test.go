@@ -48,7 +48,7 @@ func TestLoad_InvalidConfig(t *testing.T) {
 
 func TestLoad_Success(t *testing.T) {
 	root := t.TempDir()
-	writeConfig(t, root, "name: Board\nprefix: BUG\nstages:\n  - triage\n  - doing\ndefault_agent:\n  command: claude\n  args:\n    - --json\n")
+	writeConfig(t, root, "name: Board\nprefix: BUG\nstages:\n  - triage\n  - doing\ndefault_agent:\n  command: claude\n  args:\n    - --json\ncron_agents:\n  - name: groomer\n    schedule: \"@every 5m\"\n    command: codex\n    prompt: \"tidy\"\n")
 
 	got, err := Load(root)
 	if err != nil {
@@ -62,6 +62,9 @@ func TestLoad_Success(t *testing.T) {
 	}
 	if got.DefaultAgent == nil || got.DefaultAgent.Command != "claude" || len(got.DefaultAgent.Args) != 1 || got.DefaultAgent.Args[0] != "--json" {
 		t.Fatalf("unexpected default agent: %#v", got.DefaultAgent)
+	}
+	if len(got.CronAgents) != 1 || got.CronAgents[0].Name != "groomer" || got.CronAgents[0].Command != "codex" || !got.CronAgents[0].IsEnabled() {
+		t.Fatalf("unexpected cron agents: %#v", got.CronAgents)
 	}
 }
 
@@ -117,6 +120,43 @@ func TestSaveLoadCleanupConfig(t *testing.T) {
 	}
 }
 
+func TestSaveLoadCronAgents(t *testing.T) {
+	root := t.TempDir()
+	disabled := false
+	want := Config{
+		Prefix: "TIC",
+		Stages: []string{"backlog", "done"},
+		CronAgents: []CronAgentConfig{
+			{
+				Name:     "backlog-groomer",
+				Schedule: "@every 5m",
+				Command:  "claude",
+				Args:     []string{"--print"},
+				Prompt:   "groom",
+				Enabled:  &disabled,
+			},
+		},
+	}
+
+	if err := Save(root, want); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(got.CronAgents) != 1 {
+		t.Fatalf("CronAgents = %#v, want one entry", got.CronAgents)
+	}
+	cron := got.CronAgents[0]
+	if cron.Name != "backlog-groomer" || cron.Schedule != "@every 5m" || cron.Command != "claude" || cron.Prompt != "groom" {
+		t.Fatalf("cron agent = %#v", cron)
+	}
+	if cron.IsEnabled() {
+		t.Fatalf("cron agent should be disabled: %#v", cron)
+	}
+}
+
 func TestValidate(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -143,7 +183,57 @@ func TestValidate(t *testing.T) {
 				{Name: "done", Worktree: true},
 			}},
 		}, wantErr: `duplicate cleanup stage "done"`},
+		{name: "duplicate cron agent", cfg: Config{
+			Prefix: "TIC",
+			Stages: []string{"backlog"},
+			CronAgents: []CronAgentConfig{
+				{Name: "groomer", Schedule: "@every 5m", Command: "claude", Prompt: "x"},
+				{Name: "groomer", Schedule: "@every 10m", Command: "claude", Prompt: "y"},
+			},
+		}, wantErr: `duplicate cron agent "groomer"`},
+		{name: "invalid cron schedule", cfg: Config{
+			Prefix: "TIC",
+			Stages: []string{"backlog"},
+			CronAgents: []CronAgentConfig{
+				{Name: "groomer", Schedule: "nope", Command: "claude", Prompt: "x"},
+			},
+		}, wantErr: `invalid schedule`},
+		{name: "empty cron command", cfg: Config{
+			Prefix: "TIC",
+			Stages: []string{"backlog"},
+			CronAgents: []CronAgentConfig{
+				{Name: "groomer", Schedule: "@every 5m", Prompt: "x"},
+			},
+		}, wantErr: `command is empty`},
+		{name: "empty cron prompt", cfg: Config{
+			Prefix: "TIC",
+			Stages: []string{"backlog"},
+			CronAgents: []CronAgentConfig{
+				{Name: "groomer", Schedule: "@every 5m", Command: "claude"},
+			},
+		}, wantErr: `prompt is empty`},
+		{name: "cron worktree unsupported", cfg: Config{
+			Prefix: "TIC",
+			Stages: []string{"backlog"},
+			CronAgents: []CronAgentConfig{
+				{Name: "groomer", Schedule: "@every 5m", Command: "claude", Prompt: "x", Worktree: true},
+			},
+		}, wantErr: `worktree=true is not supported yet`},
+		{name: "cron base branch without worktree", cfg: Config{
+			Prefix: "TIC",
+			Stages: []string{"backlog"},
+			CronAgents: []CronAgentConfig{
+				{Name: "groomer", Schedule: "@every 5m", Command: "claude", Prompt: "x", BaseBranch: "main"},
+			},
+		}, wantErr: `base_branch requires worktree=true`},
 		{name: "ok", cfg: Config{Prefix: "TIC", Stages: []string{"backlog", "done"}}},
+		{name: "ok with cron", cfg: Config{
+			Prefix: "TIC",
+			Stages: []string{"backlog", "done"},
+			CronAgents: []CronAgentConfig{
+				{Name: "groomer", Schedule: "@every 5m", Command: "claude", Prompt: "x"},
+			},
+		}},
 	}
 
 	for _, tt := range tests {
@@ -157,6 +247,36 @@ func TestValidate(t *testing.T) {
 			}
 			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 				t.Fatalf("Validate() error = %v, want %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateCronName(t *testing.T) {
+	tests := []struct {
+		name     string
+		cronName string
+		wantErr  string
+	}{
+		{name: "empty", cronName: "", wantErr: "non-empty"},
+		{name: "slash", cronName: "back/log", wantErr: "path separators"},
+		{name: "backslash", cronName: "back\\log", wantErr: "path separators"},
+		{name: "dot prefix", cronName: ".hidden", wantErr: "must not start with a dot"},
+		{name: "dot dot", cronName: "..", wantErr: "must not start with a dot"},
+		{name: "ok", cronName: "backlog-groomer"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateCronName(tt.cronName)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("ValidateCronName() error = %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("ValidateCronName() error = %v, want %q", err, tt.wantErr)
 			}
 		})
 	}
@@ -215,5 +335,13 @@ func TestConfig_Helpers(t *testing.T) {
 	cfg.DefaultAgent = &DefaultAgentConfig{}
 	if cfg.HasDefaultAgent() {
 		t.Fatal("HasDefaultAgent() = true, want false when command is empty")
+	}
+	if cfg.HasCronAgents() {
+		t.Fatal("HasCronAgents() = true, want false")
+	}
+
+	cfg.CronAgents = []CronAgentConfig{{Name: "groomer", Schedule: "@every 5m", Command: "claude", Prompt: "x"}}
+	if !cfg.HasCronAgents() {
+		t.Fatal("HasCronAgents() = false, want true")
 	}
 }
