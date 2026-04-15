@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-04-14
+
+### Changed
+
+- The `.stage.yml` scaffold and `tickets watch --help` example now
+  default `agent.args` to `["--dangerously-skip-permissions"]` instead
+  of `["--print"]`, so a freshly-uncommented Claude agent runs without
+  being blocked on per-tool approval prompts.
+
+### Fixed
+
+- `make install` (local `go install`) now stamps the binary version as
+  `dev`, so `tickets obsidian install` hits the dev-build guidance
+  path instead of failing with an opaque "not a tagged release" error
+  on pseudo-versions derived from `runtime/debug.ReadBuildInfo`.
+
+### Added
+
+- `make plugin-install` — one-shot target that bundles the Obsidian
+  plugin and installs it from the local build, skipping the GitHub
+  release fetch. Accepts `VAULT=/path` to target a specific vault.
+
 ## [0.1.6] - 2026-04-14
 
 ### Changed
