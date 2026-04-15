@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"os"
@@ -14,8 +15,24 @@ import (
 )
 
 // maxReplayBytes is the amount of recent PTY output kept in memory
-// so that new subscribers can reconstruct the terminal state.
-const maxReplayBytes = 64 * 1024
+// so that new subscribers can reconstruct the terminal state. Sized
+// to cover a few minutes of a chatty full-screen TUI (Codex, etc.)
+// without being so large that reconnect replay stalls xterm.js.
+const maxReplayBytes = 1024 * 1024
+
+// resetSequences are escape sequences that start a fresh frame — when
+// the replay buffer overflows, trimReplay prefers to cut at one of
+// these so the client's first byte is a well-defined terminal state
+// rather than the middle of a cursor-positioning sequence.
+var resetSequences = [][]byte{
+	[]byte("\x1b[2J"),     // CSI 2 J — erase entire display
+	[]byte("\x1b[3J"),     // CSI 3 J — erase display + scrollback
+	[]byte("\x1bc"),       // RIS — full reset
+	[]byte("\x1b[?1049h"), // enter alternate screen buffer
+	[]byte("\x1b[?1049l"), // leave alternate screen buffer
+	[]byte("\x1b[?1047h"), // legacy alt screen enter
+	[]byte("\x1b[?47h"),   // older alt screen enter
+}
 
 // ptySession represents a single running agent process with its PTY.
 type ptySession struct {
@@ -285,9 +302,7 @@ func (s *ptySession) fanOut(data []byte) {
 
 	// Keep recent output for replay to late-joining subscribers.
 	s.replayBuf = append(s.replayBuf, data...)
-	if len(s.replayBuf) > maxReplayBytes {
-		s.replayBuf = s.replayBuf[len(s.replayBuf)-maxReplayBytes:]
-	}
+	s.replayBuf = trimReplay(s.replayBuf)
 
 	for id, ch := range s.subs {
 		select {
@@ -298,6 +313,33 @@ func (s *ptySession) fanOut(data []byte) {
 			delete(s.subs, id)
 		}
 	}
+}
+
+// trimReplay caps buf at maxReplayBytes, preferring to cut at a
+// frame-reset escape sequence (clear-screen, alt-screen toggle, RIS)
+// so the client's first byte is well-defined. Falls back to the next
+// ESC boundary so we never slice a sequence in half — which is what
+// leaves `[42;2H`-style garbage at the top of the screen on reconnect.
+func trimReplay(buf []byte) []byte {
+	if len(buf) <= maxReplayBytes {
+		return buf
+	}
+	start := len(buf) - maxReplayBytes
+
+	best := -1
+	for _, seq := range resetSequences {
+		if idx := bytes.Index(buf[start:], seq); idx >= 0 && (best == -1 || start+idx < best) {
+			best = start + idx
+		}
+	}
+	if best >= 0 {
+		return buf[best:]
+	}
+
+	if idx := bytes.IndexByte(buf[start:], 0x1b); idx >= 0 {
+		return buf[start+idx:]
+	}
+	return buf[start:]
 }
 
 // closeAllSubs closes all subscriber channels and marks the session
