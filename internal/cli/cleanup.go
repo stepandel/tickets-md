@@ -177,6 +177,9 @@ func findOrphanAgentIDs(s *ticket.Store) ([]string, error) {
 			continue
 		}
 		id := entry.Name()
+		if strings.HasPrefix(id, ".") {
+			continue
+		}
 		if _, err := s.Get(id); err == nil {
 			continue
 		} else if !errors.Is(err, ticket.ErrNotFound) {
