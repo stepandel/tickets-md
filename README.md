@@ -102,6 +102,10 @@ fetched on demand by `tickets obsidian install` from the GitHub
 release matching your CLI version. See the [Obsidian plugin](#obsidian-plugin)
 section for the dev/offline flow (`--from <dir>`).
 
+On interactive runs, the CLI checks GitHub for a newer release at
+most once per 24 hours and prints a one-line stderr reminder when
+you are behind. Set `TICKETS_NO_UPDATE_CHECK=1` to disable that nag.
+
 ### Shell completions
 
 `tickets completion <bash|zsh|fish|powershell>` emits a completion
