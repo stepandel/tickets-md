@@ -9,6 +9,7 @@ import (
 
 func newNewCmd() *cobra.Command {
 	var priority string
+	var parent string
 	cmd := &cobra.Command{
 		Use:   "new <title...>",
 		Short: "Create a new ticket in the default stage",
@@ -28,13 +29,28 @@ func newNewCmd() *cobra.Command {
 				if err := s.Save(t); err != nil {
 					return err
 				}
-				fmt.Printf("Created %s in %s (priority: %s)\n  %s\n", t.ID, t.Stage, priority, t.Path)
-				return nil
 			}
-			fmt.Printf("Created %s in %s\n  %s\n", t.ID, t.Stage, t.Path)
+			if parent != "" {
+				if err := s.Link(t.ID, parent, "parent"); err != nil {
+					return err
+				}
+			}
+			var extras []string
+			if priority != "" {
+				extras = append(extras, "priority: "+priority)
+			}
+			if parent != "" {
+				extras = append(extras, "parent: "+parent)
+			}
+			if len(extras) > 0 {
+				fmt.Printf("Created %s in %s (%s)\n  %s\n", t.ID, t.Stage, strings.Join(extras, ", "), t.Path)
+			} else {
+				fmt.Printf("Created %s in %s\n  %s\n", t.ID, t.Stage, t.Path)
+			}
 			return nil
 		},
 	}
 	cmd.Flags().StringVarP(&priority, "priority", "p", "", "set ticket priority (e.g. low, medium, high, critical)")
+	cmd.Flags().StringVar(&parent, "parent", "", "set the new ticket's parent ticket ID")
 	return cmd
 }

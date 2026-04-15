@@ -245,6 +245,8 @@ func (m *boardModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.startLink("related")
 	case "b":
 		m.startLink("blocked_by")
+	case "s":
+		m.startLink("parent")
 	case "u":
 		m.startUnlink()
 	case "A":
@@ -684,7 +686,7 @@ func (m *boardModel) renderHelp() string {
 		{"p", "prio"},
 		{"D", "del"},
 		{"y", "copy"},
-		{"R/b", "link"},
+		{"R/b/s", "link"},
 		{"u", "unlink"},
 		{"A/S", "agent"},
 		{"g", "log"},
@@ -880,6 +882,12 @@ func (m *boardModel) View() tea.View {
 			}
 			if len(t.BlockedBy) > 0 {
 				linkInfo += " " + lipgloss.NewStyle().Foreground(lipgloss.Color("#FF8C00")).Bold(true).Render("!")
+			}
+			if t.Parent != "" {
+				linkInfo += " " + lipgloss.NewStyle().Foreground(lipgloss.Color("#7FD1B9")).Render("↑")
+			}
+			if len(t.Children) > 0 {
+				linkInfo += " " + lipgloss.NewStyle().Foreground(lipgloss.Color("#7FD1B9")).Render(fmt.Sprintf("↳%d", len(t.Children)))
 			}
 
 			// lipgloss's Width() is total width including border; content

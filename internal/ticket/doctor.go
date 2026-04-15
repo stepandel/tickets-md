@@ -38,6 +38,8 @@ const (
 	FieldBlockedBy
 	FieldBlocks
 	FieldProject
+	FieldParent
+	FieldChildren
 )
 
 func (f LinkField) String() string {
@@ -50,6 +52,10 @@ func (f LinkField) String() string {
 		return "blocks"
 	case FieldProject:
 		return "project"
+	case FieldParent:
+		return "parent"
+	case FieldChildren:
+		return "children"
 	default:
 		return "unknown"
 	}
@@ -209,6 +215,68 @@ func (s *Store) Doctor(dryRun bool) ([]Issue, error) {
 				}
 			}
 		}
+
+		// --- Parent → peer.Children ---
+		if ref := t.Parent; ref != "" {
+			if ref == id {
+				issues = append(issues, Issue{Kind: Dangling, Field: FieldParent, TicketID: id, TargetID: ref})
+				if !dryRun {
+					t.Parent = ""
+					modified[id] = true
+				}
+			} else if peer, ok := tickets[ref]; !ok {
+				issues = append(issues, Issue{Kind: Dangling, Field: FieldParent, TicketID: id, TargetID: ref})
+				if !dryRun {
+					t.Parent = ""
+					modified[id] = true
+				}
+			} else if !containsID(peer.Children, id) {
+				issues = append(issues, Issue{Kind: OneSided, Field: FieldParent, TicketID: id, TargetID: ref})
+				if !dryRun {
+					peer.Children = appendID(peer.Children, id)
+					modified[ref] = true
+				}
+			}
+		}
+
+		// --- Children → peer.Parent ---
+		for _, ref := range append([]string(nil), t.Children...) {
+			if ref == id {
+				issues = append(issues, Issue{Kind: Dangling, Field: FieldChildren, TicketID: id, TargetID: ref})
+				if !dryRun {
+					t.Children = removeID(t.Children, ref)
+					modified[id] = true
+				}
+				continue
+			}
+			peer, ok := tickets[ref]
+			if !ok {
+				issues = append(issues, Issue{Kind: Dangling, Field: FieldChildren, TicketID: id, TargetID: ref})
+				if !dryRun {
+					t.Children = removeID(t.Children, ref)
+					modified[id] = true
+				}
+				continue
+			}
+			if peer.Parent == id {
+				continue
+			}
+			kind := OneSided
+			if peer.Parent != "" {
+				kind = Dangling
+			}
+			issues = append(issues, Issue{Kind: kind, Field: FieldChildren, TicketID: id, TargetID: ref})
+			if dryRun {
+				continue
+			}
+			if peer.Parent == "" {
+				peer.Parent = id
+				modified[ref] = true
+			} else {
+				t.Children = removeID(t.Children, ref)
+				modified[id] = true
+			}
+		}
 	}
 
 	// Save all modified tickets.
@@ -336,6 +404,64 @@ func (s *Store) DoctorTicket(id string, dryRun bool) ([]Issue, error) {
 			if !dryRun {
 				peer.BlockedBy = appendID(peer.BlockedBy, id)
 			}
+		}
+	}
+
+	// Parent → peer.Children
+	if ref := t.Parent; ref != "" {
+		if ref == id {
+			issues = append(issues, Issue{Kind: Dangling, Field: FieldParent, TicketID: id, TargetID: ref})
+			if !dryRun {
+				t.Parent = ""
+			}
+		} else {
+			peer, ok := getPeer(ref)
+			if !ok {
+				issues = append(issues, Issue{Kind: Dangling, Field: FieldParent, TicketID: id, TargetID: ref})
+				if !dryRun {
+					t.Parent = ""
+				}
+			} else if !containsID(peer.Children, id) {
+				issues = append(issues, Issue{Kind: OneSided, Field: FieldParent, TicketID: id, TargetID: ref})
+				if !dryRun {
+					peer.Children = appendID(peer.Children, id)
+				}
+			}
+		}
+	}
+
+	// Children → peer.Parent
+	for _, ref := range append([]string(nil), t.Children...) {
+		if ref == id {
+			issues = append(issues, Issue{Kind: Dangling, Field: FieldChildren, TicketID: id, TargetID: ref})
+			if !dryRun {
+				t.Children = removeID(t.Children, ref)
+			}
+			continue
+		}
+		peer, ok := getPeer(ref)
+		if !ok {
+			issues = append(issues, Issue{Kind: Dangling, Field: FieldChildren, TicketID: id, TargetID: ref})
+			if !dryRun {
+				t.Children = removeID(t.Children, ref)
+			}
+			continue
+		}
+		if peer.Parent == id {
+			continue
+		}
+		kind := OneSided
+		if peer.Parent != "" {
+			kind = Dangling
+		}
+		issues = append(issues, Issue{Kind: kind, Field: FieldChildren, TicketID: id, TargetID: ref})
+		if dryRun {
+			continue
+		}
+		if peer.Parent == "" {
+			peer.Parent = id
+		} else {
+			t.Children = removeID(t.Children, ref)
 		}
 	}
 

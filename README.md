@@ -194,7 +194,7 @@ setup steps.
 | Command                                 | What it does                                       |
 | --------------------------------------- | -------------------------------------------------- |
 | `tickets init`                          | Create `.tickets/config.yml` + stage folders       |
-| `tickets new <title...> [--priority P]` | Create a ticket in the default stage               |
+| `tickets new <title...> [--priority P] [--parent ID]` | Create a ticket in the default stage      |
 | `tickets projects <subcommand>`         | Create, list, show, update, assign, and delete projects |
 | `tickets list [--stage X] [--project P]`| List tickets, grouped by stage (alias: `ls`)       |
 | `tickets show <id>`                     | Print a ticket's contents                          |
@@ -202,8 +202,8 @@ setup steps.
 | `tickets edit <id>`                     | Open the ticket file in your editor                |
 | `tickets set <id> <field> <value...>`   | Update a scalar field (`priority`, `project`, `title`) |
 | `tickets rm <id> [--force]`             | Delete a ticket                                    |
-| `tickets link <a> <b> [--blocks]`       | Link two tickets (related, or directional blocks)  |
-| `tickets unlink <a> <b> [--blocks]`     | Remove a link                                      |
+| `tickets link <a> <b> [--blocks\|--parent]`       | Link two tickets (related, blocks, or parent/child) |
+| `tickets unlink <a> <b> [--blocks\|--parent]`     | Remove a link                                      |
 | `tickets cleanup [--dry-run]`           | Remove orphaned or archived-stage agent artifacts  |
 | `tickets doctor [--dry-run]`            | Scan for drift across tickets, runs, worktrees     |
 | `tickets board [--project P]`           | Interactive kanban board TUI (alias: `tui`)        |
@@ -500,6 +500,28 @@ fixes them by default (or reports with `--dry-run`):
 - one-sided links where the reciprocal is missing
 - self-referential links
 
+## Sub-tickets
+
+Tickets can also form a single-parent tree:
+
+- child tickets store `parent: TIC-001`
+- parent tickets store `children: [TIC-042, TIC-043]`
+
+Use either `tickets new --parent` when creating the child or
+`tickets link --parent` afterwards:
+
+```sh
+tickets new "Split auth UI" --parent TIC-001
+tickets link TIC-042 TIC-001 --parent
+tickets unlink TIC-042 TIC-001 --parent
+```
+
+Parent and child stages are independent: moving a parent does not move
+its children. Deleting a parent orphans its children by clearing their
+`parent` field. `tickets doctor` repairs one-sided parent/child links
+and removes dangling parent/child references, but it does not yet scan
+for non-trivial cycles introduced by manual edits.
+
 ## Cleanup
 
 `tickets cleanup` removes leftover agent artifacts that the normal
@@ -628,6 +650,8 @@ priority: high
 related: [TIC-004]
 blocked_by: [TIC-002]
 blocks: [TIC-009]
+parent: TIC-000
+children: [TIC-010]
 created_at: 2026-04-09T22:08:14Z
 updated_at: 2026-04-09T22:08:14Z
 agent_status: running

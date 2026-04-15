@@ -27,6 +27,8 @@ type Ticket struct {
 	Related   []string  `yaml:"related,omitempty"`
 	BlockedBy []string  `yaml:"blocked_by,omitempty"`
 	Blocks    []string  `yaml:"blocks,omitempty"`
+	Parent    string    `yaml:"parent,omitempty"`
+	Children  []string  `yaml:"children,omitempty"`
 	CreatedAt time.Time `yaml:"created_at"`
 	UpdatedAt time.Time `yaml:"updated_at"`
 
@@ -122,12 +124,16 @@ func LoadFile(path, stage string) (Ticket, error) {
 
 // HasLinks reports whether this ticket has any links to other tickets.
 func (t Ticket) HasLinks() bool {
-	return len(t.Related) > 0 || len(t.BlockedBy) > 0 || len(t.Blocks) > 0
+	return len(t.Related) > 0 || len(t.BlockedBy) > 0 || len(t.Blocks) > 0 || t.Parent != "" || len(t.Children) > 0
 }
 
 // LinkCount returns the total number of links on this ticket.
 func (t Ticket) LinkCount() int {
-	return len(t.Related) + len(t.BlockedBy) + len(t.Blocks)
+	n := len(t.Related) + len(t.BlockedBy) + len(t.Blocks) + len(t.Children)
+	if t.Parent != "" {
+		n++
+	}
+	return n
 }
 
 // LinksText returns a human-readable summary of this ticket's links.
@@ -141,6 +147,12 @@ func (t Ticket) LinksText() string {
 	}
 	if len(t.Blocks) > 0 {
 		parts = append(parts, "blocks: "+strings.Join(t.Blocks, ", "))
+	}
+	if t.Parent != "" {
+		parts = append(parts, "parent: "+t.Parent)
+	}
+	if len(t.Children) > 0 {
+		parts = append(parts, "children: "+strings.Join(t.Children, ", "))
 	}
 	return strings.Join(parts, " | ")
 }

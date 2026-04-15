@@ -35,6 +35,8 @@ interface Ticket {
 	related?: string[];
 	blocked_by?: string[];
 	blocks?: string[];
+	parent?: string;
+	children?: string[];
 	created_at?: string;
 	updated_at?: string;
 	agent_status?: string;
@@ -95,6 +97,8 @@ async function parseTicket(app: import("obsidian").App, file: TFile, stage: stri
 			related: fm.related,
 			blocked_by: fm.blocked_by,
 			blocks: fm.blocks,
+			parent: fm.parent,
+			children: fm.children,
 			created_at: fm.created_at,
 			updated_at: fm.updated_at,
 			agent_status: fm.agent_status,
@@ -325,6 +329,16 @@ class BoardView extends ItemView {
 			}
 		}
 		return result;
+	}
+
+	private wouldCreateParentCycle(childID: string, parentID: string, ticketsById: Map<string, Ticket>): boolean {
+		let current = ticketsById.get(parentID);
+		for (let i = 0; current && i < ticketsById.size; i++) {
+			if (current.id === childID) return true;
+			if (!current.parent) return false;
+			current = ticketsById.get(current.parent);
+		}
+		return current !== undefined;
 	}
 
 	// ── Rendering ──────────────────────────────────────────────────────
@@ -628,7 +642,9 @@ class BoardView extends ItemView {
 		const linkCount =
 			(ticket.related?.length ?? 0) +
 			(ticket.blocked_by?.length ?? 0) +
-			(ticket.blocks?.length ?? 0);
+			(ticket.blocks?.length ?? 0) +
+			(ticket.children?.length ?? 0) +
+			(ticket.parent ? 1 : 0);
 
 		if (linkCount > 0) {
 			const linksEl = footer.createDiv({ cls: "tb-links" });
@@ -651,6 +667,20 @@ class BoardView extends ItemView {
 					text: "blocks",
 					cls: "tb-blocks-badge",
 					attr: { "aria-label": `Blocks ${ticket.blocks.join(", ")}` },
+				});
+			}
+			if (ticket.parent) {
+				linksEl.createEl("span", {
+					text: `↑ ${ticket.parent}`,
+					cls: "tb-blocks-badge",
+					attr: { "aria-label": `Child of ${ticket.parent}` },
+				});
+			}
+			if (ticket.children && ticket.children.length > 0) {
+				linksEl.createEl("span", {
+					text: `↳ ${ticket.children.length}`,
+					cls: "tb-link-count",
+					attr: { "aria-label": `${ticket.children.length} sub-tickets` },
 				});
 			}
 		}
@@ -779,16 +809,24 @@ class BoardView extends ItemView {
 		// Group 4 — Links
 		const alreadyRelated = new Set(ticket.related ?? []);
 		const alreadyBlockedBy = new Set(ticket.blocked_by ?? []);
+		const childIDs = new Set(ticket.children ?? []);
 		const linkCandidates = this.tickets.filter(
 			(t) => t.id !== ticket.id && !alreadyRelated.has(t.id),
 		);
 		const blockCandidates = this.tickets.filter(
 			(t) => t.id !== ticket.id && !alreadyBlockedBy.has(t.id),
 		);
-
-		type LinkItem = { id: string; type: "related" | "blocked_by" | "blocks"; label: string };
-		const unlinkItems: LinkItem[] = [];
 		const ticketsById = new Map(this.tickets.map((t) => [t.id, t]));
+		const parentCandidates = this.tickets.filter(
+			(t) =>
+				t.id !== ticket.id &&
+				t.id !== ticket.parent &&
+				!childIDs.has(t.id) &&
+				!this.wouldCreateParentCycle(ticket.id, t.id, ticketsById),
+		);
+
+		type LinkItem = { id: string; type: "related" | "blocked_by" | "blocks" | "parent" | "child"; label: string };
+		const unlinkItems: LinkItem[] = [];
 		for (const rid of ticket.related ?? []) {
 			const t = ticketsById.get(rid);
 			if (t) unlinkItems.push({ id: rid, type: "related", label: `${rid} — ${t.title} (related)` });
@@ -801,8 +839,16 @@ class BoardView extends ItemView {
 			const t = ticketsById.get(rid);
 			if (t) unlinkItems.push({ id: rid, type: "blocks", label: `${rid} — ${t.title} (blocks)` });
 		}
+		if (ticket.parent) {
+			const t = ticketsById.get(ticket.parent);
+			if (t) unlinkItems.push({ id: ticket.parent, type: "parent", label: `${ticket.parent} — ${t.title} (parent)` });
+		}
+		for (const rid of ticket.children ?? []) {
+			const t = ticketsById.get(rid);
+			if (t) unlinkItems.push({ id: rid, type: "child", label: `${rid} — ${t.title} (child)` });
+		}
 
-		const hasLinkSection = linkCandidates.length > 0 || blockCandidates.length > 0 || unlinkItems.length > 0;
+		const hasLinkSection = linkCandidates.length > 0 || blockCandidates.length > 0 || parentCandidates.length > 0 || ticket.parent !== undefined || unlinkItems.length > 0;
 		if (hasLinkSection) {
 			menu.addSeparator();
 			if (linkCandidates.length > 0) {
@@ -847,6 +893,60 @@ class BoardView extends ItemView {
 					}),
 				);
 			}
+			if (!ticket.parent && parentCandidates.length > 0) {
+				menu.addItem((item) =>
+					item.setTitle("Set parent").setIcon("git-merge").onClick(() => {
+						new FuzzyPickerModal<Ticket>(
+							this.app,
+							parentCandidates,
+							(t) => `${t.id} — ${t.title}`,
+							async (target) => {
+								await this.updateTicketFrontmatter(ticket.file, (fm) => {
+									fm.parent = target.id;
+								});
+								try {
+									await this.updateTicketFrontmatter(target.file, (fm) => {
+										fm.children = [...(fm.children ?? []), ticket.id];
+									});
+								} catch { /* target file may be gone */ }
+							},
+						).open();
+					}),
+				);
+			}
+			if (ticket.parent) {
+				menu.addItem((item) =>
+					item.setTitle("Unset parent").setIcon("git-pull-request-draft").onClick(async () => {
+						const parentID = ticket.parent;
+						const target = parentID ? ticketsById.get(parentID) : undefined;
+						await this.updateTicketFrontmatter(ticket.file, (fm) => {
+							delete fm.parent;
+						});
+						if (!target) return;
+						try {
+							await this.updateTicketFrontmatter(target.file, (fm) => {
+								if (Array.isArray(fm.children)) {
+									fm.children = fm.children.filter((x: string) => x !== ticket.id);
+								}
+							});
+						} catch { /* target file may be gone */ }
+					}),
+				);
+			}
+			menu.addItem((item) =>
+				item.setTitle("Add sub-ticket").setIcon("list-tree").onClick(() => {
+					new TextInputModal(
+						this.app,
+						"New sub-ticket",
+						"Sub-ticket title",
+						"",
+						async (title) => {
+							const defaultStage = this.config?.stages[0] ?? ticket.stage;
+							await this.createTicket(defaultStage, title, ticket);
+						},
+					).open();
+				}),
+			);
 			if (unlinkItems.length > 0) {
 				menu.addItem((item) =>
 					item.setTitle("Unlink").setIcon("unlink").onClick(() => {
@@ -862,7 +962,13 @@ class BoardView extends ItemView {
 											fm[key] = fm[key].filter((x: string) => x !== choice.id);
 										}
 									};
-									remove(choice.type);
+									if (choice.type === "parent") {
+										delete fm.parent;
+									} else if (choice.type === "child") {
+										remove("children");
+									} else {
+										remove(choice.type);
+									}
 								});
 								if (!target) return;
 								try {
@@ -870,8 +976,14 @@ class BoardView extends ItemView {
 										const reverseKey =
 											choice.type === "related" ? "related" :
 											choice.type === "blocked_by" ? "blocks" :
-											"blocked_by";
-										if (Array.isArray(fm[reverseKey])) {
+											choice.type === "blocks" ? "blocked_by" :
+											choice.type === "parent" ? "children" :
+											"parent";
+										if (reverseKey === "parent") {
+											if (fm.parent === ticket.id) {
+												delete fm.parent;
+											}
+										} else if (Array.isArray(fm[reverseKey])) {
 											fm[reverseKey] = fm[reverseKey].filter((x: string) => x !== ticket.id);
 										}
 									});
@@ -1063,14 +1175,16 @@ class BoardView extends ItemView {
 		return `${prefix}-${String(next).padStart(3, "0")}`;
 	}
 
-	private async createTicket(stage: string) {
+	private async createTicket(stage: string, title?: string, parentTicket?: Ticket) {
 		const id = await this.nextTicketId();
 		const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+		const ticketTitle = title?.trim() || id;
 
 		const content = [
 			"---",
 			`id: ${id}`,
-			`title: ${id}`,
+			`title: ${ticketTitle}`,
+			...(parentTicket ? [`parent: ${parentTicket.id}`] : []),
 			`created_at: ${now}`,
 			`updated_at: ${now}`,
 			"---",
@@ -1081,6 +1195,13 @@ class BoardView extends ItemView {
 		].join("\n");
 
 		const file = await this.app.vault.create(`${stage}/${id}.md`, content);
+		if (parentTicket) {
+			try {
+				await this.updateTicketFrontmatter(parentTicket.file, (fm) => {
+					fm.children = [...(fm.children ?? []), id];
+				});
+			} catch { /* parent file may be gone */ }
+		}
 
 		if (!this.previewLeaf || !this.previewLeaf.view?.containerEl?.isConnected) {
 			this.previewLeaf = this.app.workspace.getLeaf(Platform.isMobile ? "tab" : "split");

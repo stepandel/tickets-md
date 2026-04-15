@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -35,6 +36,12 @@ func newShowCmd() *cobra.Command {
 				} else {
 					fmt.Printf("# Project: %s (missing)\n", t.Project)
 				}
+			}
+			if t.Parent != "" {
+				fmt.Printf("# Parent: %s\n", t.Parent)
+			}
+			if len(t.Children) > 0 {
+				fmt.Printf("# Children: %s\n", strings.Join(t.Children, ", "))
 			}
 			if t.HasLinks() {
 				fmt.Printf("# Links: %s\n", t.LinksText())
