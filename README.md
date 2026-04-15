@@ -593,9 +593,9 @@ true, branch: true }` (see the Agents section above).
 
 The companion Obsidian plugin renders `.tickets/` as a drag-and-drop
 Kanban board with inline ticket editing, per-ticket agent controls, a
-live terminal pane wired to `tickets watch`, and a diff view for
-agent runs. Source lives under
-[`obsidian-plugin/`](obsidian-plugin/README.md).
+live terminal pane wired to `tickets watch`, a projects view over
+`.tickets/projects/`, and a diff view for agent runs. Source lives
+under [`obsidian-plugin/`](obsidian-plugin/README.md).
 
 ### Install (one command)
 

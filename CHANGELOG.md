@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- The Obsidian plugin now has a Projects view: a ribbon icon,
+  `Open Tickets Projects` command, and row context menu for
+  creating, renaming, setting status, listing assigned tickets, and
+  deleting projects under `.tickets/projects/`. Deleting a project
+  unassigns `project:` on its member tickets first, matching the
+  CLI's `DeleteProject`.
+
 - Boards can now opt into `complete_stages` in `.tickets/config.yml`.
   When a ticket is moved into one of those stages through the CLI, it
   automatically stops blocking its dependent tickets.

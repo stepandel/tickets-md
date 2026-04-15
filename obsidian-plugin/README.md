@@ -68,6 +68,10 @@ no test harness yet.
 - Inline ticket creation, edits, priority and link controls.
 - Per-ticket agent controls: spawn an adhoc run, re-run the stage
   agent, open a live terminal, view the diff a run produced.
+- A projects view (`Open: Tickets Projects` command) listing
+  `.tickets/projects/` with create, rename, set status, show
+  assigned tickets, and delete (which unassigns `project:` on
+  member tickets first).
 - A diff view (powered by diff2html) for any agent run that touched
   files.
 
