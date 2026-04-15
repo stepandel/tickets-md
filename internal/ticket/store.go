@@ -309,8 +309,17 @@ func (s *Store) Link(sourceID, targetID, linkType string) error {
 		}
 		src.BlockedBy = appendID(src.BlockedBy, targetID)
 		tgt.Blocks = appendID(tgt.Blocks, sourceID)
+	case "parent":
+		if src.Parent != "" {
+			return fmt.Errorf("%s already has parent %s; unlink first", sourceID, src.Parent)
+		}
+		if err := s.checkParentCycle(sourceID, targetID); err != nil {
+			return err
+		}
+		src.Parent = targetID
+		tgt.Children = appendID(tgt.Children, sourceID)
 	default:
-		return fmt.Errorf("unknown link type %q (use \"related\" or \"blocked_by\")", linkType)
+		return fmt.Errorf("unknown link type %q (use \"related\", \"blocked_by\", or \"parent\")", linkType)
 	}
 
 	if err := s.Save(src); err != nil {
@@ -337,8 +346,13 @@ func (s *Store) Unlink(sourceID, targetID, linkType string) error {
 	case "blocked_by":
 		src.BlockedBy = removeID(src.BlockedBy, targetID)
 		tgt.Blocks = removeID(tgt.Blocks, sourceID)
+	case "parent":
+		if src.Parent == targetID {
+			src.Parent = ""
+		}
+		tgt.Children = removeID(tgt.Children, sourceID)
 	default:
-		return fmt.Errorf("unknown link type %q (use \"related\" or \"blocked_by\")", linkType)
+		return fmt.Errorf("unknown link type %q (use \"related\", \"blocked_by\", or \"parent\")", linkType)
 	}
 
 	if err := s.Save(src); err != nil {
@@ -367,6 +381,44 @@ func (s *Store) cleanupLinks(t Ticket) {
 	for _, id := range t.Blocks {
 		remove(id, func(p *Ticket) { p.BlockedBy = removeID(p.BlockedBy, t.ID) })
 	}
+	if t.Parent != "" {
+		remove(t.Parent, func(p *Ticket) { p.Children = removeID(p.Children, t.ID) })
+	}
+	for _, id := range t.Children {
+		remove(id, func(p *Ticket) {
+			if p.Parent == t.ID {
+				p.Parent = ""
+			}
+		})
+	}
+}
+
+func (s *Store) checkParentCycle(childID, parentID string) error {
+	all, err := s.ListAll()
+	if err != nil {
+		return err
+	}
+
+	ticketCount := 0
+	for _, list := range all {
+		ticketCount += len(list)
+	}
+	if ticketCount == 0 {
+		ticketCount = 1
+	}
+
+	currentID := parentID
+	for i := 0; i < ticketCount; i++ {
+		if currentID == childID {
+			return fmt.Errorf("cannot parent %s under %s: would create a cycle", childID, parentID)
+		}
+		current, err := s.Get(currentID)
+		if err != nil || current.Parent == "" {
+			return nil
+		}
+		currentID = current.Parent
+	}
+	return fmt.Errorf("cannot parent %s under %s: would create a cycle", childID, parentID)
 }
 
 func containsID(ids []string, id string) bool {

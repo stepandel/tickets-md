@@ -72,6 +72,26 @@ func TestLinkBlockedBy(t *testing.T) {
 	}
 }
 
+func TestLinkParent(t *testing.T) {
+	s := newTestStore(t)
+	child, _ := s.Create("Child")
+	parent, _ := s.Create("Parent")
+
+	if err := s.Link(child.ID, parent.ID, "parent"); err != nil {
+		t.Fatalf("Link: %v", err)
+	}
+
+	child, _ = s.Get(child.ID)
+	parent, _ = s.Get(parent.ID)
+
+	if child.Parent != parent.ID {
+		t.Errorf("expected %s.Parent=%s, got %q", child.ID, parent.ID, child.Parent)
+	}
+	if !containsID(parent.Children, child.ID) {
+		t.Errorf("expected %s in %s.Children, got %v", child.ID, parent.ID, parent.Children)
+	}
+}
+
 func TestLinkSelfRejected(t *testing.T) {
 	s := newTestStore(t)
 	a, _ := s.Create("Alpha")
@@ -94,6 +114,33 @@ func TestLinkDuplicateRejected(t *testing.T) {
 	}
 }
 
+func TestLinkParentRejectedWhenChildAlreadyHasParent(t *testing.T) {
+	s := newTestStore(t)
+	child, _ := s.Create("Child")
+	parentA, _ := s.Create("Parent A")
+	parentB, _ := s.Create("Parent B")
+
+	if err := s.Link(child.ID, parentA.ID, "parent"); err != nil {
+		t.Fatalf("initial Link: %v", err)
+	}
+	if err := s.Link(child.ID, parentB.ID, "parent"); err == nil {
+		t.Fatal("expected error when child already has a parent")
+	}
+}
+
+func TestLinkParentCycleRejected(t *testing.T) {
+	s := newTestStore(t)
+	a, _ := s.Create("Alpha")
+	b, _ := s.Create("Beta")
+
+	if err := s.Link(b.ID, a.ID, "parent"); err != nil {
+		t.Fatalf("Link: %v", err)
+	}
+	if err := s.Link(a.ID, b.ID, "parent"); err == nil {
+		t.Fatal("expected cycle rejection, got nil")
+	}
+}
+
 func TestUnlinkRelated(t *testing.T) {
 	s := newTestStore(t)
 	a, _ := s.Create("Alpha")
@@ -112,6 +159,29 @@ func TestUnlinkRelated(t *testing.T) {
 	}
 	if len(b.Related) != 0 {
 		t.Errorf("expected empty Related on %s, got %v", b.ID, b.Related)
+	}
+}
+
+func TestUnlinkParent(t *testing.T) {
+	s := newTestStore(t)
+	child, _ := s.Create("Child")
+	parent, _ := s.Create("Parent")
+	if err := s.Link(child.ID, parent.ID, "parent"); err != nil {
+		t.Fatalf("Link: %v", err)
+	}
+
+	if err := s.Unlink(child.ID, parent.ID, "parent"); err != nil {
+		t.Fatalf("Unlink: %v", err)
+	}
+
+	child, _ = s.Get(child.ID)
+	parent, _ = s.Get(parent.ID)
+
+	if child.Parent != "" {
+		t.Errorf("expected empty Parent on %s, got %q", child.ID, child.Parent)
+	}
+	if len(parent.Children) != 0 {
+		t.Errorf("expected empty Children on %s, got %v", parent.ID, parent.Children)
 	}
 }
 
@@ -145,6 +215,42 @@ func TestDeleteCleansUpLinks(t *testing.T) {
 	}
 }
 
+func TestDeleteParentOrphansChildren(t *testing.T) {
+	s := newTestStore(t)
+	parent, _ := s.Create("Parent")
+	child, _ := s.Create("Child")
+
+	if err := s.Link(child.ID, parent.ID, "parent"); err != nil {
+		t.Fatalf("Link: %v", err)
+	}
+	if err := s.Delete(parent.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	child, _ = s.Get(child.ID)
+	if child.Parent != "" {
+		t.Errorf("expected child parent cleared after deleting parent, got %q", child.Parent)
+	}
+}
+
+func TestDeleteChildRemovesFromParentChildren(t *testing.T) {
+	s := newTestStore(t)
+	parent, _ := s.Create("Parent")
+	child, _ := s.Create("Child")
+
+	if err := s.Link(child.ID, parent.ID, "parent"); err != nil {
+		t.Fatalf("Link: %v", err)
+	}
+	if err := s.Delete(child.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	parent, _ = s.Get(parent.ID)
+	if containsID(parent.Children, child.ID) {
+		t.Errorf("expected %s removed from parent children, got %v", child.ID, parent.Children)
+	}
+}
+
 func TestLinkNonExistentTarget(t *testing.T) {
 	s := newTestStore(t)
 	a, _ := s.Create("Alpha")
@@ -171,17 +277,24 @@ func TestExistingTicketsWithoutLinksUnchanged(t *testing.T) {
 			t.Errorf("expected no %q in frontmatter of ticket without links", key)
 		}
 	}
+	for _, key := range []string{"parent:", "children:"} {
+		if strings.Contains(content, key) {
+			t.Errorf("expected no %q in frontmatter of ticket without links", key)
+		}
+	}
 }
 
 func TestTicketHasLinksAndLinkCount(t *testing.T) {
 	tk := Ticket{
 		Related:   []string{"T-001"},
 		BlockedBy: []string{"T-002", "T-003"},
+		Parent:    "T-004",
+		Children:  []string{"T-005"},
 	}
 	if !tk.HasLinks() {
 		t.Error("expected HasLinks() to be true")
 	}
-	if tk.LinkCount() != 3 {
+	if tk.LinkCount() != 5 {
 		t.Errorf("expected LinkCount() == 3, got %d", tk.LinkCount())
 	}
 }
@@ -257,9 +370,16 @@ func TestLinksText(t *testing.T) {
 		Related:   []string{"T-001"},
 		BlockedBy: []string{"T-002"},
 		Blocks:    []string{"T-003"},
+		Parent:    "T-004",
+		Children:  []string{"T-005"},
 	}
 	text := tk.LinksText()
 	if text == "" {
 		t.Fatal("expected non-empty LinksText")
+	}
+	for _, want := range []string{"parent: T-004", "children: T-005"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("expected %q in LinksText, got %q", want, text)
+		}
 	}
 }

@@ -122,12 +122,12 @@ func copyToClipboard(s string) error {
 // the user was on).
 type linkCtx struct {
 	sourceID string
-	kind     string // "related" | "blocked_by"
+	kind     string // "related" | "blocked_by" | "parent"
 }
 
 type unlinkEntry struct {
 	peerID string
-	kind   string // "related" | "blocked_by" | "blocks"
+	kind   string // "related" | "blocked_by" | "blocks" | "parent" | "child"
 }
 
 func (m *boardModel) startLink(kind string) {
@@ -151,6 +151,13 @@ func (m *boardModel) startLink(kind string) {
 		for _, r := range t.BlockedBy {
 			exclude[r] = true
 		}
+	case "parent":
+		if t.Parent != "" {
+			exclude[t.Parent] = true
+		}
+		for _, r := range t.Children {
+			exclude[r] = true
+		}
 	}
 	var items []pickerItem
 	for _, stage := range m.stages {
@@ -172,6 +179,8 @@ func (m *boardModel) startLink(kind string) {
 	title := "Link related to " + t.ID
 	if kind == "blocked_by" {
 		title = "Mark " + t.ID + " as blocked by…"
+	} else if kind == "parent" {
+		title = "Set parent for " + t.ID
 	}
 	m.overlay = newPicker(title, items)
 	m.overlayKind = "link"
@@ -236,6 +245,12 @@ func (m *boardModel) startUnlink() {
 	for _, r := range t.Blocks {
 		add(r, "blocks", "blocks")
 	}
+	if t.Parent != "" {
+		add(t.Parent, "parent", "parent")
+	}
+	for _, r := range t.Children {
+		add(r, "child", "child")
+	}
 	m.overlay = newPicker("Unlink from "+t.ID, items)
 	m.overlayKind = "unlink"
 }
@@ -262,6 +277,10 @@ func (m *boardModel) applyUnlinkChoice(ov overlay) {
 	case "blocks":
 		// "t blocks peer" == "peer blocked_by t" — unlink the inverse.
 		err = m.store.Unlink(entry.peerID, t.ID, "blocked_by")
+	case "parent":
+		err = m.store.Unlink(t.ID, entry.peerID, "parent")
+	case "child":
+		err = m.store.Unlink(entry.peerID, t.ID, "parent")
 	}
 	if err != nil {
 		m.err = err

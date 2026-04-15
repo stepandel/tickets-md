@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -28,6 +29,12 @@ func newShowCmd() *cobra.Command {
 			fmt.Printf("# %s — %s   [%s]\n", t.ID, t.Title, t.Stage)
 			if t.Priority != "" {
 				fmt.Printf("# Priority: %s\n", t.Priority)
+			}
+			if t.Parent != "" {
+				fmt.Printf("# Parent: %s\n", t.Parent)
+			}
+			if len(t.Children) > 0 {
+				fmt.Printf("# Children: %s\n", strings.Join(t.Children, ", "))
 			}
 			if t.HasLinks() {
 				fmt.Printf("# Links: %s\n", t.LinksText())

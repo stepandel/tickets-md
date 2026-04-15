@@ -160,6 +160,145 @@ func TestDoctorOneSidedBlocks(t *testing.T) {
 	}
 }
 
+func TestDoctorDanglingParent(t *testing.T) {
+	s := newTestStore(t)
+	child, _ := s.Create("Child")
+
+	child.Parent = "T-999"
+	s.Save(child)
+
+	issues, err := s.Doctor(false)
+	if err != nil {
+		t.Fatalf("Doctor: %v", err)
+	}
+	if len(issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d: %v", len(issues), issues)
+	}
+	if issues[0].Kind != Dangling || issues[0].Field != FieldParent {
+		t.Fatalf("expected dangling parent issue, got %+v", issues[0])
+	}
+
+	child, _ = s.Get(child.ID)
+	if child.Parent != "" {
+		t.Fatalf("expected dangling parent cleared, got %q", child.Parent)
+	}
+}
+
+func TestDoctorOneSidedParent(t *testing.T) {
+	s := newTestStore(t)
+	child, _ := s.Create("Child")
+	parent, _ := s.Create("Parent")
+
+	child.Parent = parent.ID
+	s.Save(child)
+
+	issues, err := s.Doctor(false)
+	if err != nil {
+		t.Fatalf("Doctor: %v", err)
+	}
+	if len(issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d: %v", len(issues), issues)
+	}
+	if issues[0].Kind != OneSided || issues[0].Field != FieldParent {
+		t.Fatalf("expected one-sided parent issue, got %+v", issues[0])
+	}
+
+	parent, _ = s.Get(parent.ID)
+	if !containsID(parent.Children, child.ID) {
+		t.Fatalf("expected %s added to parent children, got %v", child.ID, parent.Children)
+	}
+}
+
+func TestDoctorDanglingChild(t *testing.T) {
+	s := newTestStore(t)
+	parent, _ := s.Create("Parent")
+
+	parent.Children = []string{"T-999"}
+	s.Save(parent)
+
+	issues, err := s.Doctor(false)
+	if err != nil {
+		t.Fatalf("Doctor: %v", err)
+	}
+	if len(issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d: %v", len(issues), issues)
+	}
+	if issues[0].Kind != Dangling || issues[0].Field != FieldChildren {
+		t.Fatalf("expected dangling child issue, got %+v", issues[0])
+	}
+
+	parent, _ = s.Get(parent.ID)
+	if containsID(parent.Children, "T-999") {
+		t.Fatalf("expected dangling child removed, got %v", parent.Children)
+	}
+}
+
+func TestDoctorOneSidedChild(t *testing.T) {
+	s := newTestStore(t)
+	parent, _ := s.Create("Parent")
+	child, _ := s.Create("Child")
+
+	parent.Children = []string{child.ID}
+	s.Save(parent)
+
+	issues, err := s.Doctor(false)
+	if err != nil {
+		t.Fatalf("Doctor: %v", err)
+	}
+	if len(issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d: %v", len(issues), issues)
+	}
+	if issues[0].Kind != OneSided || issues[0].Field != FieldChildren {
+		t.Fatalf("expected one-sided child issue, got %+v", issues[0])
+	}
+
+	child, _ = s.Get(child.ID)
+	if child.Parent != parent.ID {
+		t.Fatalf("expected child parent set to %s, got %q", parent.ID, child.Parent)
+	}
+}
+
+func TestDoctorChildConflictDropsInvalidChildRef(t *testing.T) {
+	s := newTestStore(t)
+	parentA, _ := s.Create("Parent A")
+	parentB, _ := s.Create("Parent B")
+	child, _ := s.Create("Child")
+
+	parentA.Children = []string{child.ID}
+	child.Parent = parentB.ID
+	s.Save(parentA)
+	s.Save(child)
+
+	issues, err := s.Doctor(false)
+	if err != nil {
+		t.Fatalf("Doctor: %v", err)
+	}
+	if len(issues) != 2 {
+		t.Fatalf("expected 2 issues, got %d: %v", len(issues), issues)
+	}
+	var sawConflict, sawRepair bool
+	for _, issue := range issues {
+		if issue.Kind == Dangling && issue.Field == FieldChildren {
+			sawConflict = true
+		}
+		if issue.Kind == OneSided && issue.Field == FieldParent {
+			sawRepair = true
+		}
+	}
+	if !sawConflict || !sawRepair {
+		t.Fatalf("expected dangling child conflict and parent repair, got %v", issues)
+	}
+
+	parentA, _ = s.Get(parentA.ID)
+	if containsID(parentA.Children, child.ID) {
+		t.Fatalf("expected conflicting child removed from parent, got %v", parentA.Children)
+	}
+	child, _ = s.Get(child.ID)
+	if child.Parent != parentB.ID {
+		t.Fatalf("expected child's existing parent preserved, got %q", child.Parent)
+	}
+}
+
 func TestDoctorDryRun(t *testing.T) {
 	s := newTestStore(t)
 	a, _ := s.Create("Alpha")
@@ -268,6 +407,30 @@ func TestDoctorTicketDangling(t *testing.T) {
 	a, _ = s.Get(a.ID)
 	if containsID(a.Blocks, "T-999") {
 		t.Error("expected T-999 removed from Blocks")
+	}
+}
+
+func TestDoctorTicketSelfParent(t *testing.T) {
+	s := newTestStore(t)
+	child, _ := s.Create("Child")
+
+	child.Parent = child.ID
+	s.Save(child)
+
+	issues, err := s.DoctorTicket(child.ID, false)
+	if err != nil {
+		t.Fatalf("DoctorTicket: %v", err)
+	}
+	if len(issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d: %v", len(issues), issues)
+	}
+	if issues[0].Kind != Dangling || issues[0].Field != FieldParent {
+		t.Fatalf("expected dangling self-parent issue, got %+v", issues[0])
+	}
+
+	child, _ = s.Get(child.ID)
+	if child.Parent != "" {
+		t.Fatalf("expected self-parent cleared, got %q", child.Parent)
 	}
 }
 
