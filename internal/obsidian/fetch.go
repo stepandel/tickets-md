@@ -17,6 +17,8 @@ var releaseURL = func(tag string) string {
 	return fmt.Sprintf("https://github.com/stepandel/tickets-md/releases/download/%s/tickets-board-plugin.zip", tag)
 }
 
+var releaseHTTPClient = &http.Client{Timeout: 60 * time.Second}
+
 // pluginCacheDir returns the directory the plugin artefacts for tag
 // are cached in — typically $XDG_CACHE_HOME/tickets/plugin/<tag>/ on
 // Linux, ~/Library/Caches/tickets/plugin/<tag>/ on macOS, etc.
@@ -32,12 +34,11 @@ func pluginCacheDir(tag string) (string, error) {
 // expected files into dest.
 func downloadRelease(tag, dest string) error {
 	url := releaseURL(tag)
-	client := &http.Client{Timeout: 60 * time.Second}
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return fmt.Errorf("building request for %s: %w", url, err)
 	}
-	resp, err := client.Do(req)
+	resp, err := releaseHTTPClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("downloading %s: %w (check your network, or pass --from <path> to install a local build)", url, err)
 	}

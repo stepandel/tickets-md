@@ -6,9 +6,9 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -283,21 +283,24 @@ func TestReleaseTagNormalisation(t *testing.T) {
 }
 
 func TestInstallDownloadsAndCachesReleaseZip(t *testing.T) {
-	// Redirect the release URL to a local test server serving a zip
-	// we build on the fly. Point the cache at a temp dir so the test
-	// is hermetic.
 	zipBody := buildPluginZip(t, "2.0.0")
 	var hits int
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hits++
-		w.Header().Set("Content-Type", "application/zip")
-		io.Copy(w, bytes.NewReader(zipBody))
-	}))
-	t.Cleanup(srv.Close)
 
 	origURL := releaseURL
-	releaseURL = func(tag string) string { return srv.URL + "/" + tag + "/tickets-board-plugin.zip" }
+	releaseURL = func(tag string) string { return "https://example.invalid/" + tag + "/tickets-board-plugin.zip" }
 	t.Cleanup(func() { releaseURL = origURL })
+	origClient := releaseHTTPClient
+	releaseHTTPClient = &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			hits++
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(bytes.NewReader(zipBody)),
+				Header:     http.Header{"Content-Type": []string{"application/zip"}},
+			}, nil
+		}),
+	}
+	t.Cleanup(func() { releaseHTTPClient = origClient })
 
 	cacheRoot := t.TempDir()
 	t.Setenv("XDG_CACHE_HOME", cacheRoot)
@@ -327,14 +330,20 @@ func TestInstallDownloadsAndCachesReleaseZip(t *testing.T) {
 }
 
 func TestInstallSurfaces404AsHelpfulError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.NotFound(w, r)
-	}))
-	t.Cleanup(srv.Close)
-
 	origURL := releaseURL
-	releaseURL = func(tag string) string { return srv.URL + "/" + tag + "/tickets-board-plugin.zip" }
+	releaseURL = func(tag string) string { return "https://example.invalid/" + tag + "/tickets-board-plugin.zip" }
 	t.Cleanup(func() { releaseURL = origURL })
+	origClient := releaseHTTPClient
+	releaseHTTPClient = &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Body:       io.NopCloser(strings.NewReader("not found")),
+				Header:     make(http.Header),
+			}, nil
+		}),
+	}
+	t.Cleanup(func() { releaseHTTPClient = origClient })
 
 	cacheRoot := t.TempDir()
 	t.Setenv("XDG_CACHE_HOME", cacheRoot)
@@ -397,4 +406,10 @@ func writeIDs(t *testing.T, vault string, ids []string) {
 	if err := writeCommunityPlugins(vault, ids); err != nil {
 		t.Fatal(err)
 	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }
