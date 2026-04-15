@@ -46,6 +46,8 @@ type Config struct {
 	Name string `yaml:"name,omitempty"`
 	// Prefix is the alphabetic prefix used in ticket IDs, e.g. "TIC".
 	Prefix string `yaml:"prefix"`
+	// ProjectPrefix is the alphabetic prefix used in project IDs.
+	ProjectPrefix string `yaml:"project_prefix,omitempty"`
 	// Stages is the ordered list of stage folder names. The first
 	// entry is treated as the default stage for new tickets.
 	Stages []string `yaml:"stages"`
@@ -63,8 +65,9 @@ func (c Config) HasDefaultAgent() bool {
 // Default returns the out-of-the-box configuration used by `tickets init`.
 func Default() Config {
 	return Config{
-		Prefix: "TIC",
-		Stages: []string{"backlog", "prep", "execute", "review", "done"},
+		Prefix:        "TIC",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "prep", "execute", "review", "done"},
 	}
 }
 
@@ -88,6 +91,9 @@ func Load(root string) (Config, error) {
 	var c Config
 	if err := yaml.Unmarshal(data, &c); err != nil {
 		return Config{}, fmt.Errorf("parsing %s: %w", p, err)
+	}
+	if c.ProjectPrefix == "" {
+		c.ProjectPrefix = "PRJ"
 	}
 	if err := c.Validate(); err != nil {
 		return Config{}, fmt.Errorf("invalid config %s: %w", p, err)
@@ -116,6 +122,9 @@ func Save(root string, c Config) error {
 func (c Config) Validate() error {
 	if c.Prefix == "" {
 		return errors.New("prefix is empty")
+	}
+	if c.ProjectPrefix == "" {
+		return errors.New("project_prefix is empty")
 	}
 	if len(c.Stages) == 0 {
 		return errors.New("at least one stage is required")
@@ -164,6 +173,9 @@ func ValidateStageName(name string) error {
 	}
 	if name == ".." {
 		return fmt.Errorf("stage name %q is not allowed", name)
+	}
+	if name == "projects" {
+		return fmt.Errorf("stage name %q is reserved", name)
 	}
 	return nil
 }

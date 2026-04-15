@@ -29,6 +29,13 @@ func newShowCmd() *cobra.Command {
 			if t.Priority != "" {
 				fmt.Printf("# Priority: %s\n", t.Priority)
 			}
+			if t.Project != "" {
+				if p, err := s.GetProject(t.Project); err == nil {
+					fmt.Printf("# Project: %s — %s\n", p.ID, p.Title)
+				} else {
+					fmt.Printf("# Project: %s (missing)\n", t.Project)
+				}
+			}
 			if t.HasLinks() {
 				fmt.Printf("# Links: %s\n", t.LinksText())
 			}

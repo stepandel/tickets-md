@@ -18,7 +18,8 @@ import (
 )
 
 func newBoardCmd() *cobra.Command {
-	return &cobra.Command{
+	var project string
+	cmd := &cobra.Command{
 		Use:     "board",
 		Aliases: []string{"tui"},
 		Short:   "Interactive kanban board (TUI)",
@@ -27,13 +28,15 @@ func newBoardCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return runBoard(s)
+			return runBoard(s, project)
 		},
 	}
+	cmd.Flags().StringVar(&project, "project", "", "only show tickets assigned to this project; use - for unassigned")
+	return cmd
 }
 
-func runBoard(s *ticket.Store) error {
-	m, err := newBoardModel(s)
+func runBoard(s *ticket.Store, project string) error {
+	m, err := newBoardModel(s, project)
 	if err != nil {
 		return err
 	}
@@ -56,6 +59,7 @@ func boardTickCmd() tea.Cmd {
 
 type boardModel struct {
 	store     *ticket.Store
+	project   string
 	stages    []string
 	columns   [][]ticket.Ticket
 	activeCol int
@@ -95,9 +99,10 @@ type boardModel struct {
 	overlayCtx  any    // optional context data (e.g. link kind)
 }
 
-func newBoardModel(s *ticket.Store) (*boardModel, error) {
+func newBoardModel(s *ticket.Store, project string) (*boardModel, error) {
 	m := &boardModel{
 		store:         s,
+		project:       project,
 		stages:        s.Config.Stages,
 		gap:           1,
 		agentStatuses: make(map[string]agent.AgentStatus),
@@ -118,7 +123,7 @@ func (m *boardModel) reload() error {
 	}
 	m.columns = make([][]ticket.Ticket, len(m.stages))
 	for i, st := range m.stages {
-		m.columns[i] = grouped[st]
+		m.columns[i] = filterTicketsByProject(grouped[st], m.project)
 	}
 	return nil
 }

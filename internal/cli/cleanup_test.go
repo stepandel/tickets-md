@@ -40,8 +40,9 @@ func newCleanupStore(t *testing.T) *ticket.Store {
 	runCleanupGit(t, root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", "init")
 
 	s, err := ticket.Init(root, config.Config{
-		Prefix: "TIC",
-		Stages: []string{"backlog", "execute", "done"},
+		Prefix:        "TIC",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "execute", "done"},
 	})
 	if err != nil {
 		t.Fatalf("Init: %v", err)

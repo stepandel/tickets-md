@@ -17,8 +17,9 @@ func newHarnessStore(t *testing.T) *ticket.Store {
 	t.Helper()
 	root := t.TempDir()
 	s, err := ticket.Init(root, config.Config{
-		Prefix: "T",
-		Stages: []string{"backlog", "execute", "done"},
+		Prefix:        "T",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "execute", "done"},
 	})
 	if err != nil {
 		t.Fatalf("Init: %v", err)

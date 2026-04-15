@@ -191,17 +191,18 @@ setup steps.
 | --------------------------------------- | -------------------------------------------------- |
 | `tickets init`                          | Create `.tickets/config.yml` + stage folders       |
 | `tickets new <title...> [--priority P]` | Create a ticket in the default stage               |
-| `tickets list [--stage X]`              | List tickets, grouped by stage (alias: `ls`)       |
+| `tickets projects <subcommand>`         | Create, list, show, update, assign, and delete projects |
+| `tickets list [--stage X] [--project P]`| List tickets, grouped by stage (alias: `ls`)       |
 | `tickets show <id>`                     | Print a ticket's contents                          |
 | `tickets move <id> <stage>`             | Move a ticket to another stage (alias: `mv`)       |
 | `tickets edit <id>`                     | Open the ticket file in your editor                |
-| `tickets set <id> <field> <value...>`   | Update a scalar field (`priority`, `title`)        |
+| `tickets set <id> <field> <value...>`   | Update a scalar field (`priority`, `project`, `title`) |
 | `tickets rm <id> [--force]`             | Delete a ticket                                    |
 | `tickets link <a> <b> [--blocks]`       | Link two tickets (related, or directional blocks)  |
 | `tickets unlink <a> <b> [--blocks]`     | Remove a link                                      |
 | `tickets cleanup [--dry-run]`           | Remove orphaned or archived-stage agent artifacts  |
 | `tickets doctor [--dry-run]`            | Scan for drift across tickets, runs, worktrees     |
-| `tickets board`                         | Interactive kanban board TUI (alias: `tui`)        |
+| `tickets board [--project P]`           | Interactive kanban board TUI (alias: `tui`)        |
 | `tickets watch`                         | Watch for ticket movements and spawn agents        |
 | `tickets agents [-a] [--history]`       | List agent runs                                    |
 | `tickets agents log <id> [run]`         | Print the captured output for a run                |
@@ -657,6 +658,7 @@ transition.
 
 ```yaml
 prefix: TIC
+project_prefix: PRJ
 stages:
   - backlog
   - prep
@@ -670,10 +672,12 @@ stages:
 ```
 
 - **prefix** — alphabetic prefix for ticket IDs (`TIC-001`, `TIC-002`, ...)
+- **project_prefix** — alphabetic prefix for project IDs (`PRJ-001`, `PRJ-002`, ...)
 - **stages** — ordered list of stage folder names. The first entry is
   the default stage for newly created tickets. Reorder, rename, or add
   stages by editing this file; the CLI picks the changes up on the next
-  invocation.
+  invocation. The name `projects` is reserved for the project store and
+  cannot be used as a stage.
 - **default_agent** — optional. The command `tickets agents run` uses
   to launch an interactive session for any ticket.
 
