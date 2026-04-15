@@ -10,6 +10,7 @@ import (
 func newNewCmd() *cobra.Command {
 	var priority string
 	var parent string
+	var body string
 	cmd := &cobra.Command{
 		Use:   "new <title...>",
 		Short: "Create a new ticket in the default stage",
@@ -23,6 +24,12 @@ func newNewCmd() *cobra.Command {
 			t, err := s.Create(title)
 			if err != nil {
 				return err
+			}
+			if body != "" {
+				t.Body = body
+				if err := s.Save(t); err != nil {
+					return err
+				}
 			}
 			if priority != "" {
 				t.Priority = priority
@@ -50,6 +57,7 @@ func newNewCmd() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().StringVarP(&body, "body", "b", "", "set the ticket body markdown")
 	cmd.Flags().StringVarP(&priority, "priority", "p", "", "set ticket priority (e.g. low, medium, high, critical)")
 	cmd.Flags().StringVar(&parent, "parent", "", "set the new ticket's parent ticket ID")
 	return cmd
