@@ -14,10 +14,12 @@ import (
 func newObsidianCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "obsidian",
-		Short: "Manage the companion Obsidian plugin bundled with this CLI",
-		Long: `The tickets CLI embeds the ` + "`tickets-board`" + ` Obsidian plugin. These
-subcommands drop those bundled assets into an Obsidian vault so the
-plugin version stays locked to the CLI version it shipped with.
+		Short: "Manage the companion Obsidian plugin",
+		Long: `The tickets CLI can install the companion ` + "`tickets-board`" + ` Obsidian
+plugin into a vault. The plugin build is fetched from the GitHub
+release matching this CLI's version (cached locally so repeat
+installs are offline), or provided via ` + "`--from <dir>`" + ` for local
+development.
 
 The vault is discovered by walking up from --vault (or --root / $PWD)
 for the nearest directory containing a .obsidian/ folder.`,
@@ -100,13 +102,20 @@ func mustAbs(p string) string {
 func newObsidianInstallCmd() *cobra.Command {
 	var flags obsidianFlags
 	var noEnable bool
+	var from string
 	cmd := &cobra.Command{
 		Use:   "install",
-		Short: "Initialize an Obsidian vault inside .tickets/ and install the bundled plugin",
+		Short: "Install the plugin into a vault (fetch from GitHub release, or --from <dir>)",
 		Long: `Writes main.js, manifest.json, and styles.css into
 <vault>/.obsidian/plugins/tickets-board/ and (unless --no-enable) adds
 the plugin id to community-plugins.json so Obsidian activates it on
 next launch.
+
+By default the plugin is downloaded from the GitHub release matching
+this CLI's version and cached under the user cache directory for
+offline reinstalls. Pass --from <dir> to install from a local build
+instead (for plugin development — ` + "`cd obsidian-plugin && npm run build`" + `
+first).
 
 The default vault is ` + "`.tickets/`" + ` itself — the plugin's Kanban view
 reads the stage folders there as its columns, so opening ` + "`.tickets/`" + `
@@ -115,17 +124,14 @@ first so the directory exists.
 
 If you already opened this repo as a vault elsewhere (a ` + "`.obsidian/`" + `
 at or above the project root), that vault is reused instead. Pass
---vault to install into an unrelated vault.
-
-If the plugin is already installed it is overwritten — the CLI is the
-source of truth for this copy.`,
+--vault to install into an unrelated vault.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			vault, created, err := flags.ensureVault()
 			if err != nil {
 				return err
 			}
-			res, err := obsidian.Install(vault, !noEnable)
+			res, err := obsidian.Install(vault, !noEnable, version, from)
 			if err != nil {
 				return err
 			}
@@ -136,6 +142,8 @@ source of truth for this copy.`,
 	flags.bind(cmd)
 	cmd.Flags().BoolVar(&noEnable, "no-enable", false,
 		"only copy files — do not touch community-plugins.json")
+	cmd.Flags().StringVar(&from, "from", "",
+		"install from a local plugin build directory instead of downloading a release")
 	return cmd
 }
 
@@ -165,14 +173,14 @@ func newObsidianStatusCmd() *cobra.Command {
 	var flags obsidianFlags
 	cmd := &cobra.Command{
 		Use:   "status",
-		Short: "Report installed vs. bundled plugin version",
+		Short: "Report installed plugin version vs. this CLI's expected version",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			vault, err := flags.resolveVault()
 			if err != nil {
 				return err
 			}
-			r, err := obsidian.Status(vault)
+			r, err := obsidian.Status(vault, version)
 			if err != nil {
 				return err
 			}
@@ -184,9 +192,6 @@ func newObsidianStatusCmd() *cobra.Command {
 }
 
 func printObsidianInstallResult(out io.Writer, vault string, res obsidian.InstallResult, noEnable bool) error {
-	if !obsidian.HasBundle() {
-		return fmt.Errorf("internal error: Install succeeded without a bundle")
-	}
 	verb := "Installed"
 	if res.PreviousVersion != "" {
 		switch {
@@ -199,7 +204,7 @@ func printObsidianInstallResult(out io.Writer, vault string, res obsidian.Instal
 	if res.VaultCreated {
 		fmt.Fprintf(out, "Initialized Obsidian vault at %s\n", vault)
 	}
-	fmt.Fprintf(out, "%s %s %s into %s\n", verb, obsidian.PluginID, res.InstalledVersion, res.Dir)
+	fmt.Fprintf(out, "%s %s %s into %s (source: %s)\n", verb, obsidian.PluginID, res.InstalledVersion, res.Dir, res.Source)
 	switch {
 	case noEnable:
 		fmt.Fprintln(out, "Skipped community-plugins.json — you'll need to enable the plugin manually (see step 3 below).")
@@ -221,21 +226,14 @@ func printObsidianInstallResult(out io.Writer, vault string, res obsidian.Instal
 
 func printObsidianStatus(out io.Writer, r obsidian.StatusReport) error {
 	fmt.Fprintf(out, "Vault:     %s\n", r.Vault)
-	fmt.Fprintf(out, "Bundled:   %s\n", describeBundled(r))
+	fmt.Fprintf(out, "Expected:  %s\n", r.ExpectedVersion)
 	fmt.Fprintf(out, "Installed: %s\n", describeInstalled(r))
 	fmt.Fprintf(out, "Enabled:   %s\n", yesNo(r.Enabled))
-	if r.Installed && r.BundledAvailable && r.InstalledVersion != r.BundledVersion {
+	if r.Installed && r.InstalledVersion != r.ExpectedVersion {
 		fmt.Fprintln(out, "")
-		fmt.Fprintln(out, "Run `tickets obsidian install` to sync the vault to the bundled version.")
+		fmt.Fprintln(out, "Run `tickets obsidian install` to sync the vault to the expected version.")
 	}
 	return nil
-}
-
-func describeBundled(r obsidian.StatusReport) string {
-	if !r.BundledAvailable {
-		return "not embedded in this binary (rebuild with `make plugin-bundle`)"
-	}
-	return r.BundledVersion
 }
 
 func describeInstalled(r obsidian.StatusReport) string {

@@ -1,5 +1,6 @@
 /tickets
 /tickets.exe
+/dist
 *.test
 *.out
 .tickets

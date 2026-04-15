@@ -1,18 +1,19 @@
-// Package obsidian embeds the Obsidian companion plugin's build
-// artefacts and installs them into a vault's plugins directory. It is
-// the CLI's side of the "tickets obsidian install" story — a vault
-// can get a matched plugin build without going through npm or the
-// community directory.
+// Package obsidian installs the companion Obsidian plugin's build
+// artefacts into a vault's plugins directory. Sources are resolved in
+// one of two ways:
 //
-// The bundle is populated by `make plugin-bundle`, which runs the
-// obsidian-plugin esbuild pipeline and copies main.js / manifest.json
-// / styles.css into assets/. A binary built without that step has a
-// stub main.js; Install refuses to write it and points the user at
-// the Makefile.
+//  1. --from <dir> (for local dev): main.js / manifest.json /
+//     styles.css are read from that directory.
+//  2. Otherwise: the files are downloaded from the matching
+//     GitHub release (`tickets-board-plugin.zip`) and cached under
+//     the user's cache directory so repeat installs are offline.
+//
+// The CLI's own version (from `tickets --version`) picks the release
+// tag, which keeps the plugin locked to a version the CLI knows how
+// to talk to over the `tickets watch` WebSocket bridge.
 package obsidian
 
 import (
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,24 +24,15 @@ import (
 	"strings"
 )
 
-//go:embed assets/manifest.json
-var manifestBytes []byte
-
-//go:embed assets/main.js
-var mainJS []byte
-
-//go:embed assets/styles.css
-var stylesCSS []byte
-
 // PluginID is the Obsidian plugin id — must match the id in
 // obsidian-plugin/manifest.json. Used to pick the install directory
 // name and the community-plugins.json entry.
 const PluginID = "tickets-board"
 
-// minBundledMainJS is the smallest size at which we assume main.js was
-// populated by `make plugin-bundle` rather than the empty stub that
-// ships in the repo. The real bundle is ~500 KB; 4 KB is a safe floor.
-const minBundledMainJS = 4 * 1024
+// pluginFiles is the complete set of artefacts that make up the
+// plugin. Every source (release zip or --from directory) must supply
+// all three.
+var pluginFiles = []string{"main.js", "manifest.json", "styles.css"}
 
 // Manifest is the subset of the Obsidian plugin manifest we care
 // about. The full manifest is still written verbatim — we only parse
@@ -54,21 +46,6 @@ type Manifest struct {
 	Author        string `json:"author"`
 	IsDesktopOnly bool   `json:"isDesktopOnly"`
 }
-
-// BundledManifest returns the manifest embedded in this binary.
-func BundledManifest() (Manifest, error) {
-	var m Manifest
-	if err := json.Unmarshal(manifestBytes, &m); err != nil {
-		return Manifest{}, fmt.Errorf("parsing embedded manifest: %w", err)
-	}
-	return m, nil
-}
-
-// HasBundle reports whether this binary actually carries the built
-// plugin assets. Binaries produced by a plain `go build` without
-// running `make plugin-bundle` first will have the stub main.js and
-// return false.
-func HasBundle() bool { return len(mainJS) >= minBundledMainJS }
 
 // DiscoverVault walks up from start looking for the nearest directory
 // that contains a `.obsidian/` subdirectory. Returns the absolute
@@ -94,10 +71,6 @@ func DiscoverVault(start string) (string, error) {
 // EnsureVault returns a vault rooted at start, creating `.obsidian/`
 // there if no ancestor vault exists. Returns the vault path and a
 // flag indicating whether the vault was freshly initialized.
-//
-// This is the "install flow" counterpart to DiscoverVault: `tickets
-// obsidian install` in a repo with no vault yet should bootstrap one
-// at the repo root rather than erroring out.
 func EnsureVault(start string) (string, bool, error) {
 	if vault, err := DiscoverVault(start); err == nil {
 		return vault, false, nil
@@ -112,8 +85,6 @@ func EnsureVault(start string) (string, bool, error) {
 	return abs, true, nil
 }
 
-// pluginDir returns the destination directory for our plugin inside
-// vault.
 func pluginDir(vault string) string {
 	return filepath.Join(vault, ".obsidian", "plugins", PluginID)
 }
@@ -127,41 +98,49 @@ type InstallResult struct {
 	PreviousVersion  string
 	Enabled          bool
 	AlreadyEnabled   bool
+	// Source describes where the plugin files came from — "release
+	// <tag>", "cache <tag>", or "local <dir>" — for user-facing
+	// reporting.
+	Source string
 }
 
-// Install writes the bundled plugin into vault's plugin directory. If
-// enable is true it also appends the plugin id to
-// `.obsidian/community-plugins.json` so Obsidian activates it on next
-// launch.
-func Install(vault string, enable bool) (InstallResult, error) {
-	var res InstallResult
-	res.Vault = vault
-	if !HasBundle() {
-		return res, errors.New("this binary was built without the plugin bundle; run `make plugin-bundle && make install` from source")
-	}
+// Install writes the plugin into vault. Files are sourced from
+// localDir if non-empty; otherwise they're fetched from the GitHub
+// release matching version (cached on disk, so repeat installs are
+// offline).
+//
+// version is the CLI's own version string. "dev" (or "") means the
+// caller is running a development build — Install refuses to guess a
+// release tag and requires localDir instead.
+func Install(vault string, enable bool, version, localDir string) (InstallResult, error) {
+	res := InstallResult{Vault: vault}
 
-	bm, err := BundledManifest()
+	srcDir, source, err := resolveSource(version, localDir)
 	if err != nil {
 		return res, err
 	}
-	res.InstalledVersion = bm.Version
+	res.Source = source
 
-	dir := pluginDir(vault)
-	res.Dir = dir
-
-	if prev, err := readManifest(filepath.Join(dir, "manifest.json")); err == nil {
+	if prev, err := readManifest(filepath.Join(pluginDir(vault), "manifest.json")); err == nil {
 		res.PreviousVersion = prev.Version
 	}
 
+	srcManifest, err := readManifest(filepath.Join(srcDir, "manifest.json"))
+	if err != nil {
+		return res, fmt.Errorf("reading plugin manifest from %s: %w", srcDir, err)
+	}
+	res.InstalledVersion = srcManifest.Version
+
+	dir := pluginDir(vault)
+	res.Dir = dir
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return res, fmt.Errorf("creating plugin dir: %w", err)
 	}
-	files := map[string][]byte{
-		"manifest.json": manifestBytes,
-		"main.js":       mainJS,
-		"styles.css":    stylesCSS,
-	}
-	for name, body := range files {
+	for _, name := range pluginFiles {
+		body, err := os.ReadFile(filepath.Join(srcDir, name))
+		if err != nil {
+			return res, fmt.Errorf("reading %s from %s: %w", name, srcDir, err)
+		}
 		if err := writeAtomic(filepath.Join(dir, name), body); err != nil {
 			return res, err
 		}
@@ -176,6 +155,71 @@ func Install(vault string, enable bool) (InstallResult, error) {
 		res.AlreadyEnabled = !added
 	}
 	return res, nil
+}
+
+// resolveSource picks the directory to read plugin files from.
+func resolveSource(version, localDir string) (dir, source string, err error) {
+	if localDir != "" {
+		abs, err := filepath.Abs(localDir)
+		if err != nil {
+			return "", "", err
+		}
+		if err := ensurePluginFiles(abs); err != nil {
+			return "", "", fmt.Errorf("--from %s: %w (run `npm run build` in obsidian-plugin/ first?)", localDir, err)
+		}
+		return abs, "local " + abs, nil
+	}
+
+	tag, err := releaseTag(version)
+	if err != nil {
+		return "", "", err
+	}
+
+	cacheDir, err := pluginCacheDir(tag)
+	if err != nil {
+		return "", "", err
+	}
+	if ensurePluginFiles(cacheDir) == nil {
+		return cacheDir, "cache " + tag, nil
+	}
+	if err := downloadRelease(tag, cacheDir); err != nil {
+		return "", "", err
+	}
+	if err := ensurePluginFiles(cacheDir); err != nil {
+		return "", "", fmt.Errorf("release %s downloaded but missing expected files: %w", tag, err)
+	}
+	return cacheDir, "release " + tag, nil
+}
+
+// releaseTag normalises version into the GitHub release tag naming.
+// "dev" / "" / pseudo-versions are rejected with a pointer at --from.
+func releaseTag(version string) (string, error) {
+	switch version {
+	case "", "dev":
+		return "", errors.New("this is a development build (`tickets --version` reports 'dev') so there is no matching GitHub release; pass --from <path-to-obsidian-plugin> to install from a local build, or install a tagged release via Homebrew / `go install ...@vX.Y.Z`")
+	}
+	// Module pseudo-versions look like v0.0.0-20260414... — there is
+	// no corresponding release tag for those either.
+	if strings.Contains(version, "-0.") || strings.HasPrefix(version, "v0.0.0-") {
+		return "", fmt.Errorf("this binary was built from commit %q which is not a tagged release; pass --from <path-to-obsidian-plugin>, or install a tagged release", version)
+	}
+	if !strings.HasPrefix(version, "v") {
+		return "v" + version, nil
+	}
+	return version, nil
+}
+
+func ensurePluginFiles(dir string) error {
+	var missing []string
+	for _, name := range pluginFiles {
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("missing %s in %s", strings.Join(missing, ", "), dir)
+	}
+	return nil
 }
 
 // Uninstall removes the plugin directory and drops the plugin id from
@@ -195,17 +239,15 @@ type StatusReport struct {
 	Vault            string
 	Installed        bool
 	InstalledVersion string
-	BundledVersion   string
-	BundledAvailable bool
+	ExpectedVersion  string
 	Enabled          bool
 }
 
-// Status inspects vault without modifying anything.
-func Status(vault string) (StatusReport, error) {
-	r := StatusReport{Vault: vault, BundledAvailable: HasBundle()}
-	if bm, err := BundledManifest(); err == nil {
-		r.BundledVersion = bm.Version
-	}
+// Status inspects vault without modifying anything. expectedVersion is
+// the CLI's own version, used only for the "this CLI expects plugin
+// X" line in the status report.
+func Status(vault, expectedVersion string) (StatusReport, error) {
+	r := StatusReport{Vault: vault, ExpectedVersion: expectedVersion}
 	if m, err := readManifest(filepath.Join(pluginDir(vault), "manifest.json")); err == nil {
 		r.Installed = true
 		r.InstalledVersion = m.Version
