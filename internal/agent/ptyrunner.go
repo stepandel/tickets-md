@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -65,6 +66,29 @@ type PTYRunner struct {
 	sessions map[string]*ptySession
 }
 
+// ptyEnv defaults TERM/COLORTERM when unset. If `tickets watch` was
+// launched from a GUI (TERM unset or "dumb") some agents emit partial
+// ANSI, leaving literal `2;2H`-style text in the xterm.js client.
+func ptyEnv(env []string) []string {
+	hasTerm, hasColor := false, false
+	for _, kv := range env {
+		switch {
+		case strings.HasPrefix(kv, "TERM="):
+			hasTerm = true
+		case strings.HasPrefix(kv, "COLORTERM="):
+			hasColor = true
+		}
+	}
+	out := env
+	if !hasTerm {
+		out = append(out, "TERM=xterm-256color")
+	}
+	if !hasColor {
+		out = append(out, "COLORTERM=truecolor")
+	}
+	return out
+}
+
 // NewPTYRunner creates a new runner with an empty session registry.
 func NewPTYRunner() *PTYRunner {
 	return &PTYRunner{
@@ -101,6 +125,7 @@ func (r *PTYRunner) Start(name, cwd string, argv []string, logPath string, rows,
 
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Dir = cwd
+	cmd.Env = ptyEnv(os.Environ())
 
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: rows, Cols: cols})
 	if err != nil {
