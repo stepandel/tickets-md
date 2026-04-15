@@ -115,18 +115,19 @@ Examples:
 			shortPrompt := fmt.Sprintf("Read the followup context at %s and follow the instructions in it.", contextPath)
 
 			// Build argv: same agent command, no --print (interactive).
-			argv := []string{sourceRun.Agent}
-
-			// For Claude Code, generate a new session ID for tracking.
+			// Let the agent's integration inject any startup flags
+			// (e.g. a fresh session id) for run tracking.
+			var extraArgs []string
 			var sessionUUID string
-			if sourceRun.Agent == "claude" {
-				id, err := agent.NewSessionID()
+			if integ, ok := agent.Lookup(sourceRun.Agent); ok {
+				newArgs, id, err := integ.PrepareArgs(nil)
 				if err == nil {
+					extraArgs = newArgs
 					sessionUUID = id
-					argv = append(argv, "--session-id", sessionUUID)
 				}
 			}
 
+			argv := append([]string{sourceRun.Agent}, extraArgs...)
 			argv = append(argv, shortPrompt)
 
 			fmt.Fprintf(os.Stderr, "Following up on %s/%s (agent: %s)\n", ticketID, sourceRun.RunID, sourceRun.Agent)

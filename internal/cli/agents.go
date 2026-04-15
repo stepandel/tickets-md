@@ -70,11 +70,12 @@ func newAgentsPlanCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "plan <ticket-id> [run-id]",
 		Short: "Open the plan file produced by an agent run",
-		Long: `Open the plan file Claude Code wrote during an agent run.
+		Long: `Open the plan file produced during an agent run.
 
 With just a ticket id, uses the latest run. Pass an explicit run id
 (e.g. "002-prep") to inspect an earlier run. Errors if the run did
-not produce a plan (agent wasn't in plan mode, or wasn't Claude Code).`,
+not produce a plan — either the agent wasn't in plan mode, or it
+has no integration registered that can locate plan files.`,
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := openStore()

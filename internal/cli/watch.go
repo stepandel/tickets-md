@@ -396,17 +396,17 @@ func spawnAgent(t ticket.Ticket, sc stage.Config, root string, mon *agent.Monito
 
 	argv := buildAgentArgs(t, ac, wtPath)
 
-	// Give Claude Code a deterministic session id so we can find its
-	// transcript at ~/.claude/projects/<encoded-cwd>/<uuid>.jsonl
-	// after the run and pull the plan file path out of it.
+	// Let any registered agent integration inject startup flags and
+	// return a session id we persist in the run YAML — used later to
+	// locate run-produced artifacts like plan files.
 	var sessionUUID string
-	if ac.Command == "claude" {
-		id, err := agent.NewSessionID()
+	if integ, ok := agent.Lookup(ac.Command); ok {
+		newArgv, id, err := integ.PrepareArgs(argv)
 		if err != nil {
-			log.Printf("%s/%s: failed to generate session id: %v", t.ID, runID, err)
+			log.Printf("%s/%s: %s integration: %v", t.ID, runID, ac.Command, err)
 		} else {
+			argv = newArgv
 			sessionUUID = id
-			argv = append([]string{"--session-id", sessionUUID}, argv...)
 		}
 	}
 
@@ -448,9 +448,8 @@ func spawnAgent(t ticket.Ticket, sc stage.Config, root string, mon *agent.Monito
 	}
 
 	// Pin the starting directory: worktree if configured, otherwise
-	// the repo root. This keeps Claude Code's transcript path
-	// (~/.claude/projects/<encoded-cwd>/…) deterministic so
-	// waitForSession can find it after the run.
+	// the repo root. Integrations depend on a stable cwd to locate
+	// per-run artifacts (e.g. transcript paths derived from cwd).
 	cwd := wtPath
 	if cwd == "" {
 		cwd = root
@@ -549,23 +548,24 @@ func backfillPlanFiles(root string) {
 	}
 }
 
-// lookupPlanFile returns the path of the plan file Claude Code wrote
-// during this run (if any) by parsing its session transcript. An empty
-// string means no plan was produced, no Claude session id was recorded,
-// or the transcript could not be read.
+// lookupPlanFile returns the path of the plan file produced during
+// this run (if any) by delegating to the agent's integration. An
+// empty string means no plan was produced, no session id was
+// recorded, the agent has no integration registered, or the
+// integration could not read its artifact.
 func lookupPlanFile(as agent.AgentStatus, root string) string {
 	if as.SessionUUID == "" {
+		return ""
+	}
+	integ, ok := agent.Lookup(as.Agent)
+	if !ok {
 		return ""
 	}
 	cwd := as.Worktree
 	if cwd == "" {
 		cwd = root
 	}
-	transcript, err := agent.ClaudeTranscriptPath(as.SessionUUID, cwd)
-	if err != nil {
-		return ""
-	}
-	planFile, err := agent.ExtractPlanFromTranscript(transcript)
+	planFile, err := integ.ExtractPlan(as.SessionUUID, cwd)
 	if err != nil {
 		return ""
 	}
