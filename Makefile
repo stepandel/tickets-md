@@ -1,4 +1,4 @@
-.PHONY: install build check test vet release plugin-bundle plugin-zip
+.PHONY: install build check test vet release plugin-bundle plugin-zip plugin-install
 
 PLUGIN_SRC := obsidian-plugin
 # Kept outside dist/ so GoReleaser's `--clean` + "ensure dist is empty"
@@ -9,7 +9,7 @@ install: build
 	@echo "done — run 'tickets --help' to get started"
 
 build:
-	go install ./cmd/tickets
+	go install -ldflags "-X github.com/stepandel/tickets-md/internal/cli.linkerVersion=dev" ./cmd/tickets
 
 # plugin-bundle compiles the Obsidian plugin with esbuild. Outputs
 # $(PLUGIN_SRC)/main.js alongside the hand-maintained manifest.json
@@ -28,6 +28,15 @@ plugin-zip: plugin-bundle
 	@rm -f $(PLUGIN_ZIP)
 	cd $(PLUGIN_SRC) && zip -q -j ../$(PLUGIN_ZIP) main.js manifest.json styles.css
 	@echo "wrote $(PLUGIN_ZIP)"
+
+# plugin-install bundles the plugin and installs it into a vault from
+# the local build, skipping the GitHub release fetch. Pass VAULT=path
+# to target a specific vault; otherwise `tickets` finds .tickets/ or
+# an enclosing .obsidian/.
+#   make plugin-install
+#   make plugin-install VAULT=/path/to/vault
+plugin-install: plugin-bundle
+	tickets obsidian install --from $(PLUGIN_SRC) $(if $(VAULT),--vault $(VAULT))
 
 # release stamps the binary with VERSION via -ldflags so `tickets
 # --version` reports the tag. Usage: `make release VERSION=v0.1.0`.
