@@ -27,6 +27,17 @@ type DefaultAgentConfig struct {
 	Args    []string `yaml:"args,omitempty"`
 }
 
+type CleanupConfig struct {
+	Stages []CleanupStage `yaml:"stages,omitempty"`
+}
+
+type CleanupStage struct {
+	Name      string `yaml:"name"`
+	AgentData bool   `yaml:"agent_data,omitempty"`
+	Worktree  bool   `yaml:"worktree,omitempty"`
+	Branch    bool   `yaml:"branch,omitempty"`
+}
+
 // Config describes a ticket store layout. The store always lives
 // under `<root>/.tickets/`, so the only things worth configuring are
 // the ID prefix and the stage list.
@@ -40,6 +51,8 @@ type Config struct {
 	Stages []string `yaml:"stages"`
 	// DefaultAgent is the agent command used by `tickets agents run`.
 	DefaultAgent *DefaultAgentConfig `yaml:"default_agent,omitempty"`
+	// Cleanup configures the optional `tickets cleanup` stage sweep.
+	Cleanup *CleanupConfig `yaml:"cleanup,omitempty"`
 }
 
 // HasDefaultAgent reports whether a default agent is configured.
@@ -116,6 +129,21 @@ func (c Config) Validate() error {
 			return fmt.Errorf("duplicate stage %q", s)
 		}
 		seen[s] = struct{}{}
+	}
+	if c.Cleanup != nil {
+		cleanupSeen := make(map[string]struct{}, len(c.Cleanup.Stages))
+		for _, st := range c.Cleanup.Stages {
+			if st.Name == "" {
+				return errors.New("cleanup stage name is empty")
+			}
+			if _, dup := cleanupSeen[st.Name]; dup {
+				return fmt.Errorf("duplicate cleanup stage %q", st.Name)
+			}
+			if _, ok := seen[st.Name]; !ok {
+				return fmt.Errorf("unknown cleanup stage %q", st.Name)
+			}
+			cleanupSeen[st.Name] = struct{}{}
+		}
 	}
 	return nil
 }

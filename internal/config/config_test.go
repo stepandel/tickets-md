@@ -84,6 +84,39 @@ func TestSaveThenLoad(t *testing.T) {
 	}
 }
 
+func TestSaveLoadCleanupConfig(t *testing.T) {
+	root := t.TempDir()
+	want := Config{
+		Prefix: "TIC",
+		Stages: []string{"backlog", "done"},
+		Cleanup: &CleanupConfig{
+			Stages: []CleanupStage{
+				{
+					Name:      "done",
+					AgentData: true,
+					Worktree:  true,
+					Branch:    true,
+				},
+			},
+		},
+	}
+
+	if err := Save(root, want); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.Cleanup == nil || len(got.Cleanup.Stages) != 1 {
+		t.Fatalf("Cleanup = %#v, want one stage", got.Cleanup)
+	}
+	stage := got.Cleanup.Stages[0]
+	if stage.Name != "done" || !stage.AgentData || !stage.Worktree || !stage.Branch {
+		t.Fatalf("cleanup stage = %#v", stage)
+	}
+}
+
 func TestValidate(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -97,6 +130,19 @@ func TestValidate(t *testing.T) {
 		{name: "dot prefix", cfg: Config{Prefix: "TIC", Stages: []string{".hidden"}}, wantErr: "must not start with a dot"},
 		{name: "dot dot", cfg: Config{Prefix: "TIC", Stages: []string{".."}}, wantErr: "must not start with a dot"},
 		{name: "duplicate", cfg: Config{Prefix: "TIC", Stages: []string{"backlog", "backlog"}}, wantErr: "duplicate stage"},
+		{name: "unknown cleanup stage", cfg: Config{
+			Prefix:  "TIC",
+			Stages:  []string{"backlog", "done"},
+			Cleanup: &CleanupConfig{Stages: []CleanupStage{{Name: "archive", AgentData: true}}},
+		}, wantErr: `unknown cleanup stage "archive"`},
+		{name: "duplicate cleanup stage", cfg: Config{
+			Prefix: "TIC",
+			Stages: []string{"backlog", "done"},
+			Cleanup: &CleanupConfig{Stages: []CleanupStage{
+				{Name: "done", AgentData: true},
+				{Name: "done", Worktree: true},
+			}},
+		}, wantErr: `duplicate cleanup stage "done"`},
 		{name: "ok", cfg: Config{Prefix: "TIC", Stages: []string{"backlog", "done"}}},
 	}
 
