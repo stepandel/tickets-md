@@ -269,6 +269,13 @@ func (s *Store) Move(id, toStage string) (Ticket, error) {
 	if err := s.Save(t); err != nil {
 		return Ticket{}, err
 	}
+	if s.Config.IsCompleteStage(toStage) && len(t.Blocks) > 0 {
+		s.unblockDependents(t)
+		t.Blocks = nil
+		if err := s.Save(t); err != nil {
+			return Ticket{}, err
+		}
+	}
 	return t, nil
 }
 
@@ -394,6 +401,17 @@ func (s *Store) cleanupLinks(t Ticket) {
 				p.Parent = ""
 			}
 		})
+	}
+}
+
+func (s *Store) unblockDependents(t Ticket) {
+	for _, id := range t.Blocks {
+		peer, err := s.Get(id)
+		if err != nil {
+			continue
+		}
+		peer.BlockedBy = removeID(peer.BlockedBy, t.ID)
+		s.Save(peer) // best-effort
 	}
 }
 

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Boards can now opt into `complete_stages` in `.tickets/config.yml`.
+  When a ticket is moved into one of those stages through the CLI, it
+  automatically stops blocking its dependent tickets.
+
 - The CLI now checks for a newer GitHub release at most once per 24
   hours on interactive runs, caches the result in the per-user
   config, and prints a one-line stderr upgrade reminder. Set

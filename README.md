@@ -686,7 +686,9 @@ The login button doesn't respond on Safari 17...
 Most fields are optional. The **stage is not stored in the
 frontmatter** — it's the parent directory's name. That means you can
 `mv` ticket files in Finder and the CLI will see them in the right
-column on the next `list`.
+column on the next `list`, but CLI-only move side effects such as
+configured complete-stage unblocking only happen through `tickets move`
+or other commands that call `Store.Move`.
 
 The `agent_*` fields are a cache written by `tickets watch`; the
 authoritative run state lives in `.tickets/.agents/<id>/<run>.yml`. If
@@ -711,6 +713,10 @@ stages:
 # default_agent:
 #   command: claude
 #   args: []
+# Optional — when a ticket enters one of these stages via the CLI,
+# it stops blocking the tickets in its `blocks:` list.
+# complete_stages:
+#   - done
 ```
 
 - **prefix** — alphabetic prefix for ticket IDs (`TIC-001`, `TIC-002`, ...)
@@ -718,8 +724,12 @@ stages:
 - **stages** — ordered list of stage folder names. The first entry is
   the default stage for newly created tickets. Reorder, rename, or add
   stages by editing this file; the CLI picks the changes up on the next
-  invocation. The name `projects` is reserved for the project store and
-  cannot be used as a stage.
+  command invocation. The name `projects` is reserved for the project
+  store and cannot be used as a stage.
+- **complete_stages** — optional subset of `stages`. When a ticket is
+  moved into one of these stages through the CLI, its `blocks` links
+  are cleared and the peer tickets lose the matching `blocked_by`
+  entry.
 - **default_agent** — optional. The command `tickets agents run` uses
   to launch an interactive session for any ticket.
 

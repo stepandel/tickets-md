@@ -67,6 +67,9 @@ type Config struct {
 	// Stages is the ordered list of stage folder names. The first
 	// entry is treated as the default stage for new tickets.
 	Stages []string `yaml:"stages"`
+	// CompleteStages configures which stages count as complete for
+	// automatic unblocking of dependent tickets on Move.
+	CompleteStages []string `yaml:"complete_stages,omitempty"`
 	// DefaultAgent is the agent command used by `tickets agents run`.
 	DefaultAgent *DefaultAgentConfig `yaml:"default_agent,omitempty"`
 	// Cleanup configures the optional `tickets cleanup` stage sweep.
@@ -177,6 +180,16 @@ func (c Config) Validate() error {
 			cleanupSeen[st.Name] = struct{}{}
 		}
 	}
+	completeSeen := make(map[string]struct{}, len(c.CompleteStages))
+	for _, st := range c.CompleteStages {
+		if _, dup := completeSeen[st]; dup {
+			return fmt.Errorf("duplicate complete stage %q", st)
+		}
+		if _, ok := seen[st]; !ok {
+			return fmt.Errorf("unknown complete stage %q", st)
+		}
+		completeSeen[st] = struct{}{}
+	}
 	cronSeen := make(map[string]struct{}, len(c.CronAgents))
 	for _, ca := range c.CronAgents {
 		if err := ValidateCronName(ca.Name); err != nil {
@@ -257,6 +270,15 @@ func (c Config) DefaultStage() string { return c.Stages[0] }
 // HasStage reports whether name is one of the configured stages.
 func (c Config) HasStage(name string) bool {
 	for _, s := range c.Stages {
+		if s == name {
+			return true
+		}
+	}
+	return false
+}
+
+func (c Config) IsCompleteStage(name string) bool {
+	for _, s := range c.CompleteStages {
 		if s == name {
 			return true
 		}

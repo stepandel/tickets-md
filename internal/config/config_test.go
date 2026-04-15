@@ -63,6 +63,9 @@ func TestLoad_Success(t *testing.T) {
 	if len(got.Stages) != 2 || got.Stages[0] != "triage" || got.Stages[1] != "doing" {
 		t.Fatalf("unexpected stages: %#v", got.Stages)
 	}
+	if len(got.CompleteStages) != 0 {
+		t.Fatalf("unexpected complete stages: %#v", got.CompleteStages)
+	}
 	if got.DefaultAgent == nil || got.DefaultAgent.Command != "claude" || len(got.DefaultAgent.Args) != 1 || got.DefaultAgent.Args[0] != "--json" {
 		t.Fatalf("unexpected default agent: %#v", got.DefaultAgent)
 	}
@@ -137,6 +140,27 @@ func TestSaveLoadCleanupConfig(t *testing.T) {
 	}
 }
 
+func TestSaveLoadCompleteStages(t *testing.T) {
+	root := t.TempDir()
+	want := Config{
+		Prefix:         "TIC",
+		ProjectPrefix:  "PRJ",
+		Stages:         []string{"backlog", "review", "done"},
+		CompleteStages: []string{"done"},
+	}
+
+	if err := Save(root, want); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !reflect.DeepEqual(got.CompleteStages, want.CompleteStages) {
+		t.Fatalf("CompleteStages = %#v, want %#v", got.CompleteStages, want.CompleteStages)
+	}
+}
+
 func TestSaveLoadCronAgents(t *testing.T) {
 	root := t.TempDir()
 	disabled := false
@@ -205,6 +229,18 @@ func TestValidate(t *testing.T) {
 				{Name: "done", Worktree: true},
 			}},
 		}, wantErr: `duplicate cleanup stage "done"`},
+		{name: "unknown complete stage", cfg: Config{
+			Prefix:         "TIC",
+			ProjectPrefix:  "PRJ",
+			Stages:         []string{"backlog", "done"},
+			CompleteStages: []string{"archive"},
+		}, wantErr: `unknown complete stage "archive"`},
+		{name: "duplicate complete stage", cfg: Config{
+			Prefix:         "TIC",
+			ProjectPrefix:  "PRJ",
+			Stages:         []string{"backlog", "done"},
+			CompleteStages: []string{"done", "done"},
+		}, wantErr: `duplicate complete stage "done"`},
 		{name: "duplicate cron agent", cfg: Config{
 			Prefix:        "TIC",
 			ProjectPrefix: "PRJ",
@@ -356,6 +392,9 @@ func TestConfig_Helpers(t *testing.T) {
 	if cfg.HasStage("nope") {
 		t.Fatal("HasStage(nope) = true, want false")
 	}
+	if cfg.IsCompleteStage("done") {
+		t.Fatal("IsCompleteStage(done) = true, want false by default")
+	}
 	if cfg.HasDefaultAgent() {
 		t.Fatal("HasDefaultAgent() = true, want false")
 	}
@@ -376,5 +415,13 @@ func TestConfig_Helpers(t *testing.T) {
 	cfg.CronAgents = []CronAgentConfig{{Name: "groomer", Schedule: "@every 5m", Command: "claude", Prompt: "x"}}
 	if !cfg.HasCronAgents() {
 		t.Fatal("HasCronAgents() = false, want true")
+	}
+
+	cfg.CompleteStages = []string{"done"}
+	if !cfg.IsCompleteStage("done") {
+		t.Fatal("IsCompleteStage(done) = false, want true")
+	}
+	if cfg.IsCompleteStage("prep") {
+		t.Fatal("IsCompleteStage(prep) = true, want false")
 	}
 }

@@ -12,17 +12,157 @@ import (
 // the store along with a cleanup function.
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
-	root := t.TempDir()
-	c := config.Config{
+	return newTestStoreWithConfig(t, config.Config{
 		Prefix:        "T",
 		ProjectPrefix: "PRJ",
 		Stages:        []string{"backlog", "doing", "done"},
-	}
+	})
+}
+
+func newTestStoreWithConfig(t *testing.T, c config.Config) *Store {
+	t.Helper()
+	root := t.TempDir()
 	s, err := Init(root, c)
 	if err != nil {
 		t.Fatalf("Init: %v", err)
 	}
 	return s
+}
+
+func newTestStoreWithCompleteStages(t *testing.T, completeStages ...string) *Store {
+	t.Helper()
+	return newTestStoreWithConfig(t, config.Config{
+		Prefix:         "T",
+		ProjectPrefix:  "PRJ",
+		Stages:         []string{"backlog", "doing", "done"},
+		CompleteStages: completeStages,
+	})
+}
+
+func TestMoveIntoCompleteStageUnblocksDependents(t *testing.T) {
+	s := newTestStoreWithCompleteStages(t, "done")
+	blocker, _ := s.Create("Blocker")
+	blocked, _ := s.Create("Blocked")
+
+	if err := s.Link(blocked.ID, blocker.ID, "blocked_by"); err != nil {
+		t.Fatalf("Link: %v", err)
+	}
+
+	moved, err := s.Move(blocker.ID, "done")
+	if err != nil {
+		t.Fatalf("Move: %v", err)
+	}
+	if len(moved.Blocks) != 0 {
+		t.Fatalf("moved.Blocks = %v, want empty", moved.Blocks)
+	}
+
+	blocker, _ = s.Get(blocker.ID)
+	blocked, _ = s.Get(blocked.ID)
+	if len(blocker.Blocks) != 0 {
+		t.Fatalf("blocker.Blocks = %v, want empty", blocker.Blocks)
+	}
+	if containsID(blocked.BlockedBy, blocker.ID) {
+		t.Fatalf("blocked.BlockedBy = %v, want %s removed", blocked.BlockedBy, blocker.ID)
+	}
+}
+
+func TestMoveIntoNonCompleteStagePreservesBlocks(t *testing.T) {
+	s := newTestStoreWithCompleteStages(t, "done")
+	blocker, _ := s.Create("Blocker")
+	blocked, _ := s.Create("Blocked")
+
+	if err := s.Link(blocked.ID, blocker.ID, "blocked_by"); err != nil {
+		t.Fatalf("Link: %v", err)
+	}
+
+	if _, err := s.Move(blocker.ID, "doing"); err != nil {
+		t.Fatalf("Move: %v", err)
+	}
+
+	blocker, _ = s.Get(blocker.ID)
+	blocked, _ = s.Get(blocked.ID)
+	if !containsID(blocker.Blocks, blocked.ID) {
+		t.Fatalf("blocker.Blocks = %v, want %s present", blocker.Blocks, blocked.ID)
+	}
+	if !containsID(blocked.BlockedBy, blocker.ID) {
+		t.Fatalf("blocked.BlockedBy = %v, want %s present", blocked.BlockedBy, blocker.ID)
+	}
+}
+
+func TestMoveIntoCompleteStageWithoutBlocksIsOrdinaryMove(t *testing.T) {
+	s := newTestStoreWithCompleteStages(t, "done")
+	tk, _ := s.Create("Solo")
+
+	moved, err := s.Move(tk.ID, "done")
+	if err != nil {
+		t.Fatalf("Move: %v", err)
+	}
+	if moved.Stage != "done" {
+		t.Fatalf("Stage = %q, want done", moved.Stage)
+	}
+	if len(moved.Blocks) != 0 {
+		t.Fatalf("Blocks = %v, want empty", moved.Blocks)
+	}
+}
+
+func TestMoveSameStageDoesNotUnblock(t *testing.T) {
+	s := newTestStoreWithCompleteStages(t, "done")
+	blocker, _ := s.Create("Blocker")
+	blocked, _ := s.Create("Blocked")
+
+	if err := s.Link(blocked.ID, blocker.ID, "blocked_by"); err != nil {
+		t.Fatalf("Link: %v", err)
+	}
+	if _, err := s.Move(blocker.ID, "backlog"); err != nil {
+		t.Fatalf("Move: %v", err)
+	}
+
+	blocker, _ = s.Get(blocker.ID)
+	blocked, _ = s.Get(blocked.ID)
+	if !containsID(blocker.Blocks, blocked.ID) {
+		t.Fatalf("blocker.Blocks = %v, want %s present", blocker.Blocks, blocked.ID)
+	}
+	if !containsID(blocked.BlockedBy, blocker.ID) {
+		t.Fatalf("blocked.BlockedBy = %v, want %s present", blocked.BlockedBy, blocker.ID)
+	}
+}
+
+func TestMoveIntoCompleteStageWithDanglingBlockedPeerStillSucceeds(t *testing.T) {
+	s := newTestStoreWithCompleteStages(t, "done")
+	blocker, _ := s.Create("Blocker")
+	blocked, _ := s.Create("Blocked")
+
+	if err := s.Link(blocked.ID, blocker.ID, "blocked_by"); err != nil {
+		t.Fatalf("Link: %v", err)
+	}
+	if err := s.Delete(blocked.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	blocker, err := s.Get(blocker.ID)
+	if err != nil {
+		t.Fatalf("Get blocker: %v", err)
+	}
+	blocker.Blocks = appendID(blocker.Blocks, blocked.ID)
+	if err := s.Save(blocker); err != nil {
+		t.Fatalf("Save blocker with dangling block: %v", err)
+	}
+
+	moved, err := s.Move(blocker.ID, "done")
+	if err != nil {
+		t.Fatalf("Move: %v", err)
+	}
+	if len(moved.Blocks) != 0 {
+		t.Fatalf("moved.Blocks = %v, want empty", moved.Blocks)
+	}
+
+	blocker, err = s.Get(blocker.ID)
+	if err != nil {
+		t.Fatalf("Get blocker after move: %v", err)
+	}
+	if len(blocker.Blocks) != 0 {
+		t.Fatalf("blocker.Blocks = %v, want empty", blocker.Blocks)
+	}
 }
 
 func TestLinkRelated(t *testing.T) {
