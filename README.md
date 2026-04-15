@@ -199,6 +199,7 @@ setup steps.
 | `tickets rm <id> [--force]`             | Delete a ticket                                    |
 | `tickets link <a> <b> [--blocks]`       | Link two tickets (related, or directional blocks)  |
 | `tickets unlink <a> <b> [--blocks]`     | Remove a link                                      |
+| `tickets cleanup [--dry-run]`           | Remove orphaned or archived-stage agent artifacts  |
 | `tickets doctor [--dry-run]`            | Scan for drift across tickets, runs, worktrees     |
 | `tickets board`                         | Interactive kanban board TUI (alias: `tui`)        |
 | `tickets watch`                         | Watch for ticket movements and spawn agents        |
@@ -493,6 +494,40 @@ fixes them by default (or reports with `--dry-run`):
 - dangling references to tickets that no longer exist
 - one-sided links where the reciprocal is missing
 - self-referential links
+
+## Cleanup
+
+`tickets cleanup` removes leftover agent artifacts that the normal
+watcher flow does not always touch:
+
+- orphan `.tickets/.agents/<id>/` directories for tickets that no longer exist
+- orphan `.worktrees/<id>/` directories
+- orphan `tickets/<id>` branches
+- optionally, agent data/worktrees/branches for tickets that are still
+  sitting in configured archive stages such as `done`
+
+Top-level cleanup config lives in `.tickets/config.yml`:
+
+```yaml
+cleanup:
+  stages:
+    - name: done
+      agent_data: true
+      worktree: true
+      branch: true
+```
+
+Useful modes:
+
+```sh
+tickets cleanup
+tickets cleanup --dry-run
+tickets cleanup --orphans-only
+tickets cleanup --stages-only
+```
+
+The command force-deletes `tickets/<id>` branches, so run it
+deliberately and preferably while `tickets watch` is idle.
 
 ## Worktrees
 

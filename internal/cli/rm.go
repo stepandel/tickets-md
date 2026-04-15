@@ -3,10 +3,14 @@ package cli
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/stepandel/tickets-md/internal/agent"
+	"github.com/stepandel/tickets-md/internal/ticket"
 )
 
 func newRmCmd() *cobra.Command {
@@ -33,7 +37,7 @@ func newRmCmd() *cobra.Command {
 					return nil
 				}
 			}
-			if err := s.Delete(t.ID); err != nil {
+			if err := deleteTicket(s, t.ID, os.Stderr); err != nil {
 				return err
 			}
 			fmt.Printf("Deleted %s\n", t.ID)
@@ -42,4 +46,14 @@ func newRmCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "skip confirmation prompt")
 	return cmd
+}
+
+func deleteTicket(s *ticket.Store, id string, warn io.Writer) error {
+	if err := s.Delete(id); err != nil {
+		return err
+	}
+	if err := agent.RemoveTicket(s.Root, id); err != nil {
+		fmt.Fprintf(warn, "warning: failed to remove agent data for %s: %v\n", id, err)
+	}
+	return nil
 }

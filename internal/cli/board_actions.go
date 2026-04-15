@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"io"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -69,7 +70,7 @@ func (m *boardModel) applyDeleteConfirm() {
 	if !ok {
 		return
 	}
-	if err := m.store.Delete(t.ID); err != nil {
+	if err := deleteTicket(m.store, t.ID, io.Discard); err != nil {
 		m.err = err
 		return
 	}
