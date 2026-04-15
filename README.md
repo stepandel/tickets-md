@@ -181,6 +181,10 @@ Use `-C <path>` to operate on a store that isn't the current directory:
 tickets -C ~/code/acme list
 ```
 
+Prefer a board UI? Run `tickets obsidian install` and jump to the
+[Obsidian plugin](#obsidian-plugin) section for the (manual) vault
+setup steps.
+
 ## Commands
 
 | Command                                 | What it does                                       |
