@@ -14,8 +14,9 @@ func newTestStore(t *testing.T) *Store {
 	t.Helper()
 	root := t.TempDir()
 	c := config.Config{
-		Prefix: "T",
-		Stages: []string{"backlog", "doing", "done"},
+		Prefix:        "T",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "doing", "done"},
 	}
 	s, err := Init(root, c)
 	if err != nil {
@@ -249,6 +250,30 @@ func TestPriorityClearedOnSave(t *testing.T) {
 	got, _ := s.Get(a.ID)
 	if got.Priority != "" {
 		t.Errorf("expected empty priority, got %q", got.Priority)
+	}
+}
+
+func TestProjectRoundTripsThroughSaveLoad(t *testing.T) {
+	s := newTestStore(t)
+	p, err := s.CreateProject("Spring launch")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	a, err := s.Create("Alpha")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	a.Project = p.ID
+	if err := s.Save(a); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	got, err := s.Get(a.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Project != p.ID {
+		t.Fatalf("Project = %q, want %q", got.Project, p.ID)
 	}
 }
 

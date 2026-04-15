@@ -342,3 +342,34 @@ func TestDoctorSelfLink(t *testing.T) {
 		t.Error("expected self-link removed")
 	}
 }
+
+func TestDoctorDanglingProject(t *testing.T) {
+	s := newTestStore(t)
+	a, _ := s.Create("Alpha")
+	a.Project = "PRJ-999"
+	if err := s.Save(a); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	issues, err := s.Doctor(false)
+	if err != nil {
+		t.Fatalf("Doctor: %v", err)
+	}
+	if len(issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d: %v", len(issues), issues)
+	}
+	if issues[0].Kind != DanglingProject {
+		t.Fatalf("Kind = %v, want DanglingProject", issues[0].Kind)
+	}
+	if issues[0].Field != FieldProject {
+		t.Fatalf("Field = %v, want FieldProject", issues[0].Field)
+	}
+	if !issues[0].Fixed {
+		t.Fatal("expected dangling project issue to be fixed")
+	}
+
+	a, _ = s.Get(a.ID)
+	if a.Project != "" {
+		t.Fatalf("expected project to be cleared, got %q", a.Project)
+	}
+}

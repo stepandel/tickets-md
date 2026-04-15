@@ -82,6 +82,7 @@ func (s *Store) checkInitPaths() error {
 	for _, stage := range s.Config.Stages {
 		paths = append(paths, s.stageDir(stage))
 	}
+	paths = append(paths, s.projectDir())
 	for _, p := range paths {
 		if err := mustBeDirOrAbsent(p); err != nil {
 			return err
@@ -109,6 +110,9 @@ func mustBeDirOrAbsent(path string) error {
 // EnsureStageDirs creates any missing stage directories under
 // <Root>/.tickets.
 func (s *Store) EnsureStageDirs() error {
+	if err := s.EnsureProjectDir(); err != nil {
+		return err
+	}
 	for _, st := range s.Config.Stages {
 		dir := s.stageDir(st)
 		if err := os.MkdirAll(dir, 0o755); err != nil {

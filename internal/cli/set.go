@@ -13,12 +13,12 @@ import (
 // can mutate. Slice-valued fields (labels, related, blocked_by,
 // blocks) are intentionally excluded — use `tickets link` or
 // `tickets edit` for those.
-var setFields = []string{"priority", "title"}
+var setFields = []string{"priority", "project", "title"}
 
 func newSetCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "set <id> <field> <value...>",
-		Short: "Set a scalar field on a ticket (priority, title)",
+		Short: "Set a scalar field on a ticket (priority, project, title)",
 		Long: `Set a scalar field on an existing ticket.
 
 Supported fields: ` + strings.Join(setFields, ", ") + `.
@@ -41,6 +41,11 @@ quoting — all arguments after the field name are joined with spaces.`,
 			if err != nil {
 				return err
 			}
+			if field == "project" && value != "" {
+				if _, err := s.GetProject(value); err != nil {
+					return err
+				}
+			}
 			if err := setField(&t, field, value); err != nil {
 				return err
 			}
@@ -62,6 +67,8 @@ func setField(t *ticket.Ticket, field, value string) error {
 	switch field {
 	case "priority":
 		t.Priority = value
+	case "project":
+		t.Project = value
 	case "title":
 		if value == "" {
 			return fmt.Errorf("title cannot be empty")

@@ -11,7 +11,7 @@ import (
 )
 
 func newListCmd() *cobra.Command {
-	var stage string
+	var stage, project string
 	cmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
@@ -27,6 +27,7 @@ func newListCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
+				ts = filterTicketsByProject(ts, project)
 				printStage(stage, ts)
 				return nil
 			}
@@ -39,13 +40,30 @@ func newListCmd() *cobra.Command {
 				if i > 0 {
 					fmt.Println()
 				}
-				printStage(st, grouped[st])
+				printStage(st, filterTicketsByProject(grouped[st], project))
 			}
 			return nil
 		},
 	}
 	cmd.Flags().StringVarP(&stage, "stage", "s", "", "only list tickets in this stage")
+	cmd.Flags().StringVar(&project, "project", "", "only list tickets assigned to this project; use - for unassigned")
 	return cmd
+}
+
+func filterTicketsByProject(tickets []ticket.Ticket, project string) []ticket.Ticket {
+	if project == "" {
+		return tickets
+	}
+	filtered := make([]ticket.Ticket, 0, len(tickets))
+	for _, t := range tickets {
+		switch {
+		case project == "-" && t.Project == "":
+			filtered = append(filtered, t)
+		case project != "-" && t.Project == project:
+			filtered = append(filtered, t)
+		}
+	}
+	return filtered
 }
 
 // printStage renders a single stage as a header followed by a tab-aligned

@@ -13,6 +13,8 @@ const (
 	Dangling IssueKind = iota
 	// OneSided means the reciprocal link is missing on the peer.
 	OneSided
+	// DanglingProject means the referenced project does not exist.
+	DanglingProject
 )
 
 func (k IssueKind) String() string {
@@ -21,6 +23,8 @@ func (k IssueKind) String() string {
 		return "dangling"
 	case OneSided:
 		return "one-sided"
+	case DanglingProject:
+		return "dangling-project"
 	default:
 		return "unknown"
 	}
@@ -33,6 +37,7 @@ const (
 	FieldRelated LinkField = iota
 	FieldBlockedBy
 	FieldBlocks
+	FieldProject
 )
 
 func (f LinkField) String() string {
@@ -43,6 +48,8 @@ func (f LinkField) String() string {
 		return "blocked_by"
 	case FieldBlocks:
 		return "blocks"
+	case FieldProject:
+		return "project"
 	default:
 		return "unknown"
 	}
@@ -66,6 +73,8 @@ func (i Issue) String() string {
 			action = "removed"
 		case OneSided:
 			action = "added reciprocal"
+		case DanglingProject:
+			action = "cleared"
 		}
 	}
 	return fmt.Sprintf("[doctor] %s: %s %s ref %s — %s", i.TicketID, i.Kind, i.Field, i.TargetID, action)
@@ -103,6 +112,16 @@ func (s *Store) Doctor(dryRun bool) ([]Issue, error) {
 
 	for _, id := range ids {
 		t := tickets[id]
+
+		if t.Project != "" {
+			if _, err := s.GetProject(t.Project); err != nil {
+				issues = append(issues, Issue{Kind: DanglingProject, Field: FieldProject, TicketID: id, TargetID: t.Project})
+				if !dryRun {
+					t.Project = ""
+					modified[id] = true
+				}
+			}
+		}
 
 		// --- Related (symmetric) ---
 		// Snapshot the slice: removeID reuses the backing array, so
@@ -223,6 +242,15 @@ func (s *Store) DoctorTicket(id string, dryRun bool) ([]Issue, error) {
 
 	var issues []Issue
 	modified := make(map[string]*Ticket)
+
+	if t.Project != "" {
+		if _, err := s.GetProject(t.Project); err != nil {
+			issues = append(issues, Issue{Kind: DanglingProject, Field: FieldProject, TicketID: id, TargetID: t.Project})
+			if !dryRun {
+				t.Project = ""
+			}
+		}
+	}
 
 	getPeer := func(ref string) (*Ticket, bool) {
 		if p, ok := modified[ref]; ok {

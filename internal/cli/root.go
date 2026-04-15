@@ -41,6 +41,7 @@ Move tickets between stages by renaming the file across folders.`,
 	cmd.AddCommand(
 		newInitCmd(),
 		newNewCmd(),
+		newProjectsCmd(),
 		newListCmd(),
 		newShowCmd(),
 		newMoveCmd(),

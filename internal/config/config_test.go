@@ -48,7 +48,7 @@ func TestLoad_InvalidConfig(t *testing.T) {
 
 func TestLoad_Success(t *testing.T) {
 	root := t.TempDir()
-	writeConfig(t, root, "name: Board\nprefix: BUG\nstages:\n  - triage\n  - doing\ndefault_agent:\n  command: claude\n  args:\n    - --json\n")
+	writeConfig(t, root, "name: Board\nprefix: BUG\nproject_prefix: PRJ\nstages:\n  - triage\n  - doing\ndefault_agent:\n  command: claude\n  args:\n    - --json\n")
 
 	got, err := Load(root)
 	if err != nil {
@@ -57,11 +57,27 @@ func TestLoad_Success(t *testing.T) {
 	if got.Name != "Board" || got.Prefix != "BUG" {
 		t.Fatalf("unexpected config: %#v", got)
 	}
+	if got.ProjectPrefix != "PRJ" {
+		t.Fatalf("unexpected project prefix: %#v", got.ProjectPrefix)
+	}
 	if len(got.Stages) != 2 || got.Stages[0] != "triage" || got.Stages[1] != "doing" {
 		t.Fatalf("unexpected stages: %#v", got.Stages)
 	}
 	if got.DefaultAgent == nil || got.DefaultAgent.Command != "claude" || len(got.DefaultAgent.Args) != 1 || got.DefaultAgent.Args[0] != "--json" {
 		t.Fatalf("unexpected default agent: %#v", got.DefaultAgent)
+	}
+}
+
+func TestLoad_BackfillsMissingProjectPrefix(t *testing.T) {
+	root := t.TempDir()
+	writeConfig(t, root, "prefix: TIC\nstages:\n  - backlog\n  - done\n")
+
+	got, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.ProjectPrefix != "PRJ" {
+		t.Fatalf("ProjectPrefix = %q, want PRJ (backfilled)", got.ProjectPrefix)
 	}
 }
 
@@ -87,8 +103,9 @@ func TestSaveThenLoad(t *testing.T) {
 func TestSaveLoadCleanupConfig(t *testing.T) {
 	root := t.TempDir()
 	want := Config{
-		Prefix: "TIC",
-		Stages: []string{"backlog", "done"},
+		Prefix:        "TIC",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "done"},
 		Cleanup: &CleanupConfig{
 			Stages: []CleanupStage{
 				{
@@ -124,26 +141,30 @@ func TestValidate(t *testing.T) {
 		wantErr string
 	}{
 		{name: "empty prefix", cfg: Config{Stages: []string{"backlog"}}, wantErr: "prefix is empty"},
-		{name: "empty stages", cfg: Config{Prefix: "TIC"}, wantErr: "at least one stage is required"},
-		{name: "slash", cfg: Config{Prefix: "TIC", Stages: []string{"back/log"}}, wantErr: "path separators"},
-		{name: "backslash", cfg: Config{Prefix: "TIC", Stages: []string{"back\\log"}}, wantErr: "path separators"},
-		{name: "dot prefix", cfg: Config{Prefix: "TIC", Stages: []string{".hidden"}}, wantErr: "must not start with a dot"},
-		{name: "dot dot", cfg: Config{Prefix: "TIC", Stages: []string{".."}}, wantErr: "must not start with a dot"},
-		{name: "duplicate", cfg: Config{Prefix: "TIC", Stages: []string{"backlog", "backlog"}}, wantErr: "duplicate stage"},
+		{name: "empty project prefix", cfg: Config{Prefix: "TIC", Stages: []string{"backlog"}}, wantErr: "project_prefix is empty"},
+		{name: "empty stages", cfg: Config{Prefix: "TIC", ProjectPrefix: "PRJ"}, wantErr: "at least one stage is required"},
+		{name: "slash", cfg: Config{Prefix: "TIC", ProjectPrefix: "PRJ", Stages: []string{"back/log"}}, wantErr: "path separators"},
+		{name: "backslash", cfg: Config{Prefix: "TIC", ProjectPrefix: "PRJ", Stages: []string{"back\\log"}}, wantErr: "path separators"},
+		{name: "dot prefix", cfg: Config{Prefix: "TIC", ProjectPrefix: "PRJ", Stages: []string{".hidden"}}, wantErr: "must not start with a dot"},
+		{name: "dot dot", cfg: Config{Prefix: "TIC", ProjectPrefix: "PRJ", Stages: []string{".."}}, wantErr: "must not start with a dot"},
+		{name: "reserved projects", cfg: Config{Prefix: "TIC", ProjectPrefix: "PRJ", Stages: []string{"projects"}}, wantErr: "reserved"},
+		{name: "duplicate", cfg: Config{Prefix: "TIC", ProjectPrefix: "PRJ", Stages: []string{"backlog", "backlog"}}, wantErr: "duplicate stage"},
 		{name: "unknown cleanup stage", cfg: Config{
-			Prefix:  "TIC",
-			Stages:  []string{"backlog", "done"},
-			Cleanup: &CleanupConfig{Stages: []CleanupStage{{Name: "archive", AgentData: true}}},
+			Prefix:        "TIC",
+			ProjectPrefix: "PRJ",
+			Stages:        []string{"backlog", "done"},
+			Cleanup:       &CleanupConfig{Stages: []CleanupStage{{Name: "archive", AgentData: true}}},
 		}, wantErr: `unknown cleanup stage "archive"`},
 		{name: "duplicate cleanup stage", cfg: Config{
-			Prefix: "TIC",
-			Stages: []string{"backlog", "done"},
+			Prefix:        "TIC",
+			ProjectPrefix: "PRJ",
+			Stages:        []string{"backlog", "done"},
 			Cleanup: &CleanupConfig{Stages: []CleanupStage{
 				{Name: "done", AgentData: true},
 				{Name: "done", Worktree: true},
 			}},
 		}, wantErr: `duplicate cleanup stage "done"`},
-		{name: "ok", cfg: Config{Prefix: "TIC", Stages: []string{"backlog", "done"}}},
+		{name: "ok", cfg: Config{Prefix: "TIC", ProjectPrefix: "PRJ", Stages: []string{"backlog", "done"}}},
 	}
 
 	for _, tt := range tests {
@@ -173,6 +194,7 @@ func TestValidateStageName(t *testing.T) {
 		{name: "backslash", stageName: "back\\log", wantErr: "path separators"},
 		{name: "dot prefix", stageName: ".hidden", wantErr: "must not start with a dot"},
 		{name: "dot dot", stageName: "..", wantErr: "must not start with a dot"},
+		{name: "reserved", stageName: "projects", wantErr: "reserved"},
 		{name: "ok", stageName: "backlog"},
 	}
 
@@ -196,6 +218,9 @@ func TestConfig_Helpers(t *testing.T) {
 	cfg := Default()
 	if got := cfg.DefaultStage(); got != "backlog" {
 		t.Fatalf("DefaultStage() = %q, want backlog", got)
+	}
+	if cfg.ProjectPrefix != "PRJ" {
+		t.Fatalf("ProjectPrefix = %q, want PRJ", cfg.ProjectPrefix)
 	}
 	if !cfg.HasStage("prep") {
 		t.Fatal("HasStage(prep) = false, want true")
