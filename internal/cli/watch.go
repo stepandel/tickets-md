@@ -112,6 +112,12 @@ func runWatch(s *ticket.Store) error {
 	// PTY sessions don't survive watcher restart (child gets SIGHUP),
 	// so alive is always empty here. Kept for structural correctness.
 	for _, as := range alive {
+		if name, ok := agent.CronName(as.TicketID); ok {
+			log.Printf("%s/%s: re-attaching to running cron agent (session %s)", as.TicketID, as.RunID, as.Session)
+			mon.TrackRun(as.TicketID, as.RunID)
+			go waitForCronSession(name, as.RunID, as.Agent, as.Session, s.Root, mon, runner)
+			continue
+		}
 		t, terr := s.Get(as.TicketID)
 		if terr != nil {
 			log.Printf("monitor: cannot re-attach %s: %v", as.TicketID, terr)
@@ -160,6 +166,11 @@ func runWatch(s *ticket.Store) error {
 		log.Printf("watching %s/ (%s)", st, status)
 	}
 
+	cronScheduler, err := startCronScheduler(s.Root, s.Config, mon, runner)
+	if err != nil {
+		return err
+	}
+
 	// Wire the "re-run stage agent" callback now that stage configs are
 	// loaded. The terminal server exposes this via POST /rerun-stage-agent
 	// so the Obsidian plugin can manually trigger the stage agent.
@@ -176,6 +187,9 @@ func runWatch(s *ticket.Store) error {
 		select {
 		case <-sigCh:
 			log.Println("shutting down")
+			if cronScheduler != nil {
+				cronScheduler.Stop()
+			}
 			// Stop accepting new WebSocket clients before SIGTERM'ing
 			// children. Otherwise a client that attaches during the
 			// 5-second runner grace can Subscribe to a session that's
@@ -538,6 +552,10 @@ func backfillPlanFiles(root string) {
 	if err != nil {
 		log.Printf("backfill plans: list runs: %v", err)
 		return
+	}
+	cronRuns, err := agent.ListAllCronRuns(root)
+	if err == nil {
+		runs = append(runs, cronRuns...)
 	}
 	for _, as := range runs {
 		if as.SessionUUID == "" || as.PlanFile != "" {

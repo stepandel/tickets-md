@@ -221,6 +221,74 @@ func TestHarnessDoctorOrphanAgentDirDryRun(t *testing.T) {
 	}
 }
 
+func TestHarnessDoctorStaleCronRun(t *testing.T) {
+	s := newHarnessStore(t)
+	s.Config.CronAgents = []config.CronAgentConfig{
+		{Name: "groomer", Schedule: "@every 5m", Command: "claude", Prompt: "x"},
+	}
+
+	runID := agent.FormatRunID(1, "cron")
+	writeRunRaw(t, s.Root, agent.AgentStatus{
+		TicketID:  agent.CronOwnerID("groomer"),
+		RunID:     runID,
+		Seq:       1,
+		Attempt:   1,
+		Stage:     "cron",
+		Agent:     "claude",
+		Session:   ".cron-groomer-1",
+		Status:    agent.StatusRunning,
+		SpawnedAt: time.Now().Add(-48 * time.Hour).UTC().Truncate(time.Second),
+		UpdatedAt: time.Now().Add(-48 * time.Hour).UTC().Truncate(time.Second),
+		LogFile:   agent.CronLogPath(s.Root, "groomer", runID),
+	})
+
+	issues, err := HarnessDoctor(s, true, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("HarnessDoctor: %v", err)
+	}
+	var found bool
+	for _, iss := range issues {
+		if iss.Kind == StaleRun && iss.Target == agent.CronOwnerID("groomer")+"/"+runID {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected stale cron run issue, got %v", issues)
+	}
+	latest, err := agent.CronLatest(s.Root, "groomer")
+	if err != nil {
+		t.Fatalf("CronLatest: %v", err)
+	}
+	if latest.Status != agent.StatusFailed {
+		t.Fatalf("cron status = %q, want failed", latest.Status)
+	}
+}
+
+func TestHarnessDoctorOrphanCronAgentDir(t *testing.T) {
+	s := newHarnessStore(t)
+	ghostDir := agent.CronDir(s.Root, "ghost-groomer")
+	if err := os.MkdirAll(ghostDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	issues, err := HarnessDoctor(s, true, 0)
+	if err != nil {
+		t.Fatalf("HarnessDoctor: %v", err)
+	}
+	var found bool
+	for _, iss := range issues {
+		if iss.Kind == OrphanAgentDir && iss.Target == filepath.Join(".cron", "ghost-groomer") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected orphan cron agent dir issue, got %v", issues)
+	}
+	if _, err := os.Stat(ghostDir); !os.IsNotExist(err) {
+		t.Fatalf("expected %s removed, got %v", ghostDir, err)
+	}
+}
+
 func TestHarnessDoctorOrphanTmpFile(t *testing.T) {
 	s := newHarnessStore(t)
 	tk, _ := s.Create("Alpha")

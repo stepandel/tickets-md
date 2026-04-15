@@ -86,6 +86,7 @@ type AgentStatus struct {
 }
 
 const agentsDir = ".agents"
+const cronNamespace = ".cron"
 
 // Dir returns the absolute path to .tickets/.agents/.
 func Dir(root string) string {
@@ -285,7 +286,7 @@ func List(root string) ([]AgentStatus, error) {
 	}
 	var statuses []AgentStatus
 	for _, e := range entries {
-		if !e.IsDir() {
+		if !e.IsDir() || e.Name() == cronNamespace {
 			continue
 		}
 		as, err := Latest(root, e.Name())
@@ -313,7 +314,7 @@ func ListAll(root string) ([]AgentStatus, error) {
 	}
 	var all []AgentStatus
 	for _, e := range entries {
-		if !e.IsDir() {
+		if !e.IsDir() || e.Name() == cronNamespace {
 			continue
 		}
 		runs, err := History(root, e.Name())

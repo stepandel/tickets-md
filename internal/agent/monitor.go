@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -62,7 +63,7 @@ func (m *Monitor) writeAndNotify(as AgentStatus) error {
 	if err := Write(m.root, as); err != nil {
 		return err
 	}
-	if m.OnStatusChange != nil {
+	if m.OnStatusChange != nil && !IsCronOwner(as.TicketID) {
 		m.OnStatusChange(as.TicketID)
 	}
 	return nil
@@ -102,7 +103,7 @@ type AliveStatus struct {
 // new wait goroutines for them. Sessions that are gone are marked
 // failed.
 func (m *Monitor) Reconcile() ([]AliveStatus, error) {
-	statuses, err := ListAll(m.root)
+	statuses, err := m.listStatuses()
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +153,7 @@ func (m *Monitor) Run(ctx context.Context) {
 const staleAge = 24 * time.Hour
 
 func (m *Monitor) poll() {
-	statuses, err := ListAll(m.root)
+	statuses, err := m.listStatuses()
 	if err != nil {
 		log.Printf("monitor: failed to list statuses: %v", err)
 		return
@@ -233,6 +234,25 @@ func (m *Monitor) poll() {
 		if !e.IsDir() {
 			continue
 		}
+		if e.Name() == cronNamespace {
+			cronEntries, err := os.ReadDir(filepath.Join(Dir(m.root), cronNamespace))
+			if err != nil {
+				continue
+			}
+			for _, ce := range cronEntries {
+				if !ce.IsDir() {
+					continue
+				}
+				ownerID := CronOwnerID(ce.Name())
+				if ticketsWithLiveRuns[ownerID] {
+					continue
+				}
+				if err := RemoveCron(m.root, ce.Name()); err != nil {
+					log.Printf("monitor: failed to prune %s: %v", ownerID, err)
+				}
+			}
+			continue
+		}
 		if ticketsWithLiveRuns[e.Name()] {
 			continue
 		}
@@ -240,4 +260,16 @@ func (m *Monitor) poll() {
 			log.Printf("monitor: failed to prune %s: %v", e.Name(), err)
 		}
 	}
+}
+
+func (m *Monitor) listStatuses() ([]AgentStatus, error) {
+	runs, err := ListAll(m.root)
+	if err != nil {
+		return nil, err
+	}
+	cronRuns, err := ListAllCronRuns(m.root)
+	if err != nil {
+		return nil, err
+	}
+	return append(runs, cronRuns...), nil
 }

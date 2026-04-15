@@ -65,6 +65,21 @@ func TestFindOrphanAgentIDs(t *testing.T) {
 	}
 }
 
+func TestFindOrphanAgentIDsSkipsCronNamespace(t *testing.T) {
+	s := newCleanupStore(t)
+	if err := os.MkdirAll(agent.CronDir(s.Root, "groomer"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	ids, err := findOrphanAgentIDs(s)
+	if err != nil {
+		t.Fatalf("findOrphanAgentIDs: %v", err)
+	}
+	if len(ids) != 0 {
+		t.Fatalf("ids = %v, want empty — cron dir must not be flagged as an orphan ticket", ids)
+	}
+}
+
 func TestFindOrphanWorktreeAndBranchIDs(t *testing.T) {
 	s := newCleanupStore(t)
 	if _, err := worktree.Create(s.Root, "TIC-999", ""); err != nil {

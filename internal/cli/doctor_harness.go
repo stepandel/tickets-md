@@ -109,11 +109,15 @@ func HarnessDoctor(s *ticket.Store, fix bool, staleAfter time.Duration) ([]Harne
 			knownTickets[t.ID] = t
 		}
 	}
+	knownCronAgents := make(map[string]struct{}, len(s.Config.CronAgents))
+	for _, ca := range s.Config.CronAgents {
+		knownCronAgents[ca.Name] = struct{}{}
+	}
 
 	var issues []HarnessIssue
 
 	issues = append(issues, checkStaleRuns(root, fix, staleAfter)...)
-	issues = append(issues, checkOrphanAgentDirs(root, fix, knownTickets)...)
+	issues = append(issues, checkOrphanAgentDirs(root, fix, knownTickets, knownCronAgents)...)
 	issues = append(issues, checkOrphanTmpFiles(root, fix)...)
 	issues = append(issues, checkOrphanWorktrees(root, fix, knownTickets)...)
 	issues = append(issues, checkFrontmatterDrift(s, fix, knownTickets)...)
@@ -128,6 +132,10 @@ func checkStaleRuns(root string, fix bool, staleAfter time.Duration) []HarnessIs
 	runs, err := agent.ListAll(root)
 	if err != nil {
 		return nil
+	}
+	cronRuns, err := agent.ListAllCronRuns(root)
+	if err == nil {
+		runs = append(runs, cronRuns...)
 	}
 	var issues []HarnessIssue
 	cutoff := time.Now().Add(-staleAfter)
@@ -159,7 +167,7 @@ func checkStaleRuns(root string, fix bool, staleAfter time.Duration) []HarnessIs
 
 // checkOrphanAgentDirs finds subdirectories of .tickets/.agents/ whose
 // ticket id no longer exists anywhere in the store.
-func checkOrphanAgentDirs(root string, fix bool, known map[string]ticket.Ticket) []HarnessIssue {
+func checkOrphanAgentDirs(root string, fix bool, known map[string]ticket.Ticket, knownCronAgents map[string]struct{}) []HarnessIssue {
 	dir := agent.Dir(root)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -171,6 +179,35 @@ func checkOrphanAgentDirs(root string, fix bool, known map[string]ticket.Ticket)
 			continue
 		}
 		id := e.Name()
+		if id == ".cron" {
+			cronEntries, err := os.ReadDir(filepath.Join(dir, id))
+			if err != nil {
+				continue
+			}
+			for _, ce := range cronEntries {
+				if !ce.IsDir() {
+					continue
+				}
+				name := ce.Name()
+				if _, ok := knownCronAgents[name]; ok {
+					continue
+				}
+				iss := HarnessIssue{
+					Kind:    OrphanAgentDir,
+					Target:  filepath.Join(id, name),
+					Message: "cron agent dir exists but no cron agent is configured",
+				}
+				if fix {
+					if err := agent.RemoveCron(root, name); err == nil {
+						iss.Fixed = true
+					} else {
+						iss.Message = fmt.Sprintf("%s — fix failed: %v", iss.Message, err)
+					}
+				}
+				issues = append(issues, iss)
+			}
+			continue
+		}
 		if _, ok := known[id]; ok {
 			continue
 		}
@@ -204,30 +241,48 @@ func checkOrphanTmpFiles(root string, fix bool) []HarnessIssue {
 		if !e.IsDir() {
 			continue
 		}
-		ticketDir := filepath.Join(dir, e.Name())
-		runEntries, err := os.ReadDir(ticketDir)
-		if err != nil {
-			continue
-		}
-		for _, re := range runEntries {
-			if re.IsDir() || !strings.HasSuffix(re.Name(), ".yml.tmp") {
+		if e.Name() == ".cron" {
+			cronEntries, err := os.ReadDir(filepath.Join(dir, e.Name()))
+			if err != nil {
 				continue
 			}
-			path := filepath.Join(ticketDir, re.Name())
-			iss := HarnessIssue{
-				Kind:    OrphanTmp,
-				Target:  filepath.Join(e.Name(), re.Name()),
-				Message: "leftover temp file from interrupted rename",
-			}
-			if fix {
-				if err := os.Remove(path); err == nil {
-					iss.Fixed = true
-				} else {
-					iss.Message = fmt.Sprintf("%s — fix failed: %v", iss.Message, err)
+			for _, ce := range cronEntries {
+				if !ce.IsDir() {
+					continue
 				}
+				issues = append(issues, scanOrphanTmpDir(filepath.Join(dir, e.Name(), ce.Name()), filepath.Join(e.Name(), ce.Name()), fix)...)
 			}
-			issues = append(issues, iss)
+			continue
 		}
+		issues = append(issues, scanOrphanTmpDir(filepath.Join(dir, e.Name()), e.Name(), fix)...)
+	}
+	return issues
+}
+
+func scanOrphanTmpDir(dir, targetPrefix string, fix bool) []HarnessIssue {
+	runEntries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var issues []HarnessIssue
+	for _, re := range runEntries {
+		if re.IsDir() || !strings.HasSuffix(re.Name(), ".yml.tmp") {
+			continue
+		}
+		path := filepath.Join(dir, re.Name())
+		iss := HarnessIssue{
+			Kind:    OrphanTmp,
+			Target:  filepath.Join(targetPrefix, re.Name()),
+			Message: "leftover temp file from interrupted rename",
+		}
+		if fix {
+			if err := os.Remove(path); err == nil {
+				iss.Fixed = true
+			} else {
+				iss.Message = fmt.Sprintf("%s — fix failed: %v", iss.Message, err)
+			}
+		}
+		issues = append(issues, iss)
 	}
 	return issues
 }
