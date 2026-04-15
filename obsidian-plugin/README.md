@@ -31,20 +31,19 @@ tickets obsidian install
 See the root [README](../README.md#obsidian-plugin) for the full
 flow.
 
-For plugin development against a local build:
+For plugin development against a local build, from the repo root:
 
 ```sh
-cd obsidian-plugin
-npm ci
-npm run build
-tickets obsidian install --from .
+make plugin-install                       # installs into ./.tickets or enclosing vault
+make plugin-install VAULT=~/Vaults/Work   # or target a specific vault
 ```
 
-`--from` reads `main.js`, `manifest.json`, and `styles.css` from the
-given directory and copies them into the vault's
-`.obsidian/plugins/tickets-board/` directory — no network, no cache,
-no release tag required. Works with any CLI version (including
-`dev` builds).
+That bundles the plugin with esbuild and runs
+`tickets obsidian install --from obsidian-plugin`, which reads
+`main.js`, `manifest.json`, and `styles.css` from the directory and
+copies them into the vault's `.obsidian/plugins/tickets-board/` — no
+network, no cache, no release tag required. Works with any CLI
+version (including `dev` builds).
 
 After installing, enable **Tickets Board** in Obsidian under
 *Settings → Community plugins*.
