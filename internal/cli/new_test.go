@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stepandel/tickets-md/internal/config"
@@ -52,6 +53,25 @@ func TestNewCommandWithParent(t *testing.T) {
 	}
 }
 
+func TestNewCommandWithBody(t *testing.T) {
+	s := newCLITestStore(t)
+
+	globalFlags.root = s.Root
+	cmd := newNewCmd()
+	cmd.SetArgs([]string{"--body", "## Description\n\nDetailed body.", "Body title"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	created, err := s.Get("TIC-001")
+	if err != nil {
+		t.Fatalf("Get created: %v", err)
+	}
+	if strings.TrimLeft(created.Body, "\n") != "## Description\n\nDetailed body.\n" {
+		t.Fatalf("expected custom body, got %q", created.Body)
+	}
+}
+
 func TestNewCommandWithParentAndPriority(t *testing.T) {
 	s := newCLITestStore(t)
 	parent, err := s.Create("Parent")
@@ -69,6 +89,43 @@ func TestNewCommandWithParentAndPriority(t *testing.T) {
 	child, err := s.Get("TIC-002")
 	if err != nil {
 		t.Fatalf("Get child: %v", err)
+	}
+	if child.Parent != parent.ID {
+		t.Fatalf("expected child parent %s, got %q", parent.ID, child.Parent)
+	}
+	if child.Priority != "high" {
+		t.Fatalf("expected child priority high, got %q", child.Priority)
+	}
+
+	parent, err = s.Get(parent.ID)
+	if err != nil {
+		t.Fatalf("Get parent: %v", err)
+	}
+	if len(parent.Children) != 1 || parent.Children[0] != child.ID {
+		t.Fatalf("expected parent children [%s], got %v", child.ID, parent.Children)
+	}
+}
+
+func TestNewCommandWithBodyParentAndPriority(t *testing.T) {
+	s := newCLITestStore(t)
+	parent, err := s.Create("Parent")
+	if err != nil {
+		t.Fatalf("Create parent: %v", err)
+	}
+
+	globalFlags.root = s.Root
+	cmd := newNewCmd()
+	cmd.SetArgs([]string{"--body", "## Description\n\nDetailed body.", "--parent", parent.ID, "--priority", "high", "Child"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	child, err := s.Get("TIC-002")
+	if err != nil {
+		t.Fatalf("Get child: %v", err)
+	}
+	if strings.TrimLeft(child.Body, "\n") != "## Description\n\nDetailed body.\n" {
+		t.Fatalf("expected child body to be preserved, got %q", child.Body)
 	}
 	if child.Parent != parent.ID {
 		t.Fatalf("expected child parent %s, got %q", parent.ID, child.Parent)
