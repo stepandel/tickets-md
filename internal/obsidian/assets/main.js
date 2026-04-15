@@ -12844,6 +12844,7 @@ var DiffView = class extends import_obsidian.ItemView {
 var AgentsView = class extends import_obsidian.ItemView {
   tickets = [];
   previewLeaf = null;
+  longPressTriggered = false;
   getViewType() {
     return AGENTS_VIEW_TYPE;
   }
@@ -12913,6 +12914,10 @@ var AgentsView = class extends import_obsidian.ItemView {
   renderRow(parent, ticket) {
     const row = parent.createDiv({ cls: "tb-agent-row" });
     row.addEventListener("click", async () => {
+      if (this.longPressTriggered) {
+        this.longPressTriggered = false;
+        return;
+      }
       if (!this.previewLeaf || !this.previewLeaf.view?.containerEl?.isConnected) {
         this.previewLeaf = this.app.workspace.getLeaf(import_obsidian.Platform.isMobile ? "tab" : "split");
       }
@@ -12988,6 +12993,7 @@ var AgentsView = class extends import_obsidian.ItemView {
       startY = e.touches[0].clientY;
       timeout = setTimeout(() => {
         timeout = null;
+        this.longPressTriggered = true;
         navigator.vibrate?.(50);
         callback(startX, startY);
       }, delay);
@@ -13006,12 +13012,18 @@ var AgentsView = class extends import_obsidian.ItemView {
         clearTimeout(timeout);
         timeout = null;
       }
+      if (this.longPressTriggered) {
+        setTimeout(() => {
+          this.longPressTriggered = false;
+        }, 0);
+      }
     });
     el2.addEventListener("touchcancel", () => {
       if (timeout) {
         clearTimeout(timeout);
         timeout = null;
       }
+      this.longPressTriggered = false;
     });
   }
   async onClose() {

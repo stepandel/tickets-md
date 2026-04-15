@@ -1384,6 +1384,7 @@ class DiffView extends ItemView {
 class AgentsView extends ItemView {
 	private tickets: Ticket[] = [];
 	private previewLeaf: WorkspaceLeaf | null = null;
+	private longPressTriggered = false;
 
 	getViewType(): string {
 		return AGENTS_VIEW_TYPE;
@@ -1468,6 +1469,10 @@ class AgentsView extends ItemView {
 		const row = parent.createDiv({ cls: "tb-agent-row" });
 
 		row.addEventListener("click", async () => {
+			if (this.longPressTriggered) {
+				this.longPressTriggered = false;
+				return;
+			}
 			if (!this.previewLeaf || !this.previewLeaf.view?.containerEl?.isConnected) {
 				this.previewLeaf = this.app.workspace.getLeaf(Platform.isMobile ? "tab" : "split");
 			}
@@ -1549,6 +1554,7 @@ class AgentsView extends ItemView {
 			startY = e.touches[0].clientY;
 			timeout = setTimeout(() => {
 				timeout = null;
+				this.longPressTriggered = true;
 				navigator.vibrate?.(50);
 				callback(startX, startY);
 			}, delay);
@@ -1564,9 +1570,13 @@ class AgentsView extends ItemView {
 		});
 		el.addEventListener("touchend", () => {
 			if (timeout) { clearTimeout(timeout); timeout = null; }
+			if (this.longPressTriggered) {
+				setTimeout(() => { this.longPressTriggered = false; }, 0);
+			}
 		});
 		el.addEventListener("touchcancel", () => {
 			if (timeout) { clearTimeout(timeout); timeout = null; }
+			this.longPressTriggered = false;
 		});
 	}
 
