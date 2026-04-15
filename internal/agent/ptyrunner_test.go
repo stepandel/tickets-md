@@ -27,24 +27,33 @@ func TestTrimReplay_CutsAtResetSequence(t *testing.T) {
 	}
 }
 
-func TestTrimReplay_FallsBackToEscBoundary(t *testing.T) {
-	// No reset sequence anywhere — but there's a cursor-position
-	// escape past the cut point. trimReplay must start at that ESC,
-	// never slice it in half.
+func TestTrimReplay_FallsBackToSyntheticReset(t *testing.T) {
+	// No reset sequence in the retained window — but there's a
+	// cursor-position escape past the cut point. trimReplay must
+	// prepend a synthetic reset and resume at that ESC, never slicing
+	// it in half.
 	prefix := strings.Repeat("A", maxReplayBytes+100)
 	buf := append([]byte(prefix), []byte("\x1b[42;2Htail")...)
 
 	got := trimReplay(buf)
-	if got[0] != 0x1b {
-		t.Fatalf("expected trim to start at ESC, got 0x%02x (%q)", got[0], got[:min(len(got), 16)])
+	if !bytes.HasPrefix(got, syntheticResetPrefix) {
+		t.Fatalf("expected synthetic reset prefix, got %q", got[:min(len(got), 40)])
+	}
+	if !bytes.HasSuffix(got, []byte("\x1b[42;2Htail")) {
+		t.Fatalf("expected cut to resume at ESC, got tail %q", got[max(0, len(got)-16):])
 	}
 }
 
-func TestTrimReplay_NoEscapeSequencesTrimsByBytes(t *testing.T) {
-	// Pure text, no escapes — just enforce the cap.
+func TestTrimReplay_NoEscapeSequencesSynthesizesReset(t *testing.T) {
+	// Pure text, no escapes — still needs a clean start, so we expect
+	// the synthetic reset prefix followed by the tail.
 	buf := bytes.Repeat([]byte("x"), maxReplayBytes+500)
 	got := trimReplay(buf)
-	if len(got) != maxReplayBytes {
-		t.Fatalf("expected len %d, got %d", maxReplayBytes, len(got))
+	if !bytes.HasPrefix(got, syntheticResetPrefix) {
+		t.Fatalf("expected synthetic reset prefix, got %q", got[:min(len(got), 40)])
+	}
+	expected := len(syntheticResetPrefix) + maxReplayBytes
+	if len(got) != expected {
+		t.Fatalf("expected len %d, got %d", expected, len(got))
 	}
 }

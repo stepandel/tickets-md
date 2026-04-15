@@ -340,11 +340,17 @@ func (s *ptySession) fanOut(data []byte) {
 	}
 }
 
+// syntheticResetPrefix takes xterm.js to a clean, well-defined state
+// so replay bytes are interpreted on a blank screen. Used when the
+// retained window contains no reset sequence we can cut at.
+var syntheticResetPrefix = []byte("\x1b[?25h\x1b[0m\x1b[?1049l\x1b[3J\x1b[2J\x1b[H")
+
 // trimReplay caps buf at maxReplayBytes, preferring to cut at a
 // frame-reset escape sequence (clear-screen, alt-screen toggle, RIS)
-// so the client's first byte is well-defined. Falls back to the next
-// ESC boundary so we never slice a sequence in half — which is what
-// leaves `[42;2H`-style garbage at the top of the screen on reconnect.
+// so the client's first byte is well-defined. If no reset exists in
+// the retained window, cuts at the next ESC and prepends a synthetic
+// reset so the client starts from a clean screen instead of replaying
+// mid-frame cursor-positioned fragments.
 func trimReplay(buf []byte) []byte {
 	if len(buf) <= maxReplayBytes {
 		return buf
@@ -361,10 +367,14 @@ func trimReplay(buf []byte) []byte {
 		return buf[best:]
 	}
 
+	cut := start
 	if idx := bytes.IndexByte(buf[start:], 0x1b); idx >= 0 {
-		return buf[start+idx:]
+		cut = start + idx
 	}
-	return buf[start:]
+	out := make([]byte, 0, len(syntheticResetPrefix)+len(buf)-cut)
+	out = append(out, syntheticResetPrefix...)
+	out = append(out, buf[cut:]...)
+	return out
 }
 
 // closeAllSubs closes all subscriber channels and marks the session
