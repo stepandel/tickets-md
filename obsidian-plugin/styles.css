@@ -786,6 +786,28 @@ body.is-mobile .tb-board-title:hover {
 	height: 100%;
 }
 
+.tb-agents-section {
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+}
+
+.tb-agents-section-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 10px 12px 6px;
+}
+
+.tb-agents-section-title {
+	margin: 0;
+	font-size: 0.8em;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--text-muted);
+}
+
 .tb-agents-list {
 	flex: 1;
 	overflow-y: auto;
@@ -840,6 +862,43 @@ body.is-mobile .tb-board-title:hover {
 	font-size: 0.75em;
 	color: var(--text-faint);
 	font-family: var(--font-monospace);
+}
+
+.tb-crons-section {
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+.tb-cron-row {
+	align-items: flex-start;
+}
+
+.tb-cron-disabled {
+	opacity: 0.65;
+}
+
+.tb-cron-meta {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+
+.tb-cron-schedule {
+	font-size: 0.78em;
+	font-family: var(--font-monospace);
+	color: var(--text-muted);
+}
+
+.tb-cron-enabled {
+	font-size: 0.72em;
+	font-weight: 700;
+	letter-spacing: 0.03em;
+	text-transform: uppercase;
+	color: #00b368;
+}
+
+.tb-cron-enabled-off {
+	color: #e5534b;
 }
 
 /* ── Projects View ─────────────────────────────────────────────────── */

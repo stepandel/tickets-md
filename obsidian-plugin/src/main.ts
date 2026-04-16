@@ -27,6 +27,7 @@ interface TicketsConfig {
 	project_prefix?: string;
 	stages: string[];
 	default_agent?: { command: string; args?: string[] };
+	cron_agents?: CronAgentConfig[];
 }
 
 interface Ticket {
@@ -57,6 +58,31 @@ interface Project {
 	file: TFile;
 }
 
+interface CronAgentConfig {
+	name: string;
+	schedule: string;
+	command: string;
+	args?: string[];
+	prompt: string;
+	worktree?: boolean;
+	base_branch?: string;
+	enabled?: boolean;
+}
+
+interface AgentRun {
+	run_id: string;
+	status?: string;
+	session?: string;
+	spawned_at?: string;
+	updated_at?: string;
+	log_file?: string;
+}
+
+interface CronAgentRow {
+	config: CronAgentConfig;
+	lastRun: AgentRun | null;
+}
+
 const AGENT_BADGES: Record<string, { icon: string; cls: string }> = {
 	spawned:  { icon: "\u25D0", cls: "tb-agent-spawned" },
 	running:  { icon: "\u25CF", cls: "tb-agent-running" },
@@ -72,6 +98,15 @@ interface StageAgentConfig {
 	worktree: boolean;
 	baseBranch: string;
 	prompt: string;
+}
+
+interface EditableCronAgentConfig {
+	name: string;
+	schedule: string;
+	command: string;
+	args: string;
+	prompt: string;
+	enabled: boolean;
 }
 
 // ── Constants ──────────────────────────────────────────────────────────
@@ -95,6 +130,12 @@ async function loadConfig(app: import("obsidian").App): Promise<TicketsConfig | 
 	if (!(file instanceof TFile)) return null;
 	const raw = await app.vault.read(file);
 	return parseYaml(raw) as TicketsConfig;
+}
+
+async function writeConfig(app: import("obsidian").App, config: TicketsConfig): Promise<void> {
+	const file = app.vault.getAbstractFileByPath(CONFIG_PATH);
+	if (!(file instanceof TFile)) return;
+	await app.vault.modify(file, stringifyYaml(config));
 }
 
 function nowTimestamp(): string {
@@ -256,6 +297,80 @@ async function loadTickets(app: import("obsidian").App, stages: string[]): Promi
 		}
 	}
 	return tickets;
+}
+
+function cronAgentEnabled(config: CronAgentConfig): boolean {
+	return config.enabled !== false;
+}
+
+function cronAgentEntriesEqual(a: CronAgentConfig, b: CronAgentConfig): boolean {
+	return stringifyYaml(a) === stringifyYaml(b);
+}
+
+function parseCronAgentConfig(config: CronAgentConfig): EditableCronAgentConfig {
+	return {
+		name: config.name,
+		schedule: config.schedule ?? "",
+		command: config.command ?? "",
+		args: Array.isArray(config.args) ? config.args.join(", ") : "",
+		prompt: config.prompt ?? "",
+		enabled: cronAgentEnabled(config),
+	};
+}
+
+function formatElapsedSince(timestamp?: string): string {
+	if (!timestamp) return "\u2014";
+	const then = new Date(timestamp);
+	if (Number.isNaN(then.getTime())) return "\u2014";
+	const diffMs = Date.now() - then.getTime();
+	if (diffMs < 0) return "\u2014";
+	const totalSeconds = Math.floor(diffMs / 1000);
+	if (totalSeconds < 60) return `${totalSeconds}s`;
+	if (totalSeconds < 3600) return `${Math.floor(totalSeconds / 60)}m`;
+	if (totalSeconds < 86400) return `${Math.floor(totalSeconds / 3600)}h`;
+	return `${Math.floor(totalSeconds / 86400)}d`;
+}
+
+function validateCronAgent(config: EditableCronAgentConfig): string | null {
+	if (!config.name.trim()) return "Cron name is required";
+	if (!config.schedule.trim()) return "Cron schedule is required";
+	if (!config.command.trim()) return "Cron command is required";
+	if (!config.prompt.trim()) return "Cron prompt is required";
+	return null;
+}
+
+function isCronRunPath(path: string): boolean {
+	return path.startsWith(".agents/.cron/") && path.endsWith(".yml");
+}
+
+function cronLogPath(name: string, runID: string): string {
+	return `.agents/.cron/${name}/runs/${runID}.log`;
+}
+
+async function loadLatestCronRun(
+	app: import("obsidian").App,
+	name: string,
+): Promise<AgentRun | null> {
+	const adapter = app.vault.adapter;
+	const dir = `.agents/.cron/${name}`;
+	if (!(await adapter.exists(dir))) return null;
+
+	try {
+		const listed = await adapter.list(dir);
+		const latest = listed.files
+			.filter((path) => path.endsWith(".yml"))
+			.map((path) => {
+				const base = path.split("/").pop() ?? path;
+				const seq = parseInt(base.match(/^(\d+)-/)?.[1] ?? "", 10);
+				return { path, seq: Number.isFinite(seq) ? seq : -1 };
+			})
+			.sort((a, b) => b.seq - a.seq || b.path.localeCompare(a.path))[0];
+		if (!latest) return null;
+		const raw = await adapter.read(latest.path);
+		return (parseYaml(raw) ?? null) as AgentRun | null;
+	} catch {
+		return null;
+	}
 }
 
 function hasActiveAgent(ticket: Ticket): boolean {
@@ -1205,19 +1320,7 @@ class BoardView extends ItemView {
 	// ── Config Writing ─────────────────────────────────────────────────
 
 	private async saveConfig(config: TicketsConfig) {
-		const lines: string[] = [];
-		if (config.name) {
-			lines.push(`name: ${config.name}`);
-		}
-		lines.push(`prefix: ${config.prefix}`);
-		lines.push("stages:");
-		for (const s of config.stages) {
-			lines.push(`    - ${s}`);
-		}
-		const file = this.app.vault.getAbstractFileByPath(CONFIG_PATH);
-		if (file instanceof TFile) {
-			await this.app.vault.modify(file, lines.join("\n") + "\n");
-		}
+		await writeConfig(this.app, config);
 	}
 
 	// ── Open Stage Config ──────────────────────────────────────────────
@@ -1644,6 +1747,7 @@ class DiffView extends ItemView {
 
 class AgentsView extends ItemView {
 	private tickets: Ticket[] = [];
+	private cronAgents: CronAgentRow[] = [];
 	private previewLeaf: WorkspaceLeaf | null = null;
 	private longPressTriggered = false;
 
@@ -1666,7 +1770,7 @@ class AgentsView extends ItemView {
 		this.registerEvent(this.app.vault.on("delete", () => this.refresh()));
 		this.registerEvent(this.app.vault.on("rename", () => this.refresh()));
 		this.registerEvent(this.app.vault.on("modify", (f) => {
-			if (f instanceof TFile && (f.extension === "md" || f.path === CONFIG_PATH)) {
+			if (f instanceof TFile && (f.extension === "md" || f.path === CONFIG_PATH || isCronRunPath(f.path))) {
 				this.refresh();
 			}
 		}));
@@ -1692,6 +1796,13 @@ class AgentsView extends ItemView {
 				if (au !== bu) return au < bu ? 1 : -1;
 				return a.id.localeCompare(b.id, undefined, { numeric: true });
 			});
+		this.cronAgents = await Promise.all(
+			(config.cron_agents ?? []).map(async (cron) => ({
+				config: cron,
+				lastRun: await loadLatestCronRun(this.app, cron.name),
+			})),
+		);
+		this.cronAgents.sort((a, b) => a.config.name.localeCompare(b.config.name));
 		this.render();
 	}
 
@@ -1703,11 +1814,12 @@ class AgentsView extends ItemView {
 		const header = container.createDiv({ cls: "tb-header" });
 		header.createEl("h2", { text: "Agents", cls: "tb-board-title" });
 		const actions = header.createDiv({ cls: "tb-header-actions" });
+		const totalCount = this.tickets.length + this.cronAgents.length;
 		const count = actions.createEl("span", {
-			text: String(this.tickets.length),
+			text: String(totalCount),
 			cls: "tb-count",
 		});
-		count.setAttribute("aria-label", `${this.tickets.length} active agents`);
+		count.setAttribute("aria-label", `${totalCount} agent rows`);
 		const refreshBtn = actions.createEl("button", {
 			cls: "tb-header-btn",
 			attr: { "aria-label": "Refresh agents" },
@@ -1715,14 +1827,29 @@ class AgentsView extends ItemView {
 		refreshBtn.textContent = "\u21BB";
 		refreshBtn.addEventListener("click", () => this.refresh());
 
-		if (this.tickets.length === 0) {
-			container.createDiv({ cls: "tb-empty", text: "No active agents" });
+		if (totalCount === 0) {
+			container.createDiv({ cls: "tb-empty", text: "No active agents or cron agents" });
 			return;
 		}
 
-		const list = container.createDiv({ cls: "tb-agents-list" });
-		for (const ticket of this.tickets) {
-			this.renderRow(list, ticket);
+		if (this.tickets.length > 0) {
+			const section = container.createDiv({ cls: "tb-agents-section" });
+			const sectionHeader = section.createDiv({ cls: "tb-agents-section-header" });
+			sectionHeader.createEl("h3", { text: "Tickets", cls: "tb-agents-section-title" });
+			const list = section.createDiv({ cls: "tb-agents-list" });
+			for (const ticket of this.tickets) {
+				this.renderRow(list, ticket);
+			}
+		}
+
+		if (this.cronAgents.length > 0) {
+			const section = container.createDiv({ cls: "tb-agents-section tb-crons-section" });
+			const sectionHeader = section.createDiv({ cls: "tb-agents-section-header" });
+			sectionHeader.createEl("h3", { text: "Crons", cls: "tb-agents-section-title" });
+			const list = section.createDiv({ cls: "tb-agents-list" });
+			for (const cron of this.cronAgents) {
+				this.renderCronRow(list, cron);
+			}
 		}
 	}
 
@@ -1805,6 +1932,154 @@ class AgentsView extends ItemView {
 			}),
 		);
 		return menu;
+	}
+
+	private renderCronRow(parent: HTMLElement, cron: CronAgentRow) {
+		const row = parent.createDiv({
+			cls: `tb-agent-row tb-cron-row${cronAgentEnabled(cron.config) ? "" : " tb-cron-disabled"}`,
+		});
+
+		row.addEventListener("contextmenu", (e) => {
+			e.preventDefault();
+			this.buildCronMenu(cron).showAtMouseEvent(e);
+		});
+		if (Platform.isMobile) {
+			this.onLongPress(row, (x, y) => {
+				this.buildCronMenu(cron).showAtPosition({ x, y });
+			});
+		}
+
+		const left = row.createDiv({ cls: "tb-agent-row-left" });
+		if (cron.lastRun?.status && AGENT_BADGES[cron.lastRun.status]) {
+			const badge = AGENT_BADGES[cron.lastRun.status];
+			left.createEl("span", {
+				text: badge.icon,
+				cls: `tb-agent-badge ${badge.cls}`,
+				attr: { "aria-label": cron.lastRun.status },
+			});
+		} else {
+			left.createEl("span", {
+				text: "\u2014",
+				cls: "tb-agent-badge tb-agent-updated",
+				attr: { "aria-label": "no runs" },
+			});
+		}
+		left.createEl("span", { text: cron.config.name, cls: "tb-ticket-id" });
+		left.createEl("span", { text: cron.config.command, cls: "tb-agent-row-title" });
+
+		const meta = left.createDiv({ cls: "tb-cron-meta" });
+		meta.createEl("span", { text: cron.config.schedule, cls: "tb-cron-schedule" });
+		meta.createEl("span", {
+			text: cronAgentEnabled(cron.config) ? "enabled" : "disabled",
+			cls: `tb-cron-enabled${cronAgentEnabled(cron.config) ? "" : " tb-cron-enabled-off"}`,
+		});
+
+		const right = row.createDiv({ cls: "tb-agent-row-right" });
+		right.createEl("span", {
+			text: cron.lastRun?.run_id ?? "\u2014",
+			cls: "tb-agent-session",
+		});
+		if (cron.lastRun?.status) {
+			right.createEl("span", {
+				text: cron.lastRun.status,
+				cls: "tb-stage-name",
+			});
+		}
+		right.createEl("span", {
+			text: formatElapsedSince(cron.lastRun?.spawned_at),
+			cls: "tb-agent-updated",
+		});
+	}
+
+	private buildCronMenu(cron: CronAgentRow): Menu {
+		const menu = new Menu();
+		menu.addItem((item) =>
+			item.setTitle("Edit config").setIcon("settings").onClick(() => {
+				new CronAgentModal(this.app, parseCronAgentConfig(cron.config), async (updated) => {
+					await this.saveCronAgent(cron.config.name, updated);
+					new Notice("Saved cron agent config. Restart `tickets watch` to reload schedules.");
+				}).open();
+			}),
+		);
+		menu.addItem((item) =>
+			item.setTitle(cronAgentEnabled(cron.config) ? "Disable" : "Enable")
+				.setIcon(cronAgentEnabled(cron.config) ? "pause-circle" : "play-circle")
+				.onClick(async () => {
+					await this.saveCronAgent(cron.config.name, {
+						...parseCronAgentConfig(cron.config),
+						enabled: !cronAgentEnabled(cron.config),
+					});
+					new Notice("Updated cron agent. Restart `tickets watch` to apply schedule changes.");
+				}),
+		);
+		const lastRun = cron.lastRun;
+		if (lastRun?.run_id) {
+			menu.addItem((item) =>
+				item.setTitle("Open last run log").setIcon("file-text").onClick(async () => {
+					await this.openCronLog(cron.config.name, lastRun);
+				}),
+			);
+		}
+		return menu;
+	}
+
+	private async saveCronAgent(name: string, updated: EditableCronAgentConfig): Promise<void> {
+		const validationError = validateCronAgent(updated);
+		if (validationError) {
+			new Notice(validationError);
+			return;
+		}
+
+		const config = await loadConfig(this.app);
+		if (!config) {
+			new Notice("Could not load config.yml");
+			return;
+		}
+
+		const cronAgents = [...(config.cron_agents ?? [])];
+		const index = cronAgents.findIndex((cron) => cron.name === name);
+		if (index < 0) {
+			new Notice(`Could not find cron agent ${name}`);
+			return;
+		}
+
+		const next: CronAgentConfig = {
+			...cronAgents[index],
+			name: cronAgents[index].name,
+			schedule: updated.schedule.trim(),
+			command: updated.command.trim(),
+			args: updated.args.split(",").map((arg) => arg.trim()).filter(Boolean),
+			prompt: updated.prompt.trim(),
+			enabled: updated.enabled,
+		};
+		if (cronAgentEntriesEqual(cronAgents[index], next)) {
+			await this.refresh();
+			return;
+		}
+		cronAgents[index] = next;
+		config.cron_agents = cronAgents;
+		await writeConfig(this.app, config);
+		await this.refresh();
+	}
+
+	private async openCronLog(name: string, run: AgentRun): Promise<void> {
+		if (!run.run_id) {
+			new Notice("Cron run is missing a run_id");
+			return;
+		}
+		const path = cronLogPath(name, run.run_id);
+		const file = this.app.vault.getAbstractFileByPath(path);
+		if (file instanceof TFile) {
+			this.previewLeaf = openPreviewLeaf(this.app, this.previewLeaf);
+			await this.previewLeaf.openFile(file);
+			return;
+		}
+
+		if (run.log_file) {
+			new Notice(`Cron log is outside the vault: ${run.log_file}`);
+			return;
+		}
+		new Notice(`Could not find cron log at ${path}`);
 	}
 
 	private onLongPress(el: HTMLElement, callback: (x: number, y: number) => void, delay = 500) {
@@ -2267,6 +2542,112 @@ class StageConfigModal extends Modal {
 
 		new Setting(contentEl).addButton((btn) =>
 			btn.setButtonText("Save").setCta().onClick(async () => {
+				await this.onSave(this.config);
+				this.close();
+			}),
+		).addButton((btn) =>
+			btn.setButtonText("Cancel").onClick(() => this.close()),
+		);
+	}
+
+	onClose() {
+		this.contentEl.empty();
+	}
+}
+
+class CronAgentModal extends Modal {
+	private config: EditableCronAgentConfig;
+	private readonly onSave: (config: EditableCronAgentConfig) => Promise<void>;
+
+	constructor(
+		app: import("obsidian").App,
+		config: EditableCronAgentConfig,
+		onSave: (config: EditableCronAgentConfig) => Promise<void>,
+	) {
+		super(app);
+		this.config = { ...config };
+		this.onSave = onSave;
+	}
+
+	onOpen() {
+		const { contentEl } = this;
+		this.modalEl.addClass("tb-config-modal");
+
+		contentEl.createEl("h3", { text: `${this.config.name} — Cron Config` });
+
+		new Setting(contentEl)
+			.setName("Name")
+			.setDesc("Cron agent identifier")
+			.addText((text) => {
+				text.setValue(this.config.name);
+				text.inputEl.disabled = true;
+				return text;
+			});
+
+		new Setting(contentEl)
+			.setName("Schedule")
+			.setDesc("Cron expression, e.g. @every 5m")
+			.addText((text) =>
+				text
+					.setPlaceholder("@every 5m")
+					.setValue(this.config.schedule)
+					.onChange((v) => (this.config.schedule = v)),
+			);
+
+		new Setting(contentEl)
+			.setName("Command")
+			.setDesc("CLI binary to invoke")
+			.addText((text) =>
+				text
+					.setPlaceholder("claude")
+					.setValue(this.config.command)
+					.onChange((v) => (this.config.command = v)),
+			);
+
+		new Setting(contentEl)
+			.setName("Args")
+			.setDesc("Extra CLI flags, comma-separated")
+			.addText((text) =>
+				text
+					.setPlaceholder("--print, --dangerously-skip-permissions")
+					.setValue(this.config.args)
+					.onChange((v) => (this.config.args = v)),
+			);
+
+		new Setting(contentEl)
+			.setName("Enabled")
+			.setDesc("Whether `tickets watch` should schedule this cron")
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.config.enabled)
+					.onChange((v) => (this.config.enabled = v)),
+			);
+
+		contentEl.createEl("div", {
+			text: "Prompt",
+			cls: "setting-item-name tb-prompt-label",
+		});
+		contentEl.createEl("div", {
+			text: "Template sent to the agent each time this cron fires",
+			cls: "setting-item-description tb-prompt-desc",
+		});
+		const promptArea = contentEl.createEl("textarea", {
+			cls: "tb-config-editor",
+		});
+		promptArea.value = this.config.prompt;
+		promptArea.spellcheck = false;
+		promptArea.placeholder = "Review the backlog and propose the next ticket moves.";
+		promptArea.addEventListener("input", () => {
+			this.config.prompt = promptArea.value;
+		});
+
+		new Setting(contentEl).addButton((btn) =>
+			btn.setButtonText("Save").setCta().onClick(async () => {
+				const validationError = validateCronAgent(this.config);
+				if (validationError) {
+					new Notice(validationError);
+					return;
+				}
 				await this.onSave(this.config);
 				this.close();
 			}),

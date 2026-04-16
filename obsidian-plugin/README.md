@@ -68,6 +68,8 @@ no test harness yet.
 - Inline ticket creation, edits, priority and link controls.
 - Per-ticket agent controls: spawn an adhoc run, re-run the stage
   agent, open a live terminal, view the diff a run produced.
+- Cron agents from `config.yml` in the Agents view, including edit,
+  enable/disable, and last-log actions.
 - A projects view (`Open: Tickets Projects` command) listing
   `.tickets/projects/` with create, rename, set status, show
   assigned tickets, and delete (which unassigns `project:` on
