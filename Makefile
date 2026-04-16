@@ -1,4 +1,4 @@
-.PHONY: install build check test vet release plugin-bundle plugin-zip plugin-install
+.PHONY: install build check test vet release plugin-bundle plugin-zip plugin-install plugin-stamp-version
 
 PLUGIN_SRC := obsidian-plugin
 # Kept outside dist/ so GoReleaser's `--clean` + "ensure dist is empty"
@@ -19,6 +19,16 @@ build:
 # --from $(PLUGIN_SRC)` run this first.
 plugin-bundle:
 	cd $(PLUGIN_SRC) && npm ci --silent && npm run build --silent
+
+# plugin-stamp-version rewrites manifest.json to report VERSION as the
+# plugin version. Run from release CI before plugin-zip so the zip
+# uploaded as a release asset matches the CLI tag; this lets watch's
+# auto-update skip reinstalling when the installed plugin is already
+# current. Usage: `make plugin-stamp-version VERSION=0.1.9`.
+plugin-stamp-version:
+	@if [ -z "$(VERSION)" ]; then echo "usage: make plugin-stamp-version VERSION=0.1.9" >&2; exit 1; fi
+	@tmp=$$(mktemp) && jq --arg v "$(VERSION)" '.version = $$v' $(PLUGIN_SRC)/manifest.json > "$$tmp" && mv "$$tmp" $(PLUGIN_SRC)/manifest.json
+	@echo "stamped $(PLUGIN_SRC)/manifest.json version=$(VERSION)"
 
 # plugin-zip bundles the three plugin artefacts into the archive
 # GoReleaser uploads as a release asset. `tickets obsidian install`

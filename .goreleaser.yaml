@@ -5,6 +5,11 @@ project_name: tickets
 before:
   hooks:
     - go mod tidy -diff
+    # Stamp the Obsidian plugin manifest with the release version so
+    # the shipped plugin reports the same version as the CLI. Without
+    # this, watch's auto-update reinstalls on every startup because
+    # the installed plugin's manifest never matches the CLI version.
+    - make plugin-stamp-version VERSION={{ .Version }}
     # Build the Obsidian plugin and package the three artefacts into
     # dist/tickets-board-plugin.zip, which is uploaded as a release
     # asset below. `tickets obsidian install` fetches this zip at
