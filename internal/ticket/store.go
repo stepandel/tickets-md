@@ -269,10 +269,12 @@ func (s *Store) Move(id, toStage string) (Ticket, error) {
 	if err := s.Save(t); err != nil {
 		return Ticket{}, err
 	}
-	if s.Config.IsCompleteStage(toStage) && len(t.Blocks) > 0 {
-		s.unblockDependents(t)
-		t.Blocks = nil
-		if err := s.Save(t); err != nil {
+	if s.Config.IsCompleteStage(toStage) {
+		if _, err := s.CompleteUnblock(t.ID); err != nil {
+			return Ticket{}, err
+		}
+		t, err = s.Get(t.ID)
+		if err != nil {
 			return Ticket{}, err
 		}
 	}
@@ -404,15 +406,71 @@ func (s *Store) cleanupLinks(t Ticket) {
 	}
 }
 
-func (s *Store) unblockDependents(t Ticket) {
-	for _, id := range t.Blocks {
-		peer, err := s.Get(id)
+func (s *Store) CompleteUnblock(id string) ([]string, error) {
+	t, err := s.Get(id)
+	if err != nil {
+		return nil, err
+	}
+	if !s.Config.IsCompleteStage(t.Stage) {
+		return nil, nil
+	}
+
+	touched := make(map[string]struct{})
+	knownBlocked := make(map[string]struct{}, len(t.Blocks))
+
+	for _, peerID := range t.Blocks {
+		knownBlocked[peerID] = struct{}{}
+		peer, err := s.Get(peerID)
 		if err != nil {
+			if errors.Is(err, ErrNotFound) {
+				continue
+			}
+			return nil, err
+		}
+		next := removeID(peer.BlockedBy, t.ID)
+		if len(next) == len(peer.BlockedBy) {
 			continue
 		}
-		peer.BlockedBy = removeID(peer.BlockedBy, t.ID)
-		s.Save(peer) // best-effort
+		peer.BlockedBy = next
+		if err := s.Save(peer); err != nil {
+			return nil, err
+		}
+		touched[peerID] = struct{}{}
 	}
+
+	if len(t.Blocks) > 0 {
+		t.Blocks = nil
+		if err := s.Save(t); err != nil {
+			return nil, err
+		}
+	}
+
+	all, err := s.ListAll()
+	if err != nil {
+		return nil, err
+	}
+	for _, list := range all {
+		for _, peer := range list {
+			if peer.ID == t.ID || !containsID(peer.BlockedBy, t.ID) {
+				continue
+			}
+			if _, ok := knownBlocked[peer.ID]; ok {
+				continue
+			}
+			peer.BlockedBy = removeID(peer.BlockedBy, t.ID)
+			if err := s.Save(peer); err != nil {
+				return nil, err
+			}
+			touched[peer.ID] = struct{}{}
+		}
+	}
+
+	ids := make([]string, 0, len(touched))
+	for peerID := range touched {
+		ids = append(ids, peerID)
+	}
+	sort.Strings(ids)
+	return ids, nil
 }
 
 func (s *Store) checkParentCycle(childID, parentID string) error {

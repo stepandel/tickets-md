@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -14,9 +16,10 @@ func newWatchStore(t *testing.T) *ticket.Store {
 	t.Helper()
 	root := t.TempDir()
 	s, err := ticket.Init(root, config.Config{
-		Prefix:        "TIC",
-		ProjectPrefix: "PRJ",
-		Stages:        []string{"backlog", "execute", "done"},
+		Prefix:         "TIC",
+		ProjectPrefix:  "PRJ",
+		Stages:         []string{"backlog", "execute", "done"},
+		CompleteStages: []string{"done"},
 	})
 	if err != nil {
 		t.Fatalf("Init: %v", err)
@@ -138,5 +141,46 @@ func TestSpawnAgentImmediateExitMarksRunFailed(t *testing.T) {
 	}
 	if got.AgentSession != "" {
 		t.Fatalf("agent_session = %q, want empty", got.AgentSession)
+	}
+}
+
+func TestHandleCreateFsRenameIntoCompleteStageUnblocksDependents(t *testing.T) {
+	s := newWatchStore(t)
+	blocker, err := s.Create("Blocker")
+	if err != nil {
+		t.Fatalf("Create blocker: %v", err)
+	}
+	blocked, err := s.Create("Blocked")
+	if err != nil {
+		t.Fatalf("Create blocked: %v", err)
+	}
+	if err := s.Link(blocked.ID, blocker.ID, "blocked_by"); err != nil {
+		t.Fatalf("Link: %v", err)
+	}
+
+	dst := filepath.Join(s.Root, ".tickets", "done", blocker.ID+".md")
+	if err := os.Rename(blocker.Path, dst); err != nil {
+		t.Fatalf("Rename: %v", err)
+	}
+
+	handleCreate(s, map[string]stage.Config{
+		"backlog": {},
+		"execute": {},
+		"done":    {},
+	}, dst, nil, nil)
+
+	blocker, err = s.Get(blocker.ID)
+	if err != nil {
+		t.Fatalf("Get blocker: %v", err)
+	}
+	blocked, err = s.Get(blocked.ID)
+	if err != nil {
+		t.Fatalf("Get blocked: %v", err)
+	}
+	if len(blocker.Blocks) != 0 {
+		t.Fatalf("blocker.Blocks = %v, want empty", blocker.Blocks)
+	}
+	if len(blocked.BlockedBy) != 0 {
+		t.Fatalf("blocked.BlockedBy = %v, want empty", blocked.BlockedBy)
 	}
 }

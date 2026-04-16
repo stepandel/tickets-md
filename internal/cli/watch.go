@@ -245,22 +245,31 @@ func handleCreate(s *ticket.Store, stageConfigs map[string]stage.Config, path st
 	if !strings.HasSuffix(base, ".md") {
 		return
 	}
+	ticketID := strings.TrimSuffix(base, ".md")
+
+	if s.Config.IsCompleteStage(stageName) {
+		unblocked, err := s.CompleteUnblock(ticketID)
+		if err != nil {
+			log.Printf("%s → %s: unblock failed: %v", ticketID, stageName, err)
+		} else if len(unblocked) > 0 {
+			log.Printf("%s → %s: unblocked %d dependent(s)", ticketID, stageName, len(unblocked))
+		}
+	}
 
 	sc, ok := stageConfigs[stageName]
 	if !ok {
-		log.Printf("%s → %s (no stage config)", strings.TrimSuffix(base, ".md"), stageName)
+		log.Printf("%s → %s (no stage config)", ticketID, stageName)
 		return
 	}
 
 	// Run cleanup actions (worktree/branch removal) inline — no agent needed.
 	if sc.HasCleanup() {
-		ticketID := strings.TrimSuffix(base, ".md")
 		runCleanup(ticketID, sc.Cleanup, s.Root)
 	}
 
 	if !sc.HasAgent() {
 		if !sc.HasCleanup() {
-			log.Printf("%s → %s (no agent configured)", strings.TrimSuffix(base, ".md"), stageName)
+			log.Printf("%s → %s (no agent configured)", ticketID, stageName)
 		}
 		return
 	}

@@ -165,6 +165,36 @@ func TestMoveIntoCompleteStageWithDanglingBlockedPeerStillSucceeds(t *testing.T)
 	}
 }
 
+func TestMoveIntoCompleteStageClearsAsymmetricBlockedResidue(t *testing.T) {
+	s := newTestStoreWithCompleteStages(t, "done")
+	blocker, _ := s.Create("Blocker")
+	blocked, _ := s.Create("Blocked")
+
+	blocked.BlockedBy = []string{blocker.ID}
+	if err := s.Save(blocker); err != nil {
+		t.Fatalf("Save blocker: %v", err)
+	}
+	if err := s.Save(blocked); err != nil {
+		t.Fatalf("Save blocked: %v", err)
+	}
+
+	moved, err := s.Move(blocker.ID, "done")
+	if err != nil {
+		t.Fatalf("Move: %v", err)
+	}
+	if len(moved.Blocks) != 0 {
+		t.Fatalf("moved.Blocks = %v, want empty", moved.Blocks)
+	}
+
+	blocked, err = s.Get(blocked.ID)
+	if err != nil {
+		t.Fatalf("Get blocked: %v", err)
+	}
+	if containsID(blocked.BlockedBy, blocker.ID) {
+		t.Fatalf("blocked.BlockedBy = %v, want %s removed", blocked.BlockedBy, blocker.ID)
+	}
+}
+
 func TestLinkRelated(t *testing.T) {
 	s := newTestStore(t)
 	a, err := s.Create("Alpha")
