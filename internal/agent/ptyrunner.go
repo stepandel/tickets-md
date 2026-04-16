@@ -206,7 +206,11 @@ func (r *PTYRunner) Kill(name string) error {
 }
 
 // Wait blocks until the named session exits and returns its exit code.
-// Returns nil exit code and an error if the session doesn't exist.
+// After a session exits, repeated Wait calls return the same exit code
+// and error for as long as the completed session remains registered.
+// "session not found" is reserved for names that are not currently in
+// the registry; completed entries are reclaimed on Start when the name
+// is reused.
 func (r *PTYRunner) Wait(name string) (*int, error) {
 	r.mu.RLock()
 	sess, ok := r.sessions[name]
@@ -215,9 +219,6 @@ func (r *PTYRunner) Wait(name string) (*int, error) {
 		return nil, fmt.Errorf("session %s not found", name)
 	}
 	<-sess.done
-	r.mu.Lock()
-	delete(r.sessions, name)
-	r.mu.Unlock()
 	return sess.exitCode, sess.exitErr
 }
 
@@ -283,7 +284,9 @@ func (r *PTYRunner) Resize(name string, rows, cols uint16) error {
 	return pty.Setsize(sess.ptmx, &pty.Winsize{Rows: rows, Cols: cols})
 }
 
-// Sessions returns the names of all active sessions.
+// Sessions returns the names of all registered sessions. Completed
+// sessions remain listed until their name is reused by a later Start,
+// so callers that need an active-only view should filter with Alive.
 func (r *PTYRunner) Sessions() []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -308,11 +311,10 @@ func (r *PTYRunner) Shutdown() {
 		sess.cmd.Process.Signal(syscall.SIGTERM)
 	}
 
-	// Wait on sess.done directly rather than calling r.Wait(name): the
-	// owning CLI waiter consumes the map entry via Wait to persist the
-	// exit status, and competing with it would let Shutdown delete the
-	// entry first and return "session not found" to the legitimate
-	// waiter — which then persists StatusFailed over a clean exit.
+	// Wait on sess.done directly rather than calling r.Wait(name):
+	// <-sess.done is the one source of truth for completion, and
+	// bypassing the registry keeps Shutdown insulated from any future
+	// change to Wait's lookup semantics.
 	done := make(chan struct{})
 	go func() {
 		for _, sess := range sessions {
