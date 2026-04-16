@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `config.yml` by hand. `set` supports the `schedule`, `command`,
   `prompt`, and `args` fields; pass `-` as the value to clear `args`.
 
+- Cron agents no longer race the monitor into false `failed` states
+  while starting, and fast-exiting runs now complete as `done`
+  instead of getting stuck at `spawned` or being misreported as
+  disappeared.
+
 - `tickets new --body` now normalizes literal `\n` sequences in the flag
   value into real newlines, so shell-friendly one-line invocations save
   as multi-line markdown bodies. Real newlines are preserved unchanged.

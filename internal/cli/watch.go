@@ -627,6 +627,9 @@ func removeTerminalServerFile(root string) {
 // every run-status change and on watcher startup to heal drift (e.g.
 // if the watcher was killed between writing a YAML and writing the md).
 func syncAgentFrontmatter(root, ticketID string) {
+	if agent.IsCronOwner(ticketID) {
+		return
+	}
 	store, err := ticket.Open(root)
 	if err != nil {
 		return
