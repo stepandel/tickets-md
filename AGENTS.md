@@ -146,6 +146,11 @@ make install
   the *why* is non-obvious (a hidden constraint, a workaround, a
   surprising invariant). Do not restate what well-named code already
   says.
+- When moving tickets between stages, prefer the CLI (`tickets move
+  <id> <stage>` or `go run ./cmd/tickets -C ../.. move <id> <stage>`
+  from a worktree) instead of raw `mv`. It preserves the store-level
+  invariant that stage changes go through `ticket.Store.Move` and
+  avoids repeated per-file `mv` approval churn.
 
 ## Agent integrations
 
