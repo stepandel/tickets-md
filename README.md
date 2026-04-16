@@ -839,9 +839,10 @@ desync a counter.
 
 See [`AGENTS.md`](AGENTS.md) at the repo root for the layer rules,
 invariants, and canonical commands that AI coding agents (Claude
-Code, Codex, Aider, …) must follow. `make check` runs the full
-verification suite — build, vet, and tests (including the
-`internal/archtest` layer enforcement).
+Code, Codex, Aider, …) must follow. `make check` is the canonical Go
+verification command — build, vet, and `go test ./...` (including the
+`internal/archtest` layer enforcement). Changes under
+`obsidian-plugin/` should also run `make plugin-test`.
 
 ## Project layout
 
