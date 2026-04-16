@@ -117,6 +117,13 @@ func spawnCronAgent(root string, ca config.CronAgentConfig, mon *agent.Monitor, 
 	if err := agent.Write(root, as); err != nil {
 		return fmt.Errorf("writing agent status: %w", err)
 	}
+	mon.TrackRun(ownerID, runID)
+	tracked := true
+	defer func() {
+		if tracked {
+			mon.UntrackRun(ownerID, runID)
+		}
+	}()
 
 	fullArgv := append([]string{ca.Command}, argv...)
 	if err := runner.Start(sessionName, root, fullArgv, logFile, 0, 0); err != nil {
@@ -127,7 +134,7 @@ func spawnCronAgent(root string, ca config.CronAgentConfig, mon *agent.Monitor, 
 	}
 
 	log.Printf("cron %s: firing run %s", ca.Name, runID)
-	mon.TrackRun(ownerID, runID)
+	tracked = false
 	go waitForCronSession(ca.Name, runID, ca.Command, sessionName, root, mon, runner)
 	return nil
 }

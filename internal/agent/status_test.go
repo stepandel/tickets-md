@@ -10,6 +10,7 @@ import (
 func TestTransitionAllowedEdges(t *testing.T) {
 	allowed := []struct{ from, to Status }{
 		{StatusSpawned, StatusRunning},
+		{StatusSpawned, StatusDone},
 		{StatusSpawned, StatusErrored},
 		{StatusSpawned, StatusFailed},
 		{StatusRunning, StatusDone},
@@ -38,7 +39,6 @@ func TestTransitionRejectsFromTerminal(t *testing.T) {
 
 func TestTransitionRejectsInvalidEdges(t *testing.T) {
 	invalid := []struct{ from, to Status }{
-		{StatusSpawned, StatusDone},    // must go through running
 		{StatusSpawned, StatusBlocked}, // can't skip to blocked
 		{StatusRunning, StatusSpawned}, // can't regress
 		{StatusRunning, StatusErrored}, // errored is only for spawn failures

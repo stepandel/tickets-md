@@ -91,7 +91,7 @@ fix the design — do not silence the test.
   `syncAgentFrontmatter`. Never write the cache without also updating
   the YAML.
 - **Status transitions go through `agent.Transition`.** The state
-  machine is: `spawned → running|errored|failed`, `running →
+  machine is: `spawned → running|done|errored|failed`, `running →
   done|failed|blocked`, `blocked → running|done|failed`. Terminal
   states (`done`, `failed`, `errored`) have no outbound edges. Use
   `agent.Write`, which validates the transition; use

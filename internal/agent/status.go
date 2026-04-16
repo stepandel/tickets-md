@@ -44,7 +44,9 @@ func (s Status) IsTerminal() bool {
 // validTransitions defines the state machine. Terminal states have no
 // outbound edges.
 var validTransitions = map[Status][]Status{
-	StatusSpawned: {StatusRunning, StatusErrored, StatusFailed},
+	// spawned -> done covers fast exits that finish before the monitor's
+	// next poll promotes the run to running.
+	StatusSpawned: {StatusRunning, StatusDone, StatusErrored, StatusFailed},
 	StatusRunning: {StatusDone, StatusFailed, StatusBlocked},
 	StatusBlocked: {StatusRunning, StatusDone, StatusFailed},
 }
