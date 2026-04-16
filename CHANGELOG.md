@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `tickets crons add` and `tickets crons rm` let you create and remove
+  cron agent entries from the CLI. `add` accepts `--name`, `--schedule`,
+  `--command`, `--prompt` (all required), plus optional `--arg` (repeatable)
+  and `--disabled`. `rm` removes the config entry and notes any kept run
+  history that `tickets doctor --fix` can prune.
+
 - `tickets crons` now has `enable`, `disable`, and `set` subcommands for
   managing cron agent configuration from the CLI without editing
   `config.yml` by hand. `set` supports the `schedule`, `command`,
