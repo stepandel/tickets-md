@@ -307,7 +307,7 @@ func TestRerun_NoCallback(t *testing.T) {
 func TestRerun_BadJSON(t *testing.T) {
 	root := t.TempDir()
 	srv := New(&fakeRunner{}, root)
-	srv.RerunStageAgent = func(ticketID string, rows, cols uint16) (string, error) { return "", nil }
+	srv.RerunStageAgent = func(ticketID string, force bool, rows, cols uint16) (string, error) { return "", nil }
 	mux := http.NewServeMux()
 	mux.HandleFunc("/rerun-stage-agent", srv.handleRerunStageAgent)
 	h := withCORS(mux)
@@ -327,7 +327,7 @@ func TestRerun_BadJSON(t *testing.T) {
 func TestRerun_MissingTicketID(t *testing.T) {
 	root := t.TempDir()
 	srv := New(&fakeRunner{}, root)
-	srv.RerunStageAgent = func(ticketID string, rows, cols uint16) (string, error) { return "", nil }
+	srv.RerunStageAgent = func(ticketID string, force bool, rows, cols uint16) (string, error) { return "", nil }
 	mux := http.NewServeMux()
 	mux.HandleFunc("/rerun-stage-agent", srv.handleRerunStageAgent)
 	h := withCORS(mux)
@@ -347,7 +347,9 @@ func TestRerun_MissingTicketID(t *testing.T) {
 func TestRerun_CallbackError(t *testing.T) {
 	root := t.TempDir()
 	srv := New(&fakeRunner{}, root)
-	srv.RerunStageAgent = func(ticketID string, rows, cols uint16) (string, error) { return "", errors.New("no stage agent") }
+	srv.RerunStageAgent = func(ticketID string, force bool, rows, cols uint16) (string, error) {
+		return "", errors.New("no stage agent")
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/rerun-stage-agent", srv.handleRerunStageAgent)
 	h := withCORS(mux)
@@ -489,9 +491,10 @@ func TestRerun_Success(t *testing.T) {
 	root := t.TempDir()
 	srv := New(&fakeRunner{}, root)
 	var gotTicket string
+	var gotForce bool
 	var gotRows, gotCols uint16
-	srv.RerunStageAgent = func(ticketID string, rows, cols uint16) (string, error) {
-		gotTicket, gotRows, gotCols = ticketID, rows, cols
+	srv.RerunStageAgent = func(ticketID string, force bool, rows, cols uint16) (string, error) {
+		gotTicket, gotForce, gotRows, gotCols = ticketID, force, rows, cols
 		return "run-TIC-5", nil
 	}
 	mux := http.NewServeMux()
@@ -509,8 +512,38 @@ func TestRerun_Success(t *testing.T) {
 	if out.Session != "run-TIC-5" {
 		t.Fatalf("session = %q", out.Session)
 	}
-	if gotTicket != "TIC-5" || gotRows != 30 || gotCols != 100 {
-		t.Fatalf("callback args = %q %d %d", gotTicket, gotRows, gotCols)
+	if gotTicket != "TIC-5" || gotForce || gotRows != 30 || gotCols != 100 {
+		t.Fatalf("callback args = %q %t %d %d", gotTicket, gotForce, gotRows, gotCols)
+	}
+}
+
+func TestRerun_ForceSuccess(t *testing.T) {
+	root := t.TempDir()
+	srv := New(&fakeRunner{}, root)
+	var gotTicket string
+	var gotForce bool
+	var gotRows, gotCols uint16
+	srv.RerunStageAgent = func(ticketID string, force bool, rows, cols uint16) (string, error) {
+		gotTicket, gotForce, gotRows, gotCols = ticketID, force, rows, cols
+		return "run-TIC-5", nil
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/rerun-stage-agent", srv.handleRerunStageAgent)
+	h := withCORS(mux)
+	req := httptest.NewRequest(http.MethodPost, "/rerun-stage-agent", strings.NewReader(`{"ticket_id":"TIC-5","force":true,"rows":30,"cols":100}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	var out spawnResponse
+	if err := json.NewDecoder(rr.Result().Body).Decode(&out); err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if out.Session != "run-TIC-5" {
+		t.Fatalf("session = %q", out.Session)
+	}
+	if gotTicket != "TIC-5" || !gotForce || gotRows != 30 || gotCols != 100 {
+		t.Fatalf("callback args = %q %t %d %d", gotTicket, gotForce, gotRows, gotCols)
 	}
 }
 

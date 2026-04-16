@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `tickets board` and the Obsidian plugin can now force a stage-agent
+  re-run while a previous run is still active. In the TUI, `F` kills
+  the active session and spawns a fresh run; the Obsidian board and
+  Agents views expose a "Force re-run stage agent" context-menu entry
+  on tickets with an active run. The superseded run is marked `failed`
+  with `superseded by force re-run`. The underlying
+  `POST /rerun-stage-agent` endpoint gains an optional `"force": true`
+  flag; without it the old "agent already running" error still wins.
 - Board cards in the Obsidian plugin now expose a "View run log"
   context-menu action for tickets with a completed agent run
   (done/failed/errored), mirroring the Agents view affordance. The

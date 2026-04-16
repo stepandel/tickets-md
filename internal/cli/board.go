@@ -253,6 +253,8 @@ func (m *boardModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.startAdhocAgent()
 	case "S":
 		m.startRerunStageAgent()
+	case "F":
+		m.forceRerunStageAgent()
 	case "g":
 		m.openAgentLog()
 	case "f":
@@ -688,7 +690,7 @@ func (m *boardModel) renderHelp() string {
 		{"y", "copy"},
 		{"R/b/s", "link"},
 		{"u", "unlink"},
-		{"A/S", "agent"},
+		{"A/S/F", "agent"},
 		{"g", "log"},
 		{"f", "follow"},
 		{"d", "diff"},

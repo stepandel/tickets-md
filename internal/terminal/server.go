@@ -31,7 +31,7 @@ type Server struct {
 	// 0 to use the runner's default. Returns the session name on success.
 	// Nil means the watcher did not register a callback, so
 	// /rerun-stage-agent is rejected.
-	RerunStageAgent func(ticketID string, rows, cols uint16) (string, error)
+	RerunStageAgent func(ticketID string, force bool, rows, cols uint16) (string, error)
 
 	// RunCronAgent, if set, manually fires a configured cron agent
 	// through the watcher's live PTY runner. Nil means the watcher did
@@ -243,6 +243,7 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 // and resizes once the client sends its first resize message.
 type spawnRequest struct {
 	TicketID string `json:"ticket_id"`
+	Force    bool   `json:"force,omitempty"`
 	Rows     uint16 `json:"rows,omitempty"`
 	Cols     uint16 `json:"cols,omitempty"`
 }
@@ -336,7 +337,7 @@ func (s *Server) handleRerunStageAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, err := s.RerunStageAgent(req.TicketID, req.Rows, req.Cols)
+	session, err := s.RerunStageAgent(req.TicketID, req.Force, req.Rows, req.Cols)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return

@@ -210,8 +210,8 @@ func runWatch(s *ticket.Store) error {
 	// Wire the "re-run stage agent" callback now that stage configs are
 	// loaded. The terminal server exposes this via POST /rerun-stage-agent
 	// so the Obsidian plugin can manually trigger the stage agent.
-	termSrv.RerunStageAgent = func(ticketID string, rows, cols uint16) (string, error) {
-		return rerunStageAgent(ticketID, s, stageConfigs, mon, runner, rows, cols)
+	termSrv.RerunStageAgent = func(ticketID string, force bool, rows, cols uint16) (string, error) {
+		return rerunStageAgent(ticketID, force, s, stageConfigs, mon, runner, rows, cols)
 	}
 	termSrv.RunCronAgent = func(name string, rows, cols uint16) (string, error) {
 		for _, ca := range s.Config.CronAgents {
@@ -428,7 +428,7 @@ func buildAgentArgs(t ticket.Ticket, ac *stage.AgentConfig, worktreePath string)
 // triggered by the Obsidian plugin. It mirrors the watcher's handleCreate
 // path: looks up the ticket's current stage config, verifies an agent is
 // configured, refuses if a run is already active, then calls spawnAgent.
-func rerunStageAgent(ticketID string, s *ticket.Store, stageConfigs map[string]stage.Config, mon *agent.Monitor, runner *agent.PTYRunner, rows, cols uint16) (string, error) {
+func rerunStageAgent(ticketID string, force bool, s *ticket.Store, stageConfigs map[string]stage.Config, mon *agent.Monitor, runner *agent.PTYRunner, rows, cols uint16) (string, error) {
 	t, err := s.Get(ticketID)
 	if err != nil {
 		return "", fmt.Errorf("ticket %s: %w", ticketID, err)
@@ -439,7 +439,21 @@ func rerunStageAgent(ticketID string, s *ticket.Store, stageConfigs map[string]s
 	}
 	if latest, err := agent.Latest(s.Root, ticketID); err == nil {
 		if !latest.Status.IsTerminal() && runner.Alive(latest.Session) {
-			return "", fmt.Errorf("agent already running (session %s)", latest.Session)
+			if !force {
+				return "", fmt.Errorf("agent already running (session %s)", latest.Session)
+			}
+			if err := runner.Kill(latest.Session); err != nil {
+				return "", fmt.Errorf("killing active session %s: %w", latest.Session, err)
+			}
+			if cur, err := agent.ReadRun(s.Root, ticketID, latest.RunID); err == nil && !cur.Status.IsTerminal() {
+				cur.Status = agent.StatusFailed
+				cur.Error = "superseded by force re-run"
+				if err := agent.Write(s.Root, cur); err != nil {
+					log.Printf("%s/%s: failed to mark superseded run: %v", ticketID, latest.RunID, err)
+				} else {
+					syncAgentFrontmatter(s.Root, ticketID)
+				}
+			}
 		}
 	}
 	return spawnAgent(t, sc, s.Root, mon, runner, rows, cols)
