@@ -111,6 +111,156 @@ func TestPTYRunnerWaitReceivesFastExitCode(t *testing.T) {
 	}
 }
 
+func TestPTYRunnerWaitIsIdempotentAfterExit(t *testing.T) {
+	t.Parallel()
+
+	runner := NewPTYRunner()
+	session := "idempotent-zero"
+	logPath := filepath.Join(t.TempDir(), "session.log")
+	if err := runner.Start(session, t.TempDir(), []string{"/bin/sh", "-c", "exit 0"}, logPath, 0, 0); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	waitForSessionExit(t, runner, session)
+
+	for i := 0; i < 2; i++ {
+		code, err := runner.Wait(session)
+		if err != nil {
+			t.Fatalf("Wait #%d: %v", i+1, err)
+		}
+		if code == nil {
+			t.Fatalf("Wait #%d returned nil exit code", i+1)
+		}
+		if *code != 0 {
+			t.Fatalf("Wait #%d exit code = %d, want 0", i+1, *code)
+		}
+	}
+}
+
+func TestPTYRunnerWaitIdempotentForNonZeroExit(t *testing.T) {
+	t.Parallel()
+
+	runner := NewPTYRunner()
+	session := "idempotent-nonzero"
+	logPath := filepath.Join(t.TempDir(), "session.log")
+	if err := runner.Start(session, t.TempDir(), []string{"/bin/sh", "-c", "exit 42"}, logPath, 0, 0); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	waitForSessionExit(t, runner, session)
+
+	for i := 0; i < 2; i++ {
+		code, err := runner.Wait(session)
+		if err != nil {
+			t.Fatalf("Wait #%d: %v", i+1, err)
+		}
+		if code == nil {
+			t.Fatalf("Wait #%d returned nil exit code", i+1)
+		}
+		if *code != 42 {
+			t.Fatalf("Wait #%d exit code = %d, want 42", i+1, *code)
+		}
+	}
+}
+
+func TestPTYRunnerWaitConcurrentCallersBothSeeExit(t *testing.T) {
+	t.Parallel()
+
+	runner := NewPTYRunner()
+	session := "concurrent-waiters"
+	logPath := filepath.Join(t.TempDir(), "session.log")
+	if err := runner.Start(session, t.TempDir(), []string{"/bin/sh", "-c", "sleep 0.1; exit 7"}, logPath, 0, 0); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	const waiters = 4
+	type result struct {
+		code *int
+		err  error
+	}
+
+	results := make([]result, waiters)
+	var wg sync.WaitGroup
+	for i := 0; i < waiters; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			results[idx].code, results[idx].err = runner.Wait(session)
+		}(i)
+	}
+	wg.Wait()
+
+	for i, res := range results {
+		if res.err != nil {
+			t.Fatalf("Wait #%d: %v", i+1, res.err)
+		}
+		if res.code == nil {
+			t.Fatalf("Wait #%d returned nil exit code", i+1)
+		}
+		if *res.code != 7 {
+			t.Fatalf("Wait #%d exit code = %d, want 7", i+1, *res.code)
+		}
+	}
+}
+
+func TestPTYRunnerWaitUnknownSessionReturnsNotFound(t *testing.T) {
+	t.Parallel()
+
+	runner := NewPTYRunner()
+	code, err := runner.Wait("never-started")
+	if err == nil {
+		t.Fatal("Wait returned nil error for unknown session")
+	}
+	if code != nil {
+		t.Fatalf("Wait returned exit code %v for unknown session", *code)
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("Wait error = %q, want not found", err)
+	}
+}
+
+func TestPTYRunnerStartReusesNameAfterCompletedWait(t *testing.T) {
+	t.Parallel()
+
+	runner := NewPTYRunner()
+	session := "reused-name"
+	logDir := t.TempDir()
+
+	if err := runner.Start(session, logDir, []string{"/bin/sh", "-c", "exit 0"}, filepath.Join(logDir, "first.log"), 0, 0); err != nil {
+		t.Fatalf("first Start: %v", err)
+	}
+	waitForSessionExit(t, runner, session)
+
+	for i := 0; i < 2; i++ {
+		code, err := runner.Wait(session)
+		if err != nil {
+			t.Fatalf("first Wait #%d: %v", i+1, err)
+		}
+		if code == nil {
+			t.Fatalf("first Wait #%d returned nil exit code", i+1)
+		}
+		if *code != 0 {
+			t.Fatalf("first Wait #%d exit code = %d, want 0", i+1, *code)
+		}
+	}
+
+	if err := runner.Start(session, logDir, []string{"/bin/sh", "-c", "exit 9"}, filepath.Join(logDir, "second.log"), 0, 0); err != nil {
+		t.Fatalf("second Start: %v", err)
+	}
+	waitForSessionExit(t, runner, session)
+
+	code, err := runner.Wait(session)
+	if err != nil {
+		t.Fatalf("second Wait: %v", err)
+	}
+	if code == nil {
+		t.Fatal("second Wait returned nil exit code")
+	}
+	if *code != 9 {
+		t.Fatalf("second Wait exit code = %d, want 9", *code)
+	}
+}
+
 // TestPTYRunnerShutdownDoesNotStealExitFromConcurrentWaiter exercises a
 // goroutine-scheduling race: under the old implementation, either
 // Shutdown or the owning Wait could delete the map entry first. This
