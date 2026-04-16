@@ -55,6 +55,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the live PTY terminal when the ticket has an active agent session,
   instead of opening the ticket file.
 
+- The Obsidian plugin's Agents view now supports terminal replay for
+  completed agent runs. Clicking a finished (done/failed/errored) run
+  opens its PTY log in a read-only terminal pane; the context menu also
+  gains a "View run log" action.
+
 - Board cards in the Obsidian plugin no longer show a project chip;
   use the card context menu for project assignment.
 
