@@ -17,6 +17,7 @@ import (
 
 	"github.com/stepandel/tickets-md/internal/agent"
 	"github.com/stepandel/tickets-md/internal/config"
+	"github.com/stepandel/tickets-md/internal/obsidian"
 	"github.com/stepandel/tickets-md/internal/stage"
 	"github.com/stepandel/tickets-md/internal/terminal"
 	"github.com/stepandel/tickets-md/internal/ticket"
@@ -104,6 +105,10 @@ func runWatch(s *ticket.Store) error {
 	} else if len(issues) > 0 {
 		log.Printf("startup auto-heal: fixed %d issue(s)", len(issues))
 	}
+
+	// Auto-update the Obsidian plugin if the vault exists and the
+	// installed version doesn't match this CLI's version.
+	maybeUpdateObsidianPlugin(s.Root)
 
 	// Backfill plan_file for any terminal runs whose session-end
 	// capture missed it. Self-heals runs that finished under an
@@ -703,6 +708,37 @@ func syncAgentFrontmatter(root, ticketID string) {
 	if err := store.Save(t); err != nil {
 		log.Printf("%s: failed to sync agent frontmatter: %v", ticketID, err)
 	}
+}
+
+// maybeUpdateObsidianPlugin checks whether the vault has a plugin
+// installed at a different version than the running CLI and silently
+// updates it. Errors are logged but never fatal — watch must start
+// regardless.
+func maybeUpdateObsidianPlugin(root string) {
+	if version == "dev" || version == "" {
+		return
+	}
+
+	vaultStart := filepath.Join(root, config.ConfigDir)
+	vault, err := obsidian.DiscoverVault(vaultStart)
+	if err != nil {
+		return // no vault — nothing to update
+	}
+
+	status, err := obsidian.Status(vault, version)
+	if err != nil || !status.Installed {
+		return
+	}
+	if status.InstalledVersion == status.ExpectedVersion {
+		return
+	}
+
+	res, err := obsidian.Install(vault, false, version, "")
+	if err != nil {
+		log.Printf("obsidian plugin auto-update: %v", err)
+		return
+	}
+	log.Printf("obsidian plugin updated %s → %s (%s)", res.PreviousVersion, res.InstalledVersion, res.Source)
 }
 
 // --- shared ---
