@@ -71,8 +71,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stops blocking its dependent tickets.
 
 - `tickets doctor` now clears stale `blocks` / `blocked_by` entries on
-  tickets already sitting in a configured `complete_stages` stage,
-  complementing the move-time behavior.
+  tickets already sitting in a configured `complete_stages` stage, the
+  offline repair path for stores where those moves happened without a
+  running watcher.
 
 - The CLI now checks for a newer GitHub release at most once per 24
   hours on interactive runs, caches the result in the per-user
