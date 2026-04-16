@@ -18,6 +18,7 @@ import {
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { html as diff2html } from "diff2html";
+import { planDiffCommand, resolveDefaultBranch } from "./diff";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -1746,50 +1747,28 @@ class DiffView extends ItemView {
 		try {
 			const { execFileSync } = require("child_process");
 			const fs = require("fs");
-			const execOpts = { cwd: basePath, encoding: "utf-8" as const, maxBuffer: 10 * 1024 * 1024 };
-			let defaultBranch = "main";
-			try {
-				defaultBranch = execFileSync(
-					"git", ["rev-parse", "--abbrev-ref", "origin/HEAD"],
-					execOpts,
-				).trim();
-			} catch {
-				// origin/HEAD not set — check if "main" exists, otherwise try "master"
-				try {
-					execFileSync("git", ["rev-parse", "--verify", "main"], execOpts);
-				} catch {
-					defaultBranch = "master";
-				}
-			}
+			const run = (args: string[], cwd: string) =>
+				execFileSync("git", args, { cwd, encoding: "utf-8" as const, maxBuffer: 10 * 1024 * 1024 });
+			const defaultBranch = resolveDefaultBranch(run, basePath);
+			const plan = planDiffCommand({
+				ticketId: this.ticketId,
+				basePath,
+				worktreePath,
+				worktreeExists: fs.existsSync(worktreePath),
+				defaultBranch,
+			});
 
-			if (fs.existsSync(worktreePath)) {
+			if (plan.kind === "worktree") {
 				try {
-					const base = execFileSync("git", ["merge-base", "HEAD", defaultBranch], {
-						cwd: worktreePath,
-						encoding: "utf-8",
-						maxBuffer: 10 * 1024 * 1024,
-					}).trim();
+					const base = run(plan.primary.mergeBase, plan.cwd).trim();
 					if (!base) throw new Error("no merge-base");
-					output = execFileSync("git", ["diff", `${base}...HEAD`], {
-						cwd: worktreePath,
-						encoding: "utf-8",
-						maxBuffer: 10 * 1024 * 1024,
-					});
+					output = run(plan.primary.diff(base), plan.cwd);
 				} catch (err) {
 					console.error(err);
-					output = execFileSync("git", ["diff", `${defaultBranch}...HEAD`], {
-						cwd: worktreePath,
-						encoding: "utf-8",
-						maxBuffer: 10 * 1024 * 1024,
-					});
+					output = run(plan.fallback.diff, plan.cwd);
 				}
 			} else {
-				const branch = `tickets/${this.ticketId}`;
-				output = execFileSync("git", ["diff", `${defaultBranch}...${branch}`], {
-					cwd: basePath,
-					encoding: "utf-8",
-					maxBuffer: 10 * 1024 * 1024,
-				});
+				output = run(plan.diff, plan.cwd);
 			}
 		} catch {
 			this.showMessage(`Could not compute diff for ${this.ticketId}.`);
