@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Board cards in the Obsidian plugin now expose a "View run log"
+  context-menu action for tickets with a completed agent run
+  (done/failed/errored), mirroring the Agents view affordance. The
+  live "Open terminal" item stays desktop-only and unchanged; replay
+  works on desktop and mobile.
+
 ## [0.1.10] - 2026-04-16
 
 ### Fixed
