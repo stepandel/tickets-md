@@ -227,6 +227,9 @@ setup steps.
 | `tickets agents plan <id> [run]`        | Open the plan file written by a Claude Code run    |
 | `tickets agents followup <id> [--run R] [--message M]` | Spawn a followup session with prior run's context |
 | `tickets agents run <id>`               | Start an interactive agent session for a ticket    |
+| `tickets crons list`                    | List configured cron agents and their last run     |
+| `tickets crons run <name>`              | Manually fire a cron agent through the watcher     |
+| `tickets crons log <name> [run-id]`     | Print output for a cron agent run                  |
 | `tickets worktree list`                 | List active per-ticket git worktrees (alias: `wt`) |
 | `tickets worktree open <id>`            | Open a ticket's worktree in your editor            |
 | `tickets worktree clean [ids...\|--all]`| Remove worktrees                                   |

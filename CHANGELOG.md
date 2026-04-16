@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `tickets crons run <name>` manually fires a configured cron agent
+  through the running watcher. The Obsidian plugin's cron agent menu
+  also gains a "Run now" action (desktop only).
+
 - `tickets new --body` now normalizes literal `\n` sequences in the flag
   value into real newlines, so shell-friendly one-line invocations save
   as multi-line markdown bodies. Real newlines are preserved unchanged.

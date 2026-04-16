@@ -71,7 +71,7 @@ no test harness yet.
 - Per-ticket agent controls: spawn an adhoc run, re-run the stage
   agent, open a live terminal, view the diff a run produced.
 - Cron agents from `config.yml` in the Agents view, including edit,
-  enable/disable, and last-log actions.
+  enable/disable, run now (desktop), and last-log actions.
 - A projects view (`Open: Tickets Projects` command) listing
   `.tickets/projects/` alongside a tickets sidebar that shows the
   selected project's assigned tickets, with create, rename, set
