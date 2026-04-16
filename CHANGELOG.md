@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Fixed the Obsidian plugin's diff view overcounting changed files on
+  ticket branches. It now compares against the remote-tracking
+  `origin/main` (not a possibly stale local `main`) and uses
+  three-dot branch-diff semantics so commits already merged into the
+  base no longer show up in the ticket's diff.
+
 - The Obsidian board card menu can now assign a ticket to a project,
   change its project, or remove `project:` without editing
   frontmatter by hand.
