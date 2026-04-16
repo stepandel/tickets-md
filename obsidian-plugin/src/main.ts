@@ -402,6 +402,7 @@ class BoardView extends ItemView {
 	private config: TicketsConfig | null = null;
 	private stages: string[] = [];
 	private tickets: Ticket[] = [];
+	private projects: Project[] = [];
 	private agentStages: Set<string> = new Set();
 	private previewLeaf: WorkspaceLeaf | null = null;
 
@@ -492,6 +493,7 @@ class BoardView extends ItemView {
 		this.config = config;
 		this.stages = config.stages;
 		this.tickets = await loadTickets(this.app, this.stages);
+		this.projects = await loadProjects(this.app, config);
 		this.agentStages = await this.loadAgentStages(this.stages);
 		this.render();
 	}
@@ -927,6 +929,48 @@ class BoardView extends ItemView {
 				).open();
 			}),
 		);
+		const alternateProjects = this.projects.filter((project) => project.id !== ticket.project);
+		if (!ticket.project && this.projects.length > 0) {
+			menu.addItem((item) =>
+				item.setTitle("Assign to project").setIcon("folder-plus").onClick(() => {
+					new FuzzyPickerModal<Project>(
+						this.app,
+						this.projects,
+						(project) => `${project.id} — ${project.title}`,
+						async (project) => {
+							await this.updateTicketFrontmatter(ticket.file, (fm) => {
+								fm.project = project.id;
+							});
+						},
+					).open();
+				}),
+			);
+		}
+		if (ticket.project && alternateProjects.length > 0) {
+			menu.addItem((item) =>
+				item.setTitle("Change project").setIcon("folder-sync").onClick(() => {
+					new FuzzyPickerModal<Project>(
+						this.app,
+						alternateProjects,
+						(project) => `${project.id} — ${project.title}`,
+						async (project) => {
+							await this.updateTicketFrontmatter(ticket.file, (fm) => {
+								fm.project = project.id;
+							});
+						},
+					).open();
+				}),
+			);
+		}
+		if (ticket.project) {
+			menu.addItem((item) =>
+				item.setTitle("Unassign project").setIcon("folder-x").onClick(async () => {
+					await this.updateTicketFrontmatter(ticket.file, (fm) => {
+						delete fm.project;
+					});
+				}),
+			);
+		}
 
 		// Group 3 — Move
 		const otherStages = this.stages.filter((s) => s !== ticket.stage);

@@ -66,6 +66,8 @@ no test harness yet.
 - A board view (`Open: Tickets Board` command) that mirrors the
   stages defined in `.tickets/config.yml`, drag-and-drop included.
 - Inline ticket creation, edits, priority and link controls.
+- Board card project assignment controls: assign, change, or remove
+  `project:` from the ticket context menu.
 - Per-ticket agent controls: spawn an adhoc run, re-run the stage
   agent, open a live terminal, view the diff a run produced.
 - A projects view (`Open: Tickets Projects` command) listing
