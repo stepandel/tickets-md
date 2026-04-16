@@ -1,5 +1,5 @@
-import test from "node:test";
-import assert from "node:assert/strict";
+import { test } from "node:test";
+import * as assert from "node:assert/strict";
 
 import { planDiffCommand, resolveDefaultBranch, type RunGit } from "./diff";
 
@@ -65,6 +65,9 @@ test("planDiffCommand uses merge-base and fallback diff in a worktree with origi
 	});
 
 	assert.equal(plan.kind, "worktree");
+	if (plan.kind !== "worktree") {
+		throw new Error("expected worktree diff plan");
+	}
 	assert.equal(plan.cwd, "/repo/.worktrees/TIC-123");
 	assert.deepEqual(plan.primary.mergeBase, ["merge-base", "HEAD", "origin/main"]);
 	assert.deepEqual(plan.primary.diff("abc123"), ["diff", "abc123...HEAD"]);
@@ -81,6 +84,9 @@ test("planDiffCommand preserves local main fallback in worktree mode", () => {
 	});
 
 	assert.equal(plan.kind, "worktree");
+	if (plan.kind !== "worktree") {
+		throw new Error("expected worktree diff plan");
+	}
 	assert.deepEqual(plan.primary.mergeBase, ["merge-base", "HEAD", "main"]);
 	assert.deepEqual(plan.fallback.diff, ["diff", "main...HEAD"]);
 });
@@ -95,6 +101,9 @@ test("planDiffCommand uses tickets/<id> branch diff when no worktree exists", ()
 	});
 
 	assert.equal(plan.kind, "branch");
+	if (plan.kind !== "branch") {
+		throw new Error("expected branch diff plan");
+	}
 	assert.equal(plan.cwd, "/repo/.tickets");
 	assert.deepEqual(plan.diff, ["diff", "origin/main...tickets/TIC-123"]);
 });
@@ -109,6 +118,9 @@ test("planDiffCommand uses local main fallback when no worktree exists", () => {
 	});
 
 	assert.equal(plan.kind, "branch");
+	if (plan.kind !== "branch") {
+		throw new Error("expected branch diff plan");
+	}
 	assert.deepEqual(plan.diff, ["diff", "main...tickets/TIC-123"]);
 });
 
@@ -122,5 +134,8 @@ test("planDiffCommand always emits a three-dot worktree diff range", () => {
 	});
 
 	assert.equal(plan.kind, "worktree");
+	if (plan.kind !== "worktree") {
+		throw new Error("expected worktree diff plan");
+	}
 	assert.equal(plan.primary.diff("base-sha")[1], "base-sha...HEAD");
 });
