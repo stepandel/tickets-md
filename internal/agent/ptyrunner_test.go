@@ -2,8 +2,10 @@ package agent
 
 import (
 	"bytes"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestTrimReplay_UnderCapUntouched(t *testing.T) {
@@ -56,4 +58,72 @@ func TestTrimReplay_NoEscapeSequencesSynthesizesReset(t *testing.T) {
 	if len(got) != expected {
 		t.Fatalf("expected len %d, got %d", expected, len(got))
 	}
+}
+
+func TestPTYRunnerWaitReceivesFastExitCode(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		argv []string
+		want int
+	}{
+		{
+			name: "zero",
+			argv: []string{"/bin/sh", "-c", "exit 0"},
+			want: 0,
+		},
+		{
+			name: "nonzero",
+			argv: []string{"/bin/sh", "-c", "exit 127"},
+			want: 127,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			runner := NewPTYRunner()
+			session := tc.name
+			logPath := filepath.Join(t.TempDir(), "session.log")
+			if err := runner.Start(session, t.TempDir(), tc.argv, logPath, 0, 0); err != nil {
+				t.Fatalf("Start: %v", err)
+			}
+
+			waitForSessionExit(t, runner, session)
+
+			code, err := runner.Wait(session)
+			if err != nil {
+				t.Fatalf("Wait: %v", err)
+			}
+			if code == nil {
+				t.Fatal("Wait returned nil exit code")
+			}
+			if *code != tc.want {
+				t.Fatalf("Wait exit code = %d, want %d", *code, tc.want)
+			}
+			if runner.Alive(session) {
+				t.Fatalf("Alive(%q) = true after Wait", session)
+			}
+		})
+	}
+}
+
+func waitForSessionExit(t *testing.T, runner *PTYRunner, name string) {
+	t.Helper()
+
+	deadline := time.Now().Add(5 * time.Second)
+	if testDeadline, ok := t.Deadline(); ok && testDeadline.Before(deadline) {
+		deadline = testDeadline
+	}
+
+	for time.Now().Before(deadline) {
+		if !runner.Alive(name) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Fatalf("session %q stayed alive until deadline", name)
 }
