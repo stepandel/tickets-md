@@ -208,7 +208,7 @@ setup steps.
 | Command                                 | What it does                                       |
 | --------------------------------------- | -------------------------------------------------- |
 | `tickets init`                          | Create `.tickets/config.yml` + stage folders       |
-| `tickets new <title...> [--priority P] [--parent ID] [--body MD]` | Create a ticket in the default stage |
+| `tickets new <title...> [--priority P] [--project ID] [--parent ID] [--blocked-by ID...] [--blocks ID...] [--related ID...] [--body MD]` | Create a ticket in the default stage |
 | `tickets projects <subcommand>`         | Create, list, show, update, assign, and delete projects |
 | `tickets list [--stage X] [--project P]`| List tickets, grouped by stage (alias: `ls`)       |
 | `tickets show <id>`                     | Print a ticket's contents                          |
@@ -497,6 +497,20 @@ tickets set TIC-001 priority -          # clear the field
 
 Any string is accepted (`low`, `high`, `P0`, …) but the board styling
 knows about `critical`, `high`, `medium`, `low`.
+
+## Create-Time Metadata
+
+`tickets new` can also set existing ticket metadata up front instead of
+requiring follow-up `set` or `link` commands:
+
+```sh
+tickets new "Fix login bug on Safari" --project PRJ-001 --blocked-by TIC-003
+tickets new "Split auth UI" --parent TIC-001 --related TIC-004 --related TIC-005
+tickets new "Ship migration" --blocks TIC-010 --priority critical
+```
+
+`--blocked-by`, `--blocks`, and `--related` accept multiple ticket IDs,
+either by repeating the flag or by passing a comma-separated list.
 
 ## Links
 
