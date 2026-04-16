@@ -105,9 +105,14 @@ func NewPTYRunner() *PTYRunner {
 // once a client subscribes and sends Resize).
 func (r *PTYRunner) Start(name, cwd string, argv []string, logPath string, rows, cols uint16) error {
 	r.mu.Lock()
-	if _, exists := r.sessions[name]; exists {
-		r.mu.Unlock()
-		return fmt.Errorf("session %s already exists", name)
+	if prev, exists := r.sessions[name]; exists {
+		select {
+		case <-prev.done:
+			delete(r.sessions, name)
+		default:
+			r.mu.Unlock()
+			return fmt.Errorf("session %s already exists", name)
+		}
 	}
 	r.mu.Unlock()
 
@@ -153,12 +158,7 @@ func (r *PTYRunner) Start(name, cwd string, argv []string, logPath string, rows,
 		sess.copyOutput()
 	}()
 
-	go func() {
-		sess.waitAndCleanup()
-		r.mu.Lock()
-		delete(r.sessions, name)
-		r.mu.Unlock()
-	}()
+	go sess.waitAndCleanup()
 
 	return nil
 }
@@ -167,9 +167,17 @@ func (r *PTYRunner) Start(name, cwd string, argv []string, logPath string, rows,
 // signature matches SessionChecker.
 func (r *PTYRunner) Alive(name string) bool {
 	r.mu.RLock()
-	defer r.mu.RUnlock()
-	_, ok := r.sessions[name]
-	return ok
+	sess, ok := r.sessions[name]
+	r.mu.RUnlock()
+	if !ok {
+		return false
+	}
+	select {
+	case <-sess.done:
+		return false
+	default:
+		return true
+	}
 }
 
 // IdleSeconds returns how many seconds since the last output on the
@@ -207,6 +215,9 @@ func (r *PTYRunner) Wait(name string) (*int, error) {
 		return nil, fmt.Errorf("session %s not found", name)
 	}
 	<-sess.done
+	r.mu.Lock()
+	delete(r.sessions, name)
+	r.mu.Unlock()
 	return sess.exitCode, sess.exitErr
 }
 
