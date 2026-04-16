@@ -110,10 +110,12 @@ func mustBeDirOrAbsent(path string) error {
 	return nil
 }
 
-const gitignoreBlock = "# .tickets: track stage config, ignore ticket content and runtime state\n.tickets/**\n!.tickets/*/\n!.tickets/*/.stage.yml"
+const gitignoreBlock = "# .tickets: track config and stage config, ignore ticket content and runtime state\n.tickets/**\n!.tickets/config.yml\n!.tickets/*/\n!.tickets/*/.stage.yml"
 
-// EnsureGitignored keeps stage config trackable in git while leaving
-// ticket content and runtime state ignored.
+const legacyGitignoreBlock = "# .tickets: track stage config, ignore ticket content and runtime state\n.tickets/**\n!.tickets/*/\n!.tickets/*/.stage.yml"
+
+// EnsureGitignored keeps store config and stage config trackable in
+// git while leaving ticket content and runtime state ignored.
 func EnsureGitignored(root string) error {
 	gitignore := filepath.Join(root, ".gitignore")
 	data, err := os.ReadFile(gitignore)
@@ -123,6 +125,11 @@ func EnsureGitignored(root string) error {
 	content := string(data)
 	if strings.Contains(content, gitignoreBlock) {
 		return nil
+	}
+
+	if strings.Contains(content, legacyGitignoreBlock) {
+		content = strings.Replace(content, legacyGitignoreBlock, gitignoreBlock, 1)
+		return os.WriteFile(gitignore, []byte(content), 0o644)
 	}
 
 	lines := strings.Split(content, "\n")

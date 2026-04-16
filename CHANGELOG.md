@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `.tickets/config.yml` is now tracked in Git (previously ignored).
+  `tickets init` writes a `.gitignore` block that whitelists the store
+  config alongside stage configs. Existing repos with the older
+  TIC-084 gitignore block are upgraded automatically by
+  `EnsureGitignored`.
+
 - `tickets watch` now hot-reloads `cron_agents:` when
   `.tickets/config.yml` changes, so cron schedule edits take effect
   without restarting the watcher.
