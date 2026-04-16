@@ -704,9 +704,10 @@ The login button doesn't respond on Safari 17...
 Most fields are optional. The **stage is not stored in the
 frontmatter** — it's the parent directory's name. That means you can
 `mv` ticket files in Finder and the CLI will see them in the right
-column on the next `list`, but CLI-only move side effects such as
-configured complete-stage unblocking only happen through `tickets move`
-or other commands that call `Store.Move`.
+column on the next `list`. `tickets watch` also applies configured
+complete-stage unblocking on filesystem moves, so Obsidian drag/drop
+and raw `mv` renames clear `blocks` / `blocked_by` the same way
+`tickets move` does — as long as the watcher is running.
 
 The `agent_*` fields are a cache written by `tickets watch`; the
 authoritative run state lives in `.tickets/.agents/<id>/<run>.yml`. If
@@ -744,10 +745,10 @@ stages:
   stages by editing this file; the CLI picks the changes up on the next
   command invocation. The name `projects` is reserved for the project
   store and cannot be used as a stage.
-- **complete_stages** — optional subset of `stages`. When a ticket is
-  moved into one of these stages through the CLI, its `blocks` links
-  are cleared and the peer tickets lose the matching `blocked_by`
-  entry.
+- **complete_stages** — optional subset of `stages`. When a ticket
+  enters one of these stages — via `tickets move` or a filesystem
+  move picked up by `tickets watch` — its `blocks` links are cleared
+  and the peer tickets lose the matching `blocked_by` entry.
 - **default_agent** — optional. The command `tickets agents run` uses
   to launch an interactive session for any ticket.
 
