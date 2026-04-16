@@ -131,6 +131,31 @@ On interactive runs, the CLI checks GitHub for a newer release at
 most once per 24 hours and prints a one-line stderr reminder when
 you are behind. Set `TICKETS_NO_UPDATE_CHECK=1` to disable that nag.
 
+## Upgrade
+
+### Homebrew
+
+```sh
+brew update && brew upgrade tickets
+```
+
+If `brew upgrade` still shows the old version, force-refresh the tap
+and retry:
+
+```sh
+brew tap --force stepandel/tap
+brew upgrade tickets
+```
+
+### From source
+
+```sh
+go install github.com/stepandel/tickets-md/cmd/tickets@latest
+```
+
+After upgrading the CLI, re-run `tickets obsidian install` in each
+project vault to sync the companion plugin to the new version.
+
 ### Shell completions
 
 `tickets completion <bash|zsh|fish|powershell>` emits a completion
