@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-04-15
+
+### Added
+
+- `tickets watch` now auto-updates the Obsidian plugin at startup when
+  the installed version doesn't match the CLI version, removing the
+  need to manually run `tickets obsidian install` after upgrading.
+
+### Fixed
+
+- Fixed a race condition where fast-exiting PTY sessions (e.g. cron
+  agents running `exit 0`) could be incorrectly marked as `failed`
+  instead of `done`. The cleanup goroutine was removing the session
+  from the map before `Wait()` could read the exit status.
+
 ## [0.1.8] - 2026-04-15
 
 - `.tickets/config.yml` is now tracked in Git (previously ignored).
@@ -301,7 +316,8 @@ course of development.
 - `make release VERSION=x.y.z` stamps the binary version via
   `-ldflags`; `tickets --version` reports it.
 
-[Unreleased]: https://github.com/stepandel/tickets-md/compare/v0.1.8...HEAD
+[Unreleased]: https://github.com/stepandel/tickets-md/compare/v0.1.9...HEAD
+[0.1.9]: https://github.com/stepandel/tickets-md/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/stepandel/tickets-md/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/stepandel/tickets-md/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/stepandel/tickets-md/compare/v0.1.5...v0.1.6
