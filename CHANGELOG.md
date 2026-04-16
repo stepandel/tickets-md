@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-04-15
+
 - `.tickets/config.yml` is now tracked in Git (previously ignored).
   `tickets init` writes a `.gitignore` block that whitelists the store
   config alongside stage configs. Existing repos with the older
@@ -299,7 +301,10 @@ course of development.
 - `make release VERSION=x.y.z` stamps the binary version via
   `-ldflags`; `tickets --version` reports it.
 
-[Unreleased]: https://github.com/stepandel/tickets-md/compare/v0.1.5...HEAD
+[Unreleased]: https://github.com/stepandel/tickets-md/compare/v0.1.8...HEAD
+[0.1.8]: https://github.com/stepandel/tickets-md/compare/v0.1.7...v0.1.8
+[0.1.7]: https://github.com/stepandel/tickets-md/compare/v0.1.6...v0.1.7
+[0.1.6]: https://github.com/stepandel/tickets-md/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/stepandel/tickets-md/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/stepandel/tickets-md/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/stepandel/tickets-md/compare/v0.1.2...v0.1.3
