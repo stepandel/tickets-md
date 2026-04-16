@@ -29,6 +29,15 @@ func TestInstallPreCommitWritesExecutableScript(t *testing.T) {
 	if !strings.Contains(string(body), "make check") {
 		t.Errorf("hook should invoke `make check`, got:\n%s", body)
 	}
+	if !strings.Contains(string(body), "make plugin-test") {
+		t.Errorf("hook should invoke `make plugin-test` for staged plugin changes, got:\n%s", body)
+	}
+	if !strings.Contains(string(body), "^obsidian-plugin/") {
+		t.Errorf("hook should scope plugin tests to staged obsidian-plugin files, got:\n%s", body)
+	}
+	if !strings.Contains(string(body), "git diff --cached") {
+		t.Errorf("hook should detect staged plugin changes via `git diff --cached`, got:\n%s", body)
+	}
 }
 
 func TestInstallPreCommitRefusesToOverwrite(t *testing.T) {
