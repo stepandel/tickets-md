@@ -2056,7 +2056,7 @@ class AgentsView extends ItemView {
 			item.setTitle("Edit config").setIcon("settings").onClick(() => {
 				new CronAgentModal(this.app, parseCronAgentConfig(cron.config), async (updated) => {
 					await this.saveCronAgent(cron.config.name, updated);
-					new Notice("Saved cron agent config. Restart `tickets watch` to reload schedules.");
+					new Notice("Saved cron agent config. Running `tickets watch` instances will reload it automatically.");
 				}).open();
 			}),
 		);
@@ -2068,7 +2068,7 @@ class AgentsView extends ItemView {
 						...parseCronAgentConfig(cron.config),
 						enabled: !cronAgentEnabled(cron.config),
 					});
-					new Notice("Updated cron agent. Restart `tickets watch` to apply schedule changes.");
+					new Notice("Updated cron agent. Running `tickets watch` instances will reload it automatically.");
 				}),
 		);
 		const lastRun = cron.lastRun;

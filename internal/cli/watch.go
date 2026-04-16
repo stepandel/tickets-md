@@ -165,11 +165,42 @@ func runWatch(s *ticket.Store) error {
 		}
 		log.Printf("watching %s/ (%s)", st, status)
 	}
+	if err := w.Add(filepath.Join(s.Root, config.ConfigDir)); err != nil {
+		return fmt.Errorf("watching %s: %w", filepath.Join(s.Root, config.ConfigDir), err)
+	}
 
 	cronScheduler, err := startCronScheduler(s.Root, s.Config, mon, runner)
 	if err != nil {
 		return err
 	}
+	configPath := config.Path(s.Root)
+	var configReloadTimer *time.Timer
+	var configReloadCh <-chan time.Time
+	scheduleConfigReload := func() {
+		if configReloadTimer == nil {
+			configReloadTimer = time.NewTimer(250 * time.Millisecond)
+			configReloadCh = configReloadTimer.C
+			return
+		}
+		if !configReloadTimer.Stop() {
+			select {
+			case <-configReloadTimer.C:
+			default:
+			}
+		}
+		configReloadTimer.Reset(250 * time.Millisecond)
+	}
+	defer func() {
+		if configReloadTimer == nil {
+			return
+		}
+		if !configReloadTimer.Stop() {
+			select {
+			case <-configReloadTimer.C:
+			default:
+			}
+		}
+	}()
 
 	// Wire the "re-run stage agent" callback now that stage configs are
 	// loaded. The terminal server exposes this via POST /rerun-stage-agent
@@ -187,9 +218,7 @@ func runWatch(s *ticket.Store) error {
 		select {
 		case <-sigCh:
 			log.Println("shutting down")
-			if cronScheduler != nil {
-				cronScheduler.Stop()
-			}
+			cronScheduler.Stop()
 			// Stop accepting new WebSocket clients before SIGTERM'ing
 			// children. Otherwise a client that attaches during the
 			// 5-second runner grace can Subscribe to a session that's
@@ -202,6 +231,10 @@ func runWatch(s *ticket.Store) error {
 		case event, ok := <-w.Events:
 			if !ok {
 				return nil
+			}
+			if event.Name == configPath {
+				scheduleConfigReload()
+				continue
 			}
 
 			if event.Has(fsnotify.Rename) || event.Has(fsnotify.Remove) {
@@ -227,6 +260,19 @@ func runWatch(s *ticket.Store) error {
 			knownPaths[event.Name] = true
 
 			handleCreate(s, stageConfigs, event.Name, mon, runner)
+
+		case <-configReloadCh:
+			newCfg, err := config.Load(s.Root)
+			if err != nil {
+				log.Printf("config: reload failed: %v", err)
+				continue
+			}
+			if err := cronScheduler.Reload(newCfg); err != nil {
+				log.Printf("config: reload failed: %v", err)
+				continue
+			}
+			s.Config.CronAgents = newCfg.CronAgents
+			log.Printf("config: reloaded %d cron agents", cronScheduler.ActiveCount())
 
 		case err, ok := <-w.Errors:
 			if !ok {

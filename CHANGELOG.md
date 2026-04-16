@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `tickets watch` now hot-reloads `cron_agents:` when
+  `.tickets/config.yml` changes, so cron schedule edits take effect
+  without restarting the watcher.
+
 - `tickets new --body` now normalizes literal `\n` sequences in the flag
   value into real newlines, so shell-friendly one-line invocations save
   as multi-line markdown bodies. Real newlines are preserved unchanged.

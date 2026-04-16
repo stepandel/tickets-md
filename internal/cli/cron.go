@@ -1,9 +1,12 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
+	"reflect"
+	"sync"
 	"time"
 
 	cron "github.com/robfig/cron/v3"
@@ -14,31 +17,110 @@ import (
 )
 
 type watchCronScheduler struct {
-	engine *cron.Cron
+	mu      sync.Mutex
+	engine  *cron.Cron
+	root    string
+	mon     *agent.Monitor
+	runner  *agent.PTYRunner
+	entries map[string]cronEntry
+}
+
+type cronEntry struct {
+	id  cron.EntryID
+	cfg config.CronAgentConfig
 }
 
 func startCronScheduler(root string, cfg config.Config, mon *agent.Monitor, runner *agent.PTYRunner) (*watchCronScheduler, error) {
-	if !cfg.HasCronAgents() {
-		return nil, nil
+	s := &watchCronScheduler{
+		root:    root,
+		mon:     mon,
+		runner:  runner,
+		entries: make(map[string]cronEntry),
 	}
-	engine := cron.New()
+	if err := s.Reload(cfg); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+func (s *watchCronScheduler) ActiveCount() int {
+	if s == nil {
+		return 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.entries)
+}
+
+func (s *watchCronScheduler) Reload(cfg config.Config) error {
+	if s == nil {
+		return nil
+	}
+	if err := config.ValidateCronAgents(cfg.CronAgents); err != nil {
+		return err
+	}
+
+	wanted := make(map[string]config.CronAgentConfig, len(cfg.CronAgents))
 	for _, ca := range cfg.CronAgents {
 		if !ca.IsEnabled() {
 			log.Printf("cron %s: disabled", ca.Name)
 			continue
 		}
-		ca := ca
-		if _, err := engine.AddFunc(ca.Schedule, func() {
-			if err := spawnCronAgent(root, ca, mon, runner); err != nil {
-				log.Printf("cron %s: %v", ca.Name, err)
-			}
-		}); err != nil {
-			return nil, fmt.Errorf("registering cron %s: %w", ca.Name, err)
-		}
-		log.Printf("cron %s: scheduled %s", ca.Name, ca.Schedule)
+		wanted[ca.Name] = ca
 	}
-	engine.Start()
-	return &watchCronScheduler{engine: engine}, nil
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for name := range s.entries {
+		if _, ok := wanted[name]; ok {
+			continue
+		}
+		s.unregisterEntry(name)
+	}
+
+	var errs []error
+	for name, ca := range wanted {
+		if cur, ok := s.entries[name]; ok && reflect.DeepEqual(cur.cfg, ca) {
+			continue
+		}
+		if _, ok := s.entries[name]; ok {
+			s.unregisterEntry(name)
+		}
+		if err := s.registerEntry(ca); err != nil {
+			errs = append(errs, fmt.Errorf("registering cron %s: %w", name, err))
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+func (s *watchCronScheduler) registerEntry(ca config.CronAgentConfig) error {
+	if s.engine == nil {
+		s.engine = cron.New()
+		s.engine.Start()
+	}
+	cfg := ca
+	id, err := s.engine.AddFunc(cfg.Schedule, func() {
+		if err := spawnCronAgent(s.root, cfg, s.mon, s.runner); err != nil {
+			log.Printf("cron %s: %v", cfg.Name, err)
+		}
+	})
+	if err != nil {
+		return err
+	}
+	s.entries[cfg.Name] = cronEntry{id: id, cfg: cfg}
+	log.Printf("cron %s: scheduled %s", cfg.Name, cfg.Schedule)
+	return nil
+}
+
+func (s *watchCronScheduler) unregisterEntry(name string) {
+	if s.engine != nil {
+		if entry, ok := s.entries[name]; ok {
+			s.engine.Remove(entry.id)
+		}
+	}
+	delete(s.entries, name)
 }
 
 func (s *watchCronScheduler) Stop() {

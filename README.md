@@ -40,7 +40,9 @@ The whole store lives under a single hidden `.tickets/` directory at
 the project root, the same way `.git/` works.
 
 Board-level cron agents can also be defined in `.tickets/config.yml`
-and are fired by `tickets watch` while it is running:
+and are fired by `tickets watch` while it is running. Editing
+`cron_agents:` is hot-reloaded by a running watcher; no restart is
+required:
 
 ```yaml
 cron_agents:
