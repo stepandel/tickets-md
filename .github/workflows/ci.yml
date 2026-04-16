@@ -49,7 +49,9 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Node 22 (LTS). `npm test` uses `node --test 'src/**/*.test.ts'`
+          # with a glob; glob support in `node --test` landed in Node 21.
+          node-version: 22
           cache: npm
           cache-dependency-path: obsidian-plugin/package-lock.json
 
