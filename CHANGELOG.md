@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- The Obsidian board card menu can now assign a ticket to a project,
+  change its project, or remove `project:` without editing
+  frontmatter by hand.
+
 - The Obsidian plugin now has a Projects view: a ribbon icon,
   `Open Tickets Projects` command, and row context menu for
   creating, renaming, setting status, listing assigned tickets, and
