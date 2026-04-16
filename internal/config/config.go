@@ -190,19 +190,24 @@ func (c Config) Validate() error {
 		}
 		completeSeen[st] = struct{}{}
 	}
-	cronSeen := make(map[string]struct{}, len(c.CronAgents))
-	for _, ca := range c.CronAgents {
+	return ValidateCronAgents(c.CronAgents)
+}
+
+func ValidateCronAgents(cronAgents []CronAgentConfig) error {
+	seen := make(map[string]struct{}, len(cronAgents))
+	parser := cronParser()
+	for _, ca := range cronAgents {
 		if err := ValidateCronName(ca.Name); err != nil {
 			return err
 		}
-		if _, dup := cronSeen[ca.Name]; dup {
+		if _, dup := seen[ca.Name]; dup {
 			return fmt.Errorf("duplicate cron agent %q", ca.Name)
 		}
-		cronSeen[ca.Name] = struct{}{}
+		seen[ca.Name] = struct{}{}
 		if ca.Schedule == "" {
 			return fmt.Errorf("cron agent %q schedule is empty", ca.Name)
 		}
-		if _, err := cronParser().Parse(ca.Schedule); err != nil {
+		if _, err := parser.Parse(ca.Schedule); err != nil {
 			return fmt.Errorf("cron agent %q has invalid schedule %q: %w", ca.Name, ca.Schedule, err)
 		}
 		if ca.Command == "" {
