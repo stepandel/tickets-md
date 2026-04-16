@@ -850,6 +850,12 @@ body.is-mobile .tb-board-title:hover {
 	height: 100%;
 }
 
+.tb-projects-body {
+	display: flex;
+	flex: 1;
+	min-height: 0;
+}
+
 .tb-projects-create-btn {
 	font-size: 0.9em;
 	font-weight: 600;
@@ -859,6 +865,15 @@ body.is-mobile .tb-board-title:hover {
 	flex: 1;
 	overflow-y: auto;
 	padding: 4px 0;
+}
+
+.tb-project-tickets {
+	display: flex;
+	flex-direction: column;
+	width: 280px;
+	min-width: 0;
+	border-left: 1px solid var(--background-modifier-border);
+	overflow-y: auto;
 }
 
 .tb-project-row {
@@ -874,6 +889,14 @@ body.is-mobile .tb-board-title:hover {
 
 .tb-project-row:hover {
 	background: var(--background-modifier-hover);
+}
+
+.tb-project-row-selected {
+	background: color-mix(in srgb, var(--interactive-accent) 10%, transparent);
+}
+
+.tb-project-row-selected:hover {
+	background: color-mix(in srgb, var(--interactive-accent) 14%, transparent);
 }
 
 .tb-project-row-left {
@@ -924,4 +947,77 @@ body.is-mobile .tb-board-title:hover {
 	border-radius: 999px;
 	background: var(--background-secondary);
 	color: var(--text-muted);
+}
+
+.tb-project-tickets-header {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 12px;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.tb-project-tickets-title {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+
+.tb-project-tickets-name {
+	font-size: 0.95em;
+	font-weight: 600;
+	color: var(--text-normal);
+}
+
+.tb-project-open-btn {
+	align-self: flex-start;
+	font-size: 0.85em;
+	padding: 4px 0;
+}
+
+.tb-project-ticket-list {
+	display: flex;
+	flex-direction: column;
+}
+
+.tb-project-ticket-row {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 10px 12px;
+	border-bottom: 1px solid var(--background-modifier-border);
+	cursor: pointer;
+	transition: background 0.12s ease;
+}
+
+.tb-project-ticket-row:hover {
+	background: var(--background-modifier-hover);
+}
+
+.tb-project-ticket-meta {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex-wrap: wrap;
+}
+
+.tb-project-ticket-title {
+	font-size: 0.9em;
+	color: var(--text-normal);
+	line-height: 1.35;
+}
+
+@media (max-width: 600px) {
+	.tb-projects-body {
+		flex-direction: column;
+	}
+
+	.tb-project-tickets {
+		width: auto;
+		flex: 0 0 auto;
+		max-height: 220px;
+		border-left: none;
+		border-top: 1px solid var(--background-modifier-border);
+	}
 }

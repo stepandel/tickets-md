@@ -1895,6 +1895,7 @@ class ProjectsView extends ItemView {
 	private config: TicketsConfig | null = null;
 	private projects: Project[] = [];
 	private tickets: Ticket[] = [];
+	private selectedProjectId: string | null = null;
 	private previewLeaf: WorkspaceLeaf | null = null;
 	private longPressTriggered = false;
 
@@ -1937,6 +1938,12 @@ class ProjectsView extends ItemView {
 		this.config = config;
 		this.projects = await loadProjects(this.app, config);
 		this.tickets = await loadTickets(this.app, config.stages);
+		if (this.selectedProjectId && !this.projects.some((project) => project.id === this.selectedProjectId)) {
+			this.selectedProjectId = null;
+		}
+		if (!this.selectedProjectId && this.projects.length > 0) {
+			this.selectedProjectId = this.projects[0].id;
+		}
 		this.render();
 	}
 
@@ -1974,23 +1981,31 @@ class ProjectsView extends ItemView {
 			return;
 		}
 
-		const list = container.createDiv({ cls: "tb-projects-list" });
+		const body = container.createDiv({ cls: "tb-projects-body" });
+		const list = body.createDiv({ cls: "tb-projects-list" });
 		for (const project of this.projects) {
 			this.renderRow(list, project);
 		}
+		this.renderTicketsSidebar(body);
 	}
 
 	private renderRow(parent: HTMLElement, project: Project) {
 		const assignedCount = this.tickets.filter((ticket) => ticket.project === project.id).length;
 		const row = parent.createDiv({ cls: "tb-project-row" });
+		if (project.id === this.selectedProjectId) {
+			row.addClass("tb-project-row-selected");
+		}
 
-		row.addEventListener("click", async () => {
+		row.addEventListener("click", () => {
 			if (this.longPressTriggered) {
 				this.longPressTriggered = false;
 				return;
 			}
-			this.previewLeaf = openPreviewLeaf(this.app, this.previewLeaf);
-			await this.previewLeaf.openFile(project.file);
+			if (this.selectedProjectId === project.id) {
+				return;
+			}
+			this.selectedProjectId = project.id;
+			this.render();
 		});
 
 		row.addEventListener("contextmenu", (e) => {
@@ -2022,6 +2037,78 @@ class ProjectsView extends ItemView {
 				cls: "tb-agent-updated",
 				attr: { datetime: project.updated_at },
 			});
+		}
+	}
+
+	private renderTicketsSidebar(parent: HTMLElement) {
+		const sidebar = parent.createDiv({ cls: "tb-project-tickets" });
+		const selectedProject = this.projects.find((project) => project.id === this.selectedProjectId) ?? null;
+		if (!selectedProject) {
+			sidebar.createDiv({ cls: "tb-empty", text: "Select a project to see its tickets" });
+			return;
+		}
+
+		const assigned = this.tickets
+			.filter((ticket) => ticket.project === selectedProject.id)
+			.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+
+		const header = sidebar.createDiv({ cls: "tb-project-tickets-header" });
+		const titleGroup = header.createDiv({ cls: "tb-project-tickets-title" });
+		titleGroup.createEl("span", { text: selectedProject.id, cls: "tb-ticket-id" });
+		titleGroup.createEl("span", {
+			text: `${assigned.length} ticket${assigned.length === 1 ? "" : "s"}`,
+			cls: "tb-project-count",
+		});
+		header.createEl("div", { text: selectedProject.title, cls: "tb-project-tickets-name" });
+		const openBtn = header.createEl("button", {
+			text: "Open project",
+			cls: "tb-project-open-btn",
+			attr: { "aria-label": `Open ${selectedProject.id}` },
+		});
+		openBtn.addEventListener("click", async () => {
+			try {
+				this.previewLeaf = openPreviewLeaf(this.app, this.previewLeaf);
+				await this.previewLeaf.openFile(selectedProject.file);
+			} catch (err) {
+				new Notice(`Could not open ${selectedProject.id}: ${err instanceof Error ? err.message : String(err)}`);
+			}
+		});
+
+		if (assigned.length === 0) {
+			sidebar.createDiv({ cls: "tb-empty", text: "No tickets assigned" });
+			return;
+		}
+
+		const list = sidebar.createDiv({ cls: "tb-project-ticket-list" });
+		for (const ticket of assigned) {
+			const row = list.createDiv({ cls: "tb-project-ticket-row" });
+			row.addEventListener("click", async () => {
+				try {
+					this.previewLeaf = openPreviewLeaf(this.app, this.previewLeaf);
+					await this.previewLeaf.openFile(ticket.file);
+				} catch (err) {
+					new Notice(`Could not open ${ticket.id}: ${err instanceof Error ? err.message : String(err)}`);
+				}
+			});
+
+			const meta = row.createDiv({ cls: "tb-project-ticket-meta" });
+			meta.createEl("span", { text: ticket.id, cls: "tb-ticket-id" });
+			meta.createEl("span", { text: ticket.stage, cls: "tb-stage-name" });
+			if (ticket.priority) {
+				meta.createEl("span", {
+					text: ticket.priority,
+					cls: `tb-priority tb-priority-${ticket.priority.toLowerCase()}`,
+				});
+			}
+			if (ticket.agent_status && AGENT_BADGES[ticket.agent_status]) {
+				const badge = AGENT_BADGES[ticket.agent_status];
+				meta.createEl("span", {
+					text: badge.icon,
+					cls: `tb-agent-badge ${badge.cls}`,
+					attr: { "aria-label": ticket.agent_status },
+				});
+			}
+			row.createEl("div", { text: ticket.title, cls: "tb-project-ticket-title" });
 		}
 	}
 
@@ -2067,11 +2154,6 @@ class ProjectsView extends ItemView {
 			}),
 		);
 		menu.addItem((item) =>
-			item.setTitle("Show assigned tickets").setIcon("list-todo").onClick(() => {
-				this.showAssignedTickets(project);
-			}),
-		);
-		menu.addItem((item) =>
 			item.setTitle("Delete project").setIcon("trash").onClick(() => {
 				new ConfirmProjectDeleteModal(this.app, project, async () => {
 					const failures: string[] = [];
@@ -2085,6 +2167,9 @@ class ProjectsView extends ItemView {
 						}
 					}
 					await this.app.vault.trash(project.file, false);
+					if (this.selectedProjectId === project.id) {
+						this.selectedProjectId = null;
+					}
 					if (failures.length > 0) {
 						new Notice(`Deleted ${project.id} but could not clear assignment on: ${failures.join(", ")}`);
 					}
@@ -2093,27 +2178,6 @@ class ProjectsView extends ItemView {
 			}),
 		);
 		return menu;
-	}
-
-	private showAssignedTickets(project: Project) {
-		const assigned = this.tickets
-			.filter((ticket) => ticket.project === project.id)
-			.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
-		if (assigned.length === 0) {
-			new Notice(`${project.id} has no assigned tickets`);
-			return;
-		}
-		new FuzzyPickerModal(
-			this.app,
-			assigned,
-			(ticket) => `${ticket.id} ${ticket.title}`,
-			(ticket) => {
-				this.previewLeaf = openPreviewLeaf(this.app, this.previewLeaf);
-				void this.previewLeaf.openFile(ticket.file).catch((err) => {
-					new Notice(`Could not open ${ticket.id}: ${err instanceof Error ? err.message : String(err)}`);
-				});
-			},
-		).open();
 	}
 
 	private async createProject() {
