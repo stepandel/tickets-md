@@ -25,6 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of getting stuck at `spawned` or being misreported as
   disappeared.
 
+- `tickets new --project` is now validated before the ticket is created,
+  so an unknown project ID no longer leaves an orphaned ticket on disk.
+
 - `tickets new --body` now recognizes `\n`, `\r`, `\t`, and `\\` escape
   sequences in the flag value, so shell-friendly one-line invocations
   save as multi-line markdown bodies. Unknown `\X` sequences are left

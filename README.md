@@ -535,10 +535,10 @@ quoted multi-line string) are preserved unchanged, and `\\n` is the
 escape hatch for saving a literal two-character `\n`.
 
 All relation targets (`--parent`, `--blocked-by`, `--blocks`,
-`--related`) are validated against the store before the ticket is
-created: if any ID is unknown, empty, duplicated within a flag, or
-reused across conflicting relation roles, `tickets new` fails with an
-error and leaves nothing on disk.
+`--related`) and `--project` are validated against the store before
+the ticket is created: if any ID is unknown, empty, duplicated within
+a flag, or reused across conflicting relation roles, `tickets new`
+fails with an error and leaves nothing on disk.
 
 ## Links
 
