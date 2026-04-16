@@ -11,7 +11,8 @@
 
 A Linear-style ticket tracker that lives inside a single git repo —
 every ticket is a markdown file, every stage a folder, kept right
-next to the code (commit them or gitignore them, your call). The
+next to the code. Stage config under `.tickets/*/.stage.yml` is meant
+to be committed; ticket markdown and runtime state stay gitignored. The
 companion Obsidian plugin is the primary UI (drag-and-drop Kanban,
 live agent terminal); the `tickets` CLI drives the same files for
 terminal-first users. No database, no background service; agent
@@ -39,6 +40,12 @@ automation is opt-in via `tickets watch`.
 The whole store lives under a single hidden `.tickets/` directory at
 the project root, the same way `.git/` works.
 
+The intended git policy is mixed:
+
+- track `.tickets/*/.stage.yml` so stage automation and prompts are reviewable
+- ignore `.tickets/<stage>/*.md`, `.tickets/.agents/`, `.tickets/config.yml`, and other local runtime state
+- let `tickets init` maintain the repo-root `.gitignore` block for that policy
+
 Board-level cron agents can also be defined in `.tickets/config.yml`
 and are fired by `tickets watch` while it is running. Editing
 `cron_agents:` is hot-reloaded by a running watcher; no restart is
@@ -55,10 +62,11 @@ cron_agents:
       Review the backlog and clean up duplicates or outdated tickets.
 ```
 
-Moving a ticket between stages is just `mv` — commit `.tickets/` and
-`git log` becomes your audit trail too. When a stage has an agent
-configured, `tickets watch` automatically spawns the agent whenever a
-ticket arrives.
+Moving a ticket between stages is just a file rename, so if you choose
+to commit ticket markdown in your own workflow, `git log` can serve as
+an audit trail too. By default this repo keeps ticket markdown ignored
+while still tracking stage config. When a stage has an agent configured,
+`tickets watch` automatically spawns the agent whenever a ticket arrives.
 
 <img width="2912" height="1524" alt="CleanShot 2026-04-13 at 20 11 04@2x" src="https://github.com/user-attachments/assets/9b094924-3924-4f32-b9a7-21dd17438d6b" />
 
@@ -154,15 +162,22 @@ tickets completion fish > ~/.config/fish/completions/tickets.fish
 
 `tickets init` is meant to run inside the **git repository you're
 actually working on**. The whole store lives under `.tickets/` at the
-repo root — same way `.git/` does — so ticket files get committed
-alongside the code they describe, and agents you wire up operate
-only on checkouts of that repo.
+repo root — same way `.git/` does — and `tickets init` also writes the
+repo-root `.gitignore` block that tracks `.tickets/*/.stage.yml` while
+keeping ticket markdown and runtime state ignored.
 
 ```sh
 cd ~/code/my-app              # a git repo with code you work on
 tickets init                  # creates ./.tickets/ + stage folders
-git add .tickets && git commit -m "chore: add tickets-md store"
+git add .gitignore .tickets/*/.stage.yml
+git commit -m "chore: add tickets-md stage config"
 ```
+
+That default policy means:
+
+- `.tickets/*/.stage.yml` is shared in Git
+- `.tickets/<stage>/*.md` stays local and ignored
+- `.tickets/config.yml` and `.tickets/.agents/` stay local and ignored
 
 Running `tickets init` outside a git repo works — `.tickets/` is just
 a directory — but you lose two useful properties:
@@ -175,7 +190,8 @@ a directory — but you lose two useful properties:
   them. Without a git repo, agents run directly against the
   directory with no isolation.
 - **Audit trail.** Ticket moves are file renames, so `git log --stat
-  .tickets/` shows who moved what when and from which stage to which.
+  .tickets/` shows who moved what when and from which stage to which
+  in setups that choose to commit ticket markdown.
 
 A second, unrelated project gets its own `.tickets/` store — they
 don't share state, and an agent configured under one project's

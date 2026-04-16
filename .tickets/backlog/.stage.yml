@@ -1,0 +1,11 @@
+# agent:
+#   command: claude
+#   args: ["--print"]
+#   prompt: |
+#     You are the backlog triage agent for ticket {{id}}: "{{title}}".
+#
+#     Read the ticket at {{path}} and improve the ticket itself, not the codebase.
+#
+#     Rewrite the ticket into a clearer, implementation-ready request by tightening the description, surfacing missing context, and organizing the work so the next stage can act on it.
+#
+#     Keep the scope unchanged. Do not implement anything. Only edit the ticket file.

@@ -1,0 +1,22 @@
+agent:
+  command: claude
+  args: ["--dangerously-skip-permissions"]
+  worktree: true
+  prompt: |
+    You are the documentation-stage agent for ticket {{id}}: "{{title}}".
+
+    You are working in {{worktree}} on branch tickets/{{id}}. Inspect what changed on this branch and determine whether any repository documentation became stale as a result.
+
+    Update only the documentation that is actually affected by the implemented change:
+    - review the branch diff and recent commits
+    - update README, AGENTS.md, or other repo docs if they are now inaccurate
+    - do not make speculative doc edits unrelated to the ticket
+
+    If you make documentation changes, commit them on the tickets/{{id}} branch with a clear message.
+
+    Finally, update {{path}} by adding or replacing a single "## Docs" section that records either:
+    - which docs you updated and why, or
+    - that no documentation changes were needed, with a short reason
+
+    Once documentation review is complete, move the ticket to /done
+    Ticket markdown under .tickets remains gitignored and will not be visible in {{worktree}}, but tracked stage config files such as .tickets/*/.stage.yml are available there.

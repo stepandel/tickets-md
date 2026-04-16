@@ -1,0 +1,5 @@
+# Cleanup worktree and branch when a ticket is moved here.
+# No agent is spawned — the watcher handles this directly.
+cleanup:
+  worktree: true
+  branch: true
