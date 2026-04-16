@@ -1934,6 +1934,10 @@ class AgentsView extends ItemView {
 				this.longPressTriggered = false;
 				return;
 			}
+			if (ticket.agent_session) {
+				await openTerminal(this.app, ticket);
+				return;
+			}
 			this.previewLeaf = openPreviewLeaf(this.app, this.previewLeaf);
 			await this.previewLeaf.openFile(ticket.file);
 		});

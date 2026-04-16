@@ -28,9 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on disk. Empty IDs, intra-flag duplicates, and the same peer reused
   across conflicting relation roles are also rejected.
 
-- Board cards in the Obsidian plugin now show the assigned
-  `project:` as a compact chip, including a muted fallback for
-  dangling project references.
+- Clicking an agent row in the Obsidian plugin's Agents view now opens
+  the live PTY terminal when the ticket has an active agent session,
+  instead of opening the ticket file.
+
+- Board cards in the Obsidian plugin no longer show a project chip;
+  use the card context menu for project assignment.
 
 - The Obsidian board card menu can now assign a ticket to a project,
   change its project, or remove `project:` without editing
