@@ -96,6 +96,7 @@ func newTestHandler(t *testing.T, runner *fakeRunner, root string) http.Handler 
 	mux.HandleFunc("/sessions", srv.handleSessions)
 	mux.HandleFunc("/spawn", srv.handleSpawn)
 	mux.HandleFunc("/rerun-stage-agent", srv.handleRerunStageAgent)
+	mux.HandleFunc("/run-cron-agent", srv.handleRunCronAgent)
 	return withCORS(mux)
 }
 
@@ -360,6 +361,127 @@ func TestRerun_CallbackError(t *testing.T) {
 	}
 	if !strings.Contains(body, "no stage agent") {
 		t.Fatalf("body = %q", body)
+	}
+}
+
+func TestRunCron_NoCallback(t *testing.T) {
+	h := newTestHandler(t, &fakeRunner{}, t.TempDir())
+	req := httptest.NewRequest(http.MethodPost, "/run-cron-agent", strings.NewReader(`{"name":"groomer"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", rr.Code)
+	}
+}
+
+func TestRunCron_BadJSON(t *testing.T) {
+	root := t.TempDir()
+	srv := New(&fakeRunner{}, root)
+	srv.RunCronAgent = func(name string, rows, cols uint16) (string, error) { return "", nil }
+	mux := http.NewServeMux()
+	mux.HandleFunc("/run-cron-agent", srv.handleRunCronAgent)
+	h := withCORS(mux)
+	req := httptest.NewRequest(http.MethodPost, "/run-cron-agent", strings.NewReader("{"))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	body := responseBody(t, rr)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+	if !strings.Contains(body, "bad request") {
+		t.Fatalf("body = %q", body)
+	}
+}
+
+func TestRunCron_MissingName(t *testing.T) {
+	root := t.TempDir()
+	srv := New(&fakeRunner{}, root)
+	srv.RunCronAgent = func(name string, rows, cols uint16) (string, error) { return "", nil }
+	mux := http.NewServeMux()
+	mux.HandleFunc("/run-cron-agent", srv.handleRunCronAgent)
+	h := withCORS(mux)
+	req := httptest.NewRequest(http.MethodPost, "/run-cron-agent", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	body := responseBody(t, rr)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+	if !strings.Contains(body, "name is required") {
+		t.Fatalf("body = %q", body)
+	}
+}
+
+func TestRunCron_CallbackError(t *testing.T) {
+	root := t.TempDir()
+	srv := New(&fakeRunner{}, root)
+	srv.RunCronAgent = func(name string, rows, cols uint16) (string, error) { return "", errors.New("unknown cron") }
+	mux := http.NewServeMux()
+	mux.HandleFunc("/run-cron-agent", srv.handleRunCronAgent)
+	h := withCORS(mux)
+	req := httptest.NewRequest(http.MethodPost, "/run-cron-agent", strings.NewReader(`{"name":"groomer"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	body := responseBody(t, rr)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+	if !strings.Contains(body, "unknown cron") {
+		t.Fatalf("body = %q", body)
+	}
+}
+
+func TestRunCron_Conflict(t *testing.T) {
+	root := t.TempDir()
+	srv := New(&fakeRunner{}, root)
+	srv.RunCronAgent = func(name string, rows, cols uint16) (string, error) { return "", ErrCronRunActive }
+	mux := http.NewServeMux()
+	mux.HandleFunc("/run-cron-agent", srv.handleRunCronAgent)
+	h := withCORS(mux)
+	req := httptest.NewRequest(http.MethodPost, "/run-cron-agent", strings.NewReader(`{"name":"groomer"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	body := responseBody(t, rr)
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", rr.Code)
+	}
+	if !strings.Contains(body, ErrCronRunActive.Error()) {
+		t.Fatalf("body = %q", body)
+	}
+}
+
+func TestRunCron_Success(t *testing.T) {
+	root := t.TempDir()
+	srv := New(&fakeRunner{}, root)
+	srv.RunCronAgent = func(name string, rows, cols uint16) (string, error) {
+		if name != "groomer" {
+			t.Fatalf("name = %q, want groomer", name)
+		}
+		if rows != 40 || cols != 132 {
+			t.Fatalf("rows/cols = %d/%d", rows, cols)
+		}
+		return ".cron-groomer-4", nil
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/run-cron-agent", srv.handleRunCronAgent)
+	h := withCORS(mux)
+	req := httptest.NewRequest(http.MethodPost, "/run-cron-agent", strings.NewReader(`{"name":"groomer","rows":40,"cols":132}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	var got spawnResponse
+	if err := json.NewDecoder(rr.Result().Body).Decode(&got); err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if got.Session != ".cron-groomer-4" {
+		t.Fatalf("session = %q", got.Session)
 	}
 }
 

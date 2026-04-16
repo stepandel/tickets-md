@@ -404,6 +404,8 @@ async function openTerminal(app: import("obsidian").App, ticket: Ticket) {
 	app.workspace.revealLeaf(leaf);
 }
 
+type TerminalSpawnBody = Record<string, string | number>;
+
 async function openDiff(app: import("obsidian").App, ticket: Ticket) {
 	const leaf = app.workspace.getLeaf(Platform.isMobile ? "tab" : "split");
 	await leaf.setViewState({
@@ -414,12 +416,18 @@ async function openDiff(app: import("obsidian").App, ticket: Ticket) {
 }
 
 // openSpawningTerminal opens a TerminalView leaf in "pending spawn"
-// mode: the view measures its container, posts {ticket_id, rows, cols}
-// to the given terminal-server endpoint, and only then connects the
+// mode: the view measures its container, posts the supplied spawn body
+// plus {rows, cols} to the given terminal-server endpoint, and only then connects the
 // WebSocket. Threading the geometry through avoids the first-second
 // 24x120 wrap that happens when the PTY starts before the client's
 // first resize message.
-async function openSpawningTerminal(app: import("obsidian").App, ticket: Ticket, path: string, label: string) {
+async function openSpawningTerminal(
+	app: import("obsidian").App,
+	sessionLabel: string,
+	path: string,
+	label: string,
+	spawnBody: TerminalSpawnBody,
+) {
 	const serverInfo = await readServerFile(app);
 	if (!serverInfo) {
 		new Notice("terminal server not running — start `tickets watch`");
@@ -429,16 +437,21 @@ async function openSpawningTerminal(app: import("obsidian").App, ticket: Ticket,
 	await leaf.setViewState({
 		type: TERMINAL_VIEW_TYPE,
 		state: {
-			ticketId: ticket.id,
+			ticketId: sessionLabel,
 			spawnPath: path,
 			spawnLabel: label,
+			spawnBody,
 		},
 	});
 	app.workspace.revealLeaf(leaf);
 }
 
 async function rerunStageAgent(app: import("obsidian").App, ticket: Ticket) {
-	await openSpawningTerminal(app, ticket, "/rerun-stage-agent", "re-run stage agent");
+	await openSpawningTerminal(app, ticket.id, "/rerun-stage-agent", "re-run stage agent", { ticket_id: ticket.id });
+}
+
+async function runCronAgent(app: import("obsidian").App, name: string) {
+	await openSpawningTerminal(app, name, "/run-cron-agent", `run cron ${name}`, { name });
 }
 
 // ── Plugin ─────────────────────────────────────────────────────────────
@@ -1325,7 +1338,7 @@ class BoardView extends ItemView {
 				if (this.config?.default_agent?.command) {
 					menu.addItem((item) =>
 						item.setTitle("Adhoc agent run").setIcon("bot").onClick(() => {
-							openSpawningTerminal(this.app, ticket, "/spawn", "spawn agent run");
+							openSpawningTerminal(this.app, ticket.id, "/spawn", "spawn agent run", { ticket_id: ticket.id });
 						}),
 					);
 				}
@@ -1533,6 +1546,7 @@ class TerminalView extends ItemView {
 	private ticketId = "";
 	private spawnPath = "";
 	private spawnLabel = "";
+	private spawnBody: TerminalSpawnBody = {};
 	private resizeObserver: ResizeObserver | null = null;
 
 	getViewType(): string {
@@ -1552,6 +1566,7 @@ class TerminalView extends ItemView {
 		this.ticketId = (state.ticketId as string) ?? "";
 		this.spawnPath = (state.spawnPath as string) ?? "";
 		this.spawnLabel = (state.spawnLabel as string) ?? "";
+		this.spawnBody = ((state.spawnBody as TerminalSpawnBody | undefined) ?? {});
 		await super.setState(state, result);
 		this.start();
 	}
@@ -1620,7 +1635,7 @@ class TerminalView extends ItemView {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
-					ticket_id: this.ticketId,
+					...this.spawnBody,
 					rows: this.terminal?.rows ?? 0,
 					cols: this.terminal?.cols ?? 0,
 				}),
@@ -2078,6 +2093,14 @@ class AgentsView extends ItemView {
 				}).open();
 			}),
 		);
+		if (!Platform.isMobile) {
+			menu.addItem((item) =>
+				item.setTitle("Run now").setIcon("play").onClick(async () => {
+					await runCronAgent(this.app, cron.config.name);
+					await this.refresh();
+				}),
+			);
+		}
 		menu.addItem((item) =>
 			item.setTitle(cronAgentEnabled(cron.config) ? "Disable" : "Enable")
 				.setIcon(cronAgentEnabled(cron.config) ? "pause-circle" : "play-circle")

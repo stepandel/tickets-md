@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `tickets crons run <name>` manually fires a configured cron agent
+  through the running watcher. The Obsidian plugin's cron agent menu
+  also gains a "Run now" action (desktop only).
+
 - `tickets crons` now has `enable`, `disable`, and `set` subcommands for
   managing cron agent configuration from the CLI without editing
   `config.yml` by hand. `set` supports the `schedule`, `command`,

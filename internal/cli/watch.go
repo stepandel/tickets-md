@@ -177,6 +177,14 @@ func runWatch(s *ticket.Store) error {
 	termSrv.RerunStageAgent = func(ticketID string, rows, cols uint16) (string, error) {
 		return rerunStageAgent(ticketID, s, stageConfigs, mon, runner, rows, cols)
 	}
+	termSrv.RunCronAgent = func(name string, rows, cols uint16) (string, error) {
+		for _, ca := range s.Config.CronAgents {
+			if ca.Name == name {
+				return runCronAgentManual(s.Root, ca, mon, runner, rows, cols)
+			}
+		}
+		return "", fmt.Errorf("cron %q not configured", name)
+	}
 
 	log.Println("ready — move tickets between stages to trigger agents (ctrl+c to stop)")
 

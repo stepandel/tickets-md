@@ -228,6 +228,7 @@ setup steps.
 | `tickets agents followup <id> [--run R] [--message M]` | Spawn a followup session with prior run's context |
 | `tickets agents run <id>`               | Start an interactive agent session for a ticket    |
 | `tickets crons list`                    | List configured cron agents and their last run     |
+| `tickets crons run <name>`              | Manually fire a cron agent through the watcher     |
 | `tickets crons log <name> [run-id]`     | Print output for a cron agent run                  |
 | `tickets crons enable <name>`           | Enable a configured cron agent                     |
 | `tickets crons disable <name>`          | Disable a configured cron agent                    |

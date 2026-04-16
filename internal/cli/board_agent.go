@@ -2,62 +2,25 @@ package cli
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/stepandel/tickets-md/internal/agent"
 )
 
 // --- terminal-server client ---
 
-type serverInfo struct {
-	Port int `json:"port"`
-	Pid  int `json:"pid"`
-}
-
 func (m *boardModel) readServer() (*serverInfo, error) {
-	data, err := os.ReadFile(terminalServerFilePath(m.store.Root))
-	if err != nil {
-		return nil, err
-	}
-	var si serverInfo
-	if err := json.Unmarshal(data, &si); err != nil {
-		return nil, err
-	}
-	return &si, nil
+	return readTerminalServer(m.store.Root)
 }
 
 // postSpawn calls the watcher's terminal server to spawn an agent.
 // path is the endpoint (e.g. "/spawn" or "/rerun-stage-agent").
 func (m *boardModel) postSpawn(path, ticketID string) (string, error) {
-	si, err := m.readServer()
-	if err != nil {
-		return "", fmt.Errorf("terminal server not running — start `tickets watch`")
-	}
-	body, _ := json.Marshal(map[string]string{"ticket_id": ticketID})
-	client := &http.Client{Timeout: 5 * time.Second}
-	url := fmt.Sprintf("http://127.0.0.1:%d%s", si.Port, path)
-	resp, err := client.Post(url, "application/json", bytes.NewReader(body))
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 300 {
-		buf := make([]byte, 512)
-		n, _ := resp.Body.Read(buf)
-		return "", fmt.Errorf("%s: %s", resp.Status, string(buf[:n]))
-	}
-	var out struct {
-		Session string `json:"session"`
-	}
-	_ = json.NewDecoder(resp.Body).Decode(&out)
-	return out.Session, nil
+	return postTerminalServer(m.store.Root, path, map[string]string{"ticket_id": ticketID})
 }
 
 // --- adhoc agent run ---
