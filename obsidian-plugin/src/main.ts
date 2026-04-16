@@ -1403,6 +1403,13 @@ class BoardView extends ItemView {
 				}),
 			);
 		}
+		if (canReplayTerminal(ticket)) {
+			menu.addItem((item) =>
+				item.setTitle("View run log").setIcon("scroll").onClick(() => {
+					openRunLog(this.app, ticket);
+				}),
+			);
+		}
 		// Manual agent triggers — only shown on desktop, and only when the
 		// ticket has no active agent run.
 		if (!Platform.isMobile) {
