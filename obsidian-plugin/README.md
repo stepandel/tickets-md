@@ -73,8 +73,8 @@ no test harness yet.
 - A projects view (`Open: Tickets Projects` command) listing
   `.tickets/projects/` alongside a tickets sidebar that shows the
   selected project's assigned tickets, with create, rename, set
-  status, and delete (which unassigns `project:` on member tickets
-  first).
+  status, assign tickets, and delete (which unassigns `project:` on
+  member tickets first).
 - A diff view (powered by diff2html) for any agent run that touched
   files.
 

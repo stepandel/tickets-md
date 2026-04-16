@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   change its project, or remove `project:` without editing
   frontmatter by hand.
 
+- The Obsidian plugin's Projects view row menu can now assign
+  tickets to a project via a fuzzy picker, complementing the
+  board-card project actions.
+
 - The Obsidian plugin's Projects view now splits into two panes:
   the existing project list on the left and a tickets sidebar on
   the right that shows the selected project's assigned tickets.

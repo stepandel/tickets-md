@@ -2154,6 +2154,38 @@ class ProjectsView extends ItemView {
 			}),
 		);
 		menu.addItem((item) =>
+			item.setTitle("Assign tickets...").setIcon("folder-plus").onClick(() => {
+				const candidates = this.tickets
+					.filter((ticket) => ticket.project !== project.id)
+					.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+				if (candidates.length === 0) {
+					new Notice(`No tickets available to assign to ${project.id}`);
+					return;
+				}
+				new FuzzyPickerModal<Ticket>(
+					this.app,
+					candidates,
+					(ticket) => {
+						let label = `${ticket.id} — ${ticket.title} (${ticket.stage})`;
+						if (ticket.project) {
+							label += ` · currently ${ticket.project}`;
+						}
+						return label;
+					},
+					async (ticket) => {
+						try {
+							await updateFrontmatterFile(this.app, ticket.file, (fm) => {
+								fm.project = project.id;
+							});
+							await this.refresh();
+						} catch (err) {
+							new Notice(`Could not assign ${ticket.id}: ${err instanceof Error ? err.message : String(err)}`);
+						}
+					},
+				).open();
+			}),
+		);
+		menu.addItem((item) =>
 			item.setTitle("Delete project").setIcon("trash").onClick(() => {
 				new ConfirmProjectDeleteModal(this.app, project, async () => {
 					const failures: string[] = [];
