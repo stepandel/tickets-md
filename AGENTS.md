@@ -122,6 +122,12 @@ For behavior changes, also run the specific test file:
 go test ./internal/<pkg>/... -run <TestName> -v
 ```
 
+If you change `obsidian-plugin/`, also run:
+
+```sh
+make plugin-test
+```
+
 For a full rebuild of the installed binary:
 
 ```sh
