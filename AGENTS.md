@@ -128,10 +128,6 @@ If you change `obsidian-plugin/`, also run:
 make plugin-test
 ```
 
-CI additionally exercises the plugin end-to-end via `make qa-plugin`
-against a pinned Obsidian AppImage (`OBSIDIAN_VERSION` in
-`.github/workflows/ci.yml`). Bump that env var when the pin goes stale.
-
 For the QA harness itself, run:
 
 ```sh
@@ -142,6 +138,7 @@ make qa-plugin   # requires Obsidian; set OBSIDIAN_BIN if auto-detect misses it
 `make qa` runs both harnesses together. `make qa-plugin` exits clearly
 when Obsidian is unavailable so the skip can be recorded instead of
 quietly passing.
+
 CI always runs `make qa-cli`, and also runs `make qa-plugin` under
 `xvfb-run` against the Obsidian AppImage pinned in
 `.github/workflows/ci.yml` via `OBSIDIAN_VERSION`. Bump that workflow
