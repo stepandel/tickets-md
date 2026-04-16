@@ -82,10 +82,12 @@ fresh build via `tickets obsidian install --from obsidian-plugin --vault
 <tmp>`, drives Obsidian, opens the board, and verifies that creating a
 ticket works end to end.
 
-For the headless Linux CI setup, see the `qa-plugin` job in
-`.github/workflows/ci.yml`. It pins the Obsidian AppImage via the
-workflow-level `OBSIDIAN_VERSION` env var and wraps `make qa-plugin`
-in `xvfb-run` with `QA_PLUGIN_SKIP_OBSIDIAN_CLI_CHECK=1`.
+For CI coverage, see the `qa-plugin` job in `.github/workflows/ci.yml`.
+It runs on Linux and macOS, pins the Obsidian desktop build for both
+legs via the workflow-level `OBSIDIAN_VERSION` env var, and sets
+`QA_PLUGIN_SKIP_OBSIDIAN_CLI_CHECK=1`. Linux uses the pinned AppImage
+under `xvfb-run`; macOS downloads the matching `.dmg` and runs
+`make qa-plugin` directly.
 
 ## What it provides
 

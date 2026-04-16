@@ -139,10 +139,12 @@ make qa-plugin   # requires Obsidian; set OBSIDIAN_BIN if auto-detect misses it
 when Obsidian is unavailable so the skip can be recorded instead of
 quietly passing.
 
-CI always runs `make qa-cli`, and also runs `make qa-plugin` under
-`xvfb-run` against the Obsidian AppImage pinned in
-`.github/workflows/ci.yml` via `OBSIDIAN_VERSION`. Bump that workflow
-env var when the CI Obsidian pin needs to change.
+CI always runs `make qa-cli`, and also runs `make qa-plugin` on
+`ubuntu-latest` and `macos-latest`. Linux runs under `xvfb-run`
+against the Obsidian AppImage pinned in `.github/workflows/ci.yml`
+via `OBSIDIAN_VERSION`; macOS uses the matching pinned `.dmg`
+installer from the same workflow env var. Bump that workflow env var
+when the CI Obsidian pin needs to change.
 
 For a full rebuild of the installed binary:
 
