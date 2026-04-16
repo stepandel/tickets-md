@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `tickets new --project` is now validated before the ticket is created,
+  so an unknown project ID no longer leaves an orphaned ticket on disk.
+
 - `tickets new --body` now normalizes literal `\n` sequences in the flag
   value into real newlines, so shell-friendly one-line invocations save
   as multi-line markdown bodies. Real newlines are preserved unchanged.
