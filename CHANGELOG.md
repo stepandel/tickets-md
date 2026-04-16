@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- The Obsidian plugin's Projects view now splits into two panes:
+  the existing project list on the left and a tickets sidebar on
+  the right that shows the selected project's assigned tickets.
+  Clicking a project selects it (instead of opening its file);
+  clicking a ticket opens it in the preview leaf. The "Open
+  project" button in the sidebar header keeps the old open-file
+  affordance. Narrow windows stack the panes vertically.
+
 - The Obsidian plugin now has a Projects view: a ribbon icon,
   `Open Tickets Projects` command, and row context menu for
   creating, renaming, setting status, listing assigned tickets, and
