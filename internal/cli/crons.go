@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"text/tabwriter"
@@ -18,6 +20,7 @@ func newCronsCmd() *cobra.Command {
 		Short: "Inspect configured cron agents",
 	}
 	cmd.AddCommand(newCronsListCmd())
+	cmd.AddCommand(newCronsRunCmd())
 	cmd.AddCommand(newCronsLogCmd())
 	return cmd
 }
@@ -89,6 +92,45 @@ func newCronsLogCmd() *cobra.Command {
 				return nil
 			}
 			fmt.Println(output)
+			return nil
+		},
+	}
+}
+
+func newCronsRunCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "run <name>",
+		Short: "Run a configured cron agent now",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := openStore()
+			if err != nil {
+				return err
+			}
+			name := args[0]
+			found := false
+			for _, ca := range s.Config.CronAgents {
+				if ca.Name == name {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return fmt.Errorf("cron %q not found — add it to config.yml and restart `tickets watch`", name)
+			}
+
+			session, err := postTerminalServer(s.Root, "/run-cron-agent", map[string]string{"name": name})
+			if err != nil {
+				var serverErr *terminalServerError
+				if errors.As(err, &serverErr) {
+					if serverErr.StatusCode == http.StatusConflict {
+						return fmt.Errorf("another run is already active")
+					}
+				}
+				return err
+			}
+
+			fmt.Printf("fired cron %s (session %s)\n", name, session)
 			return nil
 		},
 	}

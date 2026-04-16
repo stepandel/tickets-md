@@ -11,6 +11,7 @@ import (
 	"github.com/stepandel/tickets-md/internal/agent"
 	"github.com/stepandel/tickets-md/internal/config"
 	"github.com/stepandel/tickets-md/internal/stage"
+	"github.com/stepandel/tickets-md/internal/terminal"
 )
 
 type watchCronScheduler struct {
@@ -73,19 +74,33 @@ func spawnCronAgent(root string, ca config.CronAgentConfig, mon *agent.Monitor, 
 		log.Printf("cron %s: skipping tick, previous run %s is still active", ca.Name, prev.RunID)
 		return nil
 	}
+	_, err := startCronRun(root, ca, mon, runner, 0, 0)
+	return err
+}
 
+func runCronAgentManual(root string, ca config.CronAgentConfig, mon *agent.Monitor, runner *agent.PTYRunner, rows, cols uint16) (string, error) {
+	if ca.Worktree {
+		return "", fmt.Errorf("cron %s: worktree=true is not supported yet", ca.Name)
+	}
+	if prev, err := agent.CronLatest(root, ca.Name); err == nil && !prev.Status.IsTerminal() && runner.Alive(prev.Session) {
+		return "", terminal.ErrCronRunActive
+	}
+	return startCronRun(root, ca, mon, runner, rows, cols)
+}
+
+func startCronRun(root string, ca config.CronAgentConfig, mon *agent.Monitor, runner *agent.PTYRunner, rows, cols uint16) (string, error) {
 	runID, seq, attempt, err := agent.CronNextRun(root, ca.Name)
 	if err != nil {
-		return fmt.Errorf("computing next run id: %w", err)
+		return "", fmt.Errorf("computing next run id: %w", err)
 	}
 	ownerID := agent.CronOwnerID(ca.Name)
 	sessionName := fmt.Sprintf(".cron-%s-%d", ca.Name, seq)
 	logFile := agent.CronLogPath(root, ca.Name, runID)
 	if runner.Alive(sessionName) {
-		return nil
+		return sessionName, nil
 	}
 	if err := os.MkdirAll(agent.CronRunsDir(root, ca.Name), 0o755); err != nil {
-		return fmt.Errorf("creating runs dir: %w", err)
+		return "", fmt.Errorf("creating runs dir: %w", err)
 	}
 
 	argv := buildCronAgentArgs(ca, root)
@@ -115,21 +130,21 @@ func spawnCronAgent(root string, ca config.CronAgentConfig, mon *agent.Monitor, 
 		SessionUUID: sessionUUID,
 	}
 	if err := agent.Write(root, as); err != nil {
-		return fmt.Errorf("writing agent status: %w", err)
+		return "", fmt.Errorf("writing agent status: %w", err)
 	}
 
 	fullArgv := append([]string{ca.Command}, argv...)
-	if err := runner.Start(sessionName, root, fullArgv, logFile, 0, 0); err != nil {
+	if err := runner.Start(sessionName, root, fullArgv, logFile, rows, cols); err != nil {
 		as.Status = agent.StatusErrored
 		as.Error = err.Error()
 		_ = agent.Write(root, as)
-		return fmt.Errorf("starting agent session: %w", err)
+		return "", fmt.Errorf("starting agent session: %w", err)
 	}
 
 	log.Printf("cron %s: firing run %s", ca.Name, runID)
 	mon.TrackRun(ownerID, runID)
 	go waitForCronSession(ca.Name, runID, ca.Command, sessionName, root, mon, runner)
-	return nil
+	return sessionName, nil
 }
 
 func waitForCronSession(name, runID, agentName, sessionName, root string, mon *agent.Monitor, runner *agent.PTYRunner) {
