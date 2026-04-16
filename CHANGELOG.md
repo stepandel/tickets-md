@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `tickets new` now validates `--parent`, `--blocked-by`, `--blocks`,
+  and `--related` targets against the store before creating the
+  ticket, so a typo or unknown ID no longer leaves an orphaned ticket
+  on disk. Empty IDs, intra-flag duplicates, and the same peer reused
+  across conflicting relation roles are also rejected.
+
 - The Obsidian board card menu can now assign a ticket to a project,
   change its project, or remove `project:` without editing
   frontmatter by hand.

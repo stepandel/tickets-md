@@ -512,6 +512,12 @@ tickets new "Ship migration" --blocks TIC-010 --priority critical
 `--blocked-by`, `--blocks`, and `--related` accept multiple ticket IDs,
 either by repeating the flag or by passing a comma-separated list.
 
+All relation targets (`--parent`, `--blocked-by`, `--blocks`,
+`--related`) are validated against the store before the ticket is
+created: if any ID is unknown, empty, duplicated within a flag, or
+reused across conflicting relation roles, `tickets new` fails with an
+error and leaves nothing on disk.
+
 ## Links
 
 Tickets can reference each other via symmetric `related` links or
