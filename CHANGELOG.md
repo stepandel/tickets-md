@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- The Obsidian plugin's Agents view now lists cron agents defined in
+  `.tickets/config.yml` alongside stage agents, with actions to edit
+  the cron entry, enable/disable it, and open the latest run log.
+  Config edits round-trip previously untouched keys
+  (`complete_stages`, `default_agent`, `cleanup`, `cron_agents`) so
+  stage operations no longer drop them.
+
 - The Obsidian plugin now has a Projects view: a ribbon icon,
   `Open Tickets Projects` command, and row context menu for
   creating, renaming, setting status, listing assigned tickets, and
