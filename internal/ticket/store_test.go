@@ -151,6 +151,37 @@ func TestEnsureGitignored(t *testing.T) {
 		}
 	})
 
+	t.Run("replaces TIC-084 legacy block", func(t *testing.T) {
+		root := newGitRepo(t)
+		path := filepath.Join(root, ".gitignore")
+		old := "node_modules\n" + legacyGitignoreBlock + "\n.dist\n"
+		if err := os.WriteFile(path, []byte(old), 0o644); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+
+		if err := EnsureGitignored(root); err != nil {
+			t.Fatalf("EnsureGitignored: %v", err)
+		}
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("ReadFile: %v", err)
+		}
+		want := "node_modules\n" + gitignoreBlock + "\n.dist\n"
+		if string(data) != want {
+			t.Fatalf("gitignore = %q, want %q", string(data), want)
+		}
+
+		// Idempotent: running again should be a no-op.
+		if err := EnsureGitignored(root); err != nil {
+			t.Fatalf("EnsureGitignored second: %v", err)
+		}
+		data2, _ := os.ReadFile(path)
+		if string(data2) != want {
+			t.Fatalf("second run changed gitignore: %q", string(data2))
+		}
+	})
+
 	t.Run("preserves unrelated entries when appending", func(t *testing.T) {
 		root := newGitRepo(t)
 		path := filepath.Join(root, ".gitignore")
@@ -172,7 +203,7 @@ func TestEnsureGitignored(t *testing.T) {
 		}
 	})
 
-	t.Run("git respects stage config exception", func(t *testing.T) {
+	t.Run("git respects config exceptions", func(t *testing.T) {
 		root := newGitRepo(t)
 		if err := EnsureGitignored(root); err != nil {
 			t.Fatalf("EnsureGitignored: %v", err)
@@ -180,11 +211,20 @@ func TestEnsureGitignored(t *testing.T) {
 		if err := os.MkdirAll(filepath.Join(root, ".tickets", "execute"), 0o755); err != nil {
 			t.Fatalf("MkdirAll execute: %v", err)
 		}
+		if err := os.WriteFile(filepath.Join(root, ".tickets", "config.yml"), []byte("prefix: TIC\nstages:\n  - execute\n"), 0o644); err != nil {
+			t.Fatalf("WriteFile store config: %v", err)
+		}
 		if err := os.WriteFile(filepath.Join(root, ".tickets", "execute", ".stage.yml"), []byte("agent: {}\n"), 0o644); err != nil {
 			t.Fatalf("WriteFile stage config: %v", err)
 		}
 		if err := os.WriteFile(filepath.Join(root, ".tickets", "execute", "TIC-001.md"), []byte("# test\n"), 0o644); err != nil {
 			t.Fatalf("WriteFile ticket: %v", err)
+		}
+
+		configCheck := exec.Command("git", "check-ignore", ".tickets/config.yml")
+		configCheck.Dir = root
+		if out, err := configCheck.CombinedOutput(); err == nil {
+			t.Fatalf("store config should not be ignored, got %q", strings.TrimSpace(string(out)))
 		}
 
 		stageCheck := exec.Command("git", "check-ignore", ".tickets/execute/.stage.yml")

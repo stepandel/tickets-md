@@ -11,8 +11,9 @@
 
 A Linear-style ticket tracker that lives inside a single git repo —
 every ticket is a markdown file, every stage a folder, kept right
-next to the code. Stage config under `.tickets/*/.stage.yml` is meant
-to be committed; ticket markdown and runtime state stay gitignored. The
+next to the code. Store config under `.tickets/config.yml` and stage
+config under `.tickets/*/.stage.yml` are meant to be committed; ticket
+markdown and runtime state stay gitignored. The
 companion Obsidian plugin is the primary UI (drag-and-drop Kanban,
 live agent terminal); the `tickets` CLI drives the same files for
 terminal-first users. No database, no background service; agent
@@ -42,8 +43,8 @@ the project root, the same way `.git/` works.
 
 The intended git policy is mixed:
 
-- track `.tickets/*/.stage.yml` so stage automation and prompts are reviewable
-- ignore `.tickets/<stage>/*.md`, `.tickets/.agents/`, `.tickets/config.yml`, and other local runtime state
+- track `.tickets/config.yml` and `.tickets/*/.stage.yml` so board and stage automation are reviewable
+- ignore `.tickets/<stage>/*.md`, `.tickets/.agents/`, and other local runtime state
 - let `tickets init` maintain the repo-root `.gitignore` block for that policy
 
 Board-level cron agents can also be defined in `.tickets/config.yml`
@@ -163,21 +164,23 @@ tickets completion fish > ~/.config/fish/completions/tickets.fish
 `tickets init` is meant to run inside the **git repository you're
 actually working on**. The whole store lives under `.tickets/` at the
 repo root — same way `.git/` does — and `tickets init` also writes the
-repo-root `.gitignore` block that tracks `.tickets/*/.stage.yml` while
-keeping ticket markdown and runtime state ignored.
+repo-root `.gitignore` block that tracks `.tickets/config.yml` and
+`.tickets/*/.stage.yml` while keeping ticket markdown and runtime state
+ignored.
 
 ```sh
 cd ~/code/my-app              # a git repo with code you work on
 tickets init                  # creates ./.tickets/ + stage folders
-git add .gitignore .tickets/*/.stage.yml
-git commit -m "chore: add tickets-md stage config"
+git add .gitignore .tickets/config.yml .tickets/*/.stage.yml
+git commit -m "chore: add tickets-md board config"
 ```
 
 That default policy means:
 
+- `.tickets/config.yml` is shared in Git
 - `.tickets/*/.stage.yml` is shared in Git
 - `.tickets/<stage>/*.md` stays local and ignored
-- `.tickets/config.yml` and `.tickets/.agents/` stay local and ignored
+- `.tickets/.agents/` stays local and ignored
 
 Running `tickets init` outside a git repo works — `.tickets/` is just
 a directory — but you lose two useful properties:
