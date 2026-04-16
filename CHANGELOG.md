@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (done/failed/errored), mirroring the Agents view affordance. The
   live "Open terminal" item stays desktop-only and unchanged; replay
   works on desktop and mobile.
+- The pre-commit hook installed by `tickets hooks install` now also
+  runs `make plugin-test` when staged files include `obsidian-plugin/`,
+  encoding the AGENTS.md rule that plugin changes require both the Go
+  and plugin suites. Commits that don't touch `obsidian-plugin/` still
+  run only `make check`. Users with the previous hook installed need
+  to re-run `tickets hooks install --force` to pick up the new script.
 
 ## [0.1.10] - 2026-04-16
 
