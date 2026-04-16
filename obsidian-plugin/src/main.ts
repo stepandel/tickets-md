@@ -483,6 +483,9 @@ async function runCronAgent(app: import("obsidian").App, name: string) {
 // ── Plugin ─────────────────────────────────────────────────────────────
 
 export default class TicketsBoardPlugin extends Plugin {
+	private hotReloadWatcher: { close: () => void } | null = null;
+	private hotReloadTimer: ReturnType<typeof setTimeout> | null = null;
+
 	async onload() {
 		this.registerView(VIEW_TYPE, (leaf) => new BoardView(leaf));
 		this.registerView(TERMINAL_VIEW_TYPE, (leaf) => new TerminalView(leaf));
@@ -511,6 +514,47 @@ export default class TicketsBoardPlugin extends Plugin {
 			name: "Open Tickets Projects",
 			callback: () => this.activateProjectsView(),
 		});
+
+		this.watchForHotReload();
+	}
+
+	// watchForHotReload watches the plugin's own directory so `tickets
+	// watch` auto-updates take effect without the user having to
+	// disable/enable the plugin. Obsidian doesn't re-read plugin files
+	// on its own when they change on disk — toggling via the UI isn't
+	// always enough either, since it hits cached code paths. Calling
+	// plugins.disablePlugin → enablePlugin after a main.js write
+	// reliably re-executes the freshly-written bundle.
+	private watchForHotReload() {
+		if (!Platform.isDesktopApp) return;
+		const adapter = this.app.vault.adapter as { getBasePath?: () => string };
+		const basePath = adapter.getBasePath?.();
+		if (!basePath) return;
+		try {
+			const fs = require("fs");
+			const path = require("path");
+			const pluginDir = path.join(basePath, ".obsidian", "plugins", this.manifest.id);
+			this.hotReloadWatcher = fs.watch(pluginDir, (_eventType: string, filename: string | null) => {
+				if (filename !== "main.js") return;
+				if (this.hotReloadTimer) clearTimeout(this.hotReloadTimer);
+				this.hotReloadTimer = setTimeout(() => this.reloadSelf(), 500);
+			});
+		} catch (err) {
+			console.warn("tickets-board: hot-reload watcher failed to start", err);
+		}
+	}
+
+	private async reloadSelf() {
+		this.hotReloadTimer = null;
+		const plugins = (this.app as { plugins?: { disablePlugin?: (id: string) => Promise<void>; enablePlugin?: (id: string) => Promise<void> } }).plugins;
+		if (!plugins?.disablePlugin || !plugins?.enablePlugin) return;
+		new Notice("Tickets Board: reloading with updated plugin");
+		try {
+			await plugins.disablePlugin(this.manifest.id);
+			await plugins.enablePlugin(this.manifest.id);
+		} catch (err) {
+			console.error("tickets-board: hot-reload failed", err);
+		}
 	}
 
 	async activateView() {
@@ -547,7 +591,14 @@ export default class TicketsBoardPlugin extends Plugin {
 		workspace.revealLeaf(leaf);
 	}
 
-	onunload() {}
+	onunload() {
+		this.hotReloadWatcher?.close();
+		this.hotReloadWatcher = null;
+		if (this.hotReloadTimer) {
+			clearTimeout(this.hotReloadTimer);
+			this.hotReloadTimer = null;
+		}
+	}
 }
 
 // ── Board View ─────────────────────────────────────────────────────────
