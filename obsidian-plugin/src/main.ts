@@ -430,7 +430,7 @@ async function openRunLog(app: import("obsidian").App, ticket: Ticket) {
 	app.workspace.revealLeaf(leaf);
 }
 
-type TerminalSpawnBody = Record<string, string | number>;
+type TerminalSpawnBody = Record<string, string | number | boolean>;
 
 async function openDiff(app: import("obsidian").App, ticket: Ticket) {
 	const leaf = app.workspace.getLeaf(Platform.isMobile ? "tab" : "split");
@@ -472,8 +472,11 @@ async function openSpawningTerminal(
 	app.workspace.revealLeaf(leaf);
 }
 
-async function rerunStageAgent(app: import("obsidian").App, ticket: Ticket) {
-	await openSpawningTerminal(app, ticket.id, "/rerun-stage-agent", "re-run stage agent", { ticket_id: ticket.id });
+async function rerunStageAgent(app: import("obsidian").App, ticket: Ticket, force = false) {
+	await openSpawningTerminal(app, ticket.id, "/rerun-stage-agent", force ? "force re-run stage agent" : "re-run stage agent", {
+		ticket_id: ticket.id,
+		...(force ? { force: true } : {}),
+	});
 }
 
 async function runCronAgent(app: import("obsidian").App, name: string) {
@@ -1410,8 +1413,7 @@ class BoardView extends ItemView {
 				}),
 			);
 		}
-		// Manual agent triggers — only shown on desktop, and only when the
-		// ticket has no active agent run.
+		// Manual agent triggers — only shown on desktop.
 		if (!Platform.isMobile) {
 			if (canRerunStageAgent(ticket)) {
 				menu.addItem((item) =>
@@ -1419,13 +1421,20 @@ class BoardView extends ItemView {
 						rerunStageAgent(this.app, ticket);
 					}),
 				);
-				if (this.config?.default_agent?.command) {
-					menu.addItem((item) =>
-						item.setTitle("Adhoc agent run").setIcon("bot").onClick(() => {
-							openSpawningTerminal(this.app, ticket.id, "/spawn", "spawn agent run", { ticket_id: ticket.id });
-						}),
-					);
-				}
+			}
+			if (hasActiveAgent(ticket)) {
+				menu.addItem((item) =>
+					item.setTitle("Force re-run stage agent").setIcon("refresh-cw").onClick(() => {
+						rerunStageAgent(this.app, ticket, true);
+					}),
+				);
+			}
+			if (canRerunStageAgent(ticket) && this.config?.default_agent?.command) {
+				menu.addItem((item) =>
+					item.setTitle("Adhoc agent run").setIcon("bot").onClick(() => {
+						openSpawningTerminal(this.app, ticket.id, "/spawn", "spawn agent run", { ticket_id: ticket.id });
+					}),
+				);
 			}
 		}
 		if (ticket.agent_status) {
@@ -2138,6 +2147,13 @@ class AgentsView extends ItemView {
 			menu.addItem((item) =>
 				item.setTitle("Re-run stage agent").setIcon("refresh-cw").onClick(() => {
 					rerunStageAgent(this.app, ticket);
+				}),
+			);
+		}
+		if (!Platform.isMobile && hasActiveAgent(ticket)) {
+			menu.addItem((item) =>
+				item.setTitle("Force re-run stage agent").setIcon("refresh-cw").onClick(() => {
+					rerunStageAgent(this.app, ticket, true);
 				}),
 			);
 		}

@@ -19,8 +19,8 @@ func (m *boardModel) readServer() (*serverInfo, error) {
 
 // postSpawn calls the watcher's terminal server to spawn an agent.
 // path is the endpoint (e.g. "/spawn" or "/rerun-stage-agent").
-func (m *boardModel) postSpawn(path, ticketID string) (string, error) {
-	return postTerminalServer(m.store.Root, path, map[string]string{"ticket_id": ticketID})
+func (m *boardModel) postSpawn(path string, body any) (string, error) {
+	return postTerminalServer(m.store.Root, path, body)
 }
 
 // --- adhoc agent run ---
@@ -34,7 +34,7 @@ func (m *boardModel) startAdhocAgent() {
 		m.overlay = newNotice("error", "no default_agent in .tickets/config.yml")
 		return
 	}
-	session, err := m.postSpawn("/spawn", t.ID)
+	session, err := m.postSpawn("/spawn", map[string]any{"ticket_id": t.ID})
 	if err != nil {
 		m.overlay = newNotice("error", "adhoc: "+err.Error())
 		return
@@ -45,16 +45,36 @@ func (m *boardModel) startAdhocAgent() {
 // --- re-run stage agent ---
 
 func (m *boardModel) startRerunStageAgent() {
+	m.startStageAgentRerun(false)
+}
+
+func (m *boardModel) forceRerunStageAgent() {
+	m.startStageAgentRerun(true)
+}
+
+func (m *boardModel) startStageAgentRerun(force bool) {
 	t, ok := m.selectedTicket()
 	if !ok {
 		return
 	}
-	session, err := m.postSpawn("/rerun-stage-agent", t.ID)
+	body := map[string]any{"ticket_id": t.ID}
+	if force {
+		body["force"] = true
+	}
+	session, err := m.postSpawn("/rerun-stage-agent", body)
 	if err != nil {
-		m.overlay = newNotice("error", "rerun: "+err.Error())
+		prefix := "rerun"
+		if force {
+			prefix = "force rerun"
+		}
+		m.overlay = newNotice("error", prefix+": "+err.Error())
 		return
 	}
-	m.overlay = newNotice("info", "re-ran stage agent — session "+session)
+	message := "re-ran stage agent — session " + session
+	if force {
+		message = "force re-ran stage agent — session " + session
+	}
+	m.overlay = newNotice("info", message)
 }
 
 // --- open agent log ---

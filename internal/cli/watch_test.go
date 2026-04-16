@@ -234,3 +234,164 @@ func TestHandleCreateFsRenameIntoCompleteStageUnblocksDependents(t *testing.T) {
 		t.Fatalf("blocked.BlockedBy = %v, want empty", blocked.BlockedBy)
 	}
 }
+
+func TestRerunStageAgentRefusesActiveSessionWithoutForce(t *testing.T) {
+	s := newWatchStore(t)
+	tk, err := s.Create("Alpha")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	tk, err = s.Move(tk.ID, "execute")
+	if err != nil {
+		t.Fatalf("Move: %v", err)
+	}
+
+	runner := agent.NewPTYRunner()
+	t.Cleanup(runner.Shutdown)
+	mon := agent.NewMonitor(s.Root, runner.Alive, runner.IdleSeconds)
+	mon.OnStatusChange = func(ticketID string) {
+		syncAgentFrontmatter(s.Root, ticketID)
+	}
+
+	stageConfigs := map[string]stage.Config{
+		"execute": {
+			Agent: &stage.AgentConfig{
+				Command: "/bin/sh",
+				Args:    []string{"-c", "sleep 30"},
+				Prompt:  "ignored",
+			},
+		},
+	}
+
+	session, err := spawnAgent(tk, stageConfigs["execute"], s.Root, mon, runner, 0, 0)
+	if err != nil {
+		t.Fatalf("spawnAgent: %v", err)
+	}
+	if !runner.Alive(session) {
+		t.Fatalf("session %q not alive", session)
+	}
+
+	_, err = rerunStageAgent(tk.ID, false, s, stageConfigs, mon, runner, 0, 0)
+	if err == nil {
+		t.Fatal("rerunStageAgent succeeded, want error")
+	}
+	if got, want := err.Error(), "agent already running (session "+session+")"; got != want {
+		t.Fatalf("error = %q, want %q", got, want)
+	}
+
+	as, err := agent.Latest(s.Root, tk.ID)
+	if err != nil {
+		t.Fatalf("Latest: %v", err)
+	}
+	if as.RunID != "001-execute" {
+		t.Fatalf("run id = %q, want 001-execute", as.RunID)
+	}
+	if as.Session != session {
+		t.Fatalf("session = %q, want %q", as.Session, session)
+	}
+
+	if err := runner.Kill(session); err != nil {
+		t.Fatalf("Kill(%q): %v", session, err)
+	}
+	waitForRunStatus(t, s.Root, tk.ID, agent.StatusFailed)
+}
+
+func TestRerunStageAgentForceReplacesActiveSession(t *testing.T) {
+	s := newWatchStore(t)
+	tk, err := s.Create("Alpha")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	tk, err = s.Move(tk.ID, "execute")
+	if err != nil {
+		t.Fatalf("Move: %v", err)
+	}
+
+	runner := agent.NewPTYRunner()
+	t.Cleanup(runner.Shutdown)
+	mon := agent.NewMonitor(s.Root, runner.Alive, runner.IdleSeconds)
+	mon.OnStatusChange = func(ticketID string) {
+		syncAgentFrontmatter(s.Root, ticketID)
+	}
+
+	stageConfigs := map[string]stage.Config{
+		"execute": {
+			Agent: &stage.AgentConfig{
+				Command: "/bin/sh",
+				Args:    []string{"-c", "sleep 30"},
+				Prompt:  "ignored",
+			},
+		},
+	}
+
+	firstSession, err := spawnAgent(tk, stageConfigs["execute"], s.Root, mon, runner, 0, 0)
+	if err != nil {
+		t.Fatalf("spawnAgent: %v", err)
+	}
+	if !runner.Alive(firstSession) {
+		t.Fatalf("session %q not alive", firstSession)
+	}
+
+	secondSession, err := rerunStageAgent(tk.ID, true, s, stageConfigs, mon, runner, 0, 0)
+	if err != nil {
+		t.Fatalf("rerunStageAgent(force): %v", err)
+	}
+	if secondSession != tk.ID+"-2" {
+		t.Fatalf("session = %q, want %s-2", secondSession, tk.ID)
+	}
+	if runner.Alive(firstSession) {
+		t.Fatalf("old session %q still alive", firstSession)
+	}
+	if !runner.Alive(secondSession) {
+		t.Fatalf("new session %q not alive", secondSession)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	var firstRun agent.AgentStatus
+	for time.Now().Before(deadline) {
+		firstRun, err = agent.ReadRun(s.Root, tk.ID, "001-execute")
+		if err == nil && firstRun.Status == agent.StatusFailed {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if err != nil {
+		t.Fatalf("ReadRun(001-execute): %v", err)
+	}
+	if firstRun.Status != agent.StatusFailed {
+		t.Fatalf("first run status = %q, want failed", firstRun.Status)
+	}
+	if firstRun.Error == "" {
+		t.Fatal("first run error is empty, want failure detail")
+	}
+
+	secondRun, err := agent.ReadRun(s.Root, tk.ID, "002-execute")
+	if err != nil {
+		t.Fatalf("ReadRun(002-execute): %v", err)
+	}
+	if secondRun.Seq != 2 {
+		t.Fatalf("seq = %d, want 2", secondRun.Seq)
+	}
+	if secondRun.Attempt != 2 {
+		t.Fatalf("attempt = %d, want 2", secondRun.Attempt)
+	}
+	if secondRun.Session != secondSession {
+		t.Fatalf("session = %q, want %q", secondRun.Session, secondSession)
+	}
+
+	got, err := s.Get(tk.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.AgentRun != "002-execute" {
+		t.Fatalf("agent_run = %q, want 002-execute", got.AgentRun)
+	}
+	if got.AgentSession != secondSession {
+		t.Fatalf("agent_session = %q, want %q", got.AgentSession, secondSession)
+	}
+
+	if err := runner.Kill(secondSession); err != nil {
+		t.Fatalf("Kill(%q): %v", secondSession, err)
+	}
+	waitForRunStatus(t, s.Root, tk.ID, agent.StatusFailed)
+}
