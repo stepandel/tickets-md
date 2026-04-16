@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
 
+env:
+  OBSIDIAN_VERSION: 1.12.7
+
 jobs:
   go:
     name: go
@@ -38,6 +41,11 @@ jobs:
       - name: go test -race
         run: go test ./... -race
 
+      - name: QA CLI smoke test
+        env:
+          QA_TIMEOUT_TENTHS: 600
+        run: make qa-cli
+
   plugin:
     name: obsidian-plugin
     runs-on: ubuntu-latest
@@ -65,3 +73,77 @@ jobs:
 
       - name: build
         run: npm run build
+
+  qa-plugin:
+    name: qa-plugin
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: obsidian-plugin/package-lock.json
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/obsidian-appimage/${{ env.OBSIDIAN_VERSION }}
+          key: obsidian-appimage-${{ runner.os }}-${{ env.OBSIDIAN_VERSION }}
+
+      - name: Provision Obsidian
+        run: |
+          cache_dir="$HOME/.cache/obsidian-appimage/${OBSIDIAN_VERSION}"
+          appimage="$cache_dir/Obsidian-${OBSIDIAN_VERSION}.AppImage"
+          extracted="$cache_dir/squashfs-root/AppRun"
+
+          mkdir -p "$cache_dir"
+
+          if [[ ! -x "$appimage" ]]; then
+            curl -fsSL -o "$appimage" "https://github.com/obsidianmd/obsidian-releases/releases/download/v${OBSIDIAN_VERSION}/Obsidian-${OBSIDIAN_VERSION}.AppImage"
+            chmod +x "$appimage"
+          fi
+
+          if [[ ! -x "$extracted" ]]; then
+            rm -rf "$cache_dir/squashfs-root"
+            (
+              cd "$cache_dir"
+              "$appimage" --appimage-extract >/dev/null
+            )
+            test -d "$cache_dir/squashfs-root"
+          fi
+
+          test -x "$extracted"
+          echo "OBSIDIAN_BIN=$extracted" >> "$GITHUB_ENV"
+
+      - name: Install Obsidian runtime deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libnss3 libatk-bridge2.0-0 libgtk-3-0 libgbm1 libasound2t64
+
+      - name: Prepare Obsidian config dir
+        run: mkdir -p "$HOME/.config/obsidian"
+
+      - name: QA plugin smoke test
+        env:
+          CI: "1"
+          QA_PLUGIN_SKIP_OBSIDIAN_CLI_CHECK: "1"
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" make qa-plugin
+
+      - name: Upload Playwright artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-plugin-artifacts
+          path: |
+            obsidian-plugin/playwright-report
+            obsidian-plugin/test-results
+          if-no-files-found: ignore
