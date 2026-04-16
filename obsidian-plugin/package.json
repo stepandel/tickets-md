@@ -5,9 +5,11 @@
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "node esbuild.config.mjs production",
-		"test": "node --test --import tsx 'src/**/*.test.ts' && node --test 'test/**/*.test.mjs'"
+		"test": "node --test --import tsx 'src/**/*.test.ts' && node --test 'test/**/*.test.mjs'",
+		"test:e2e": "playwright test"
 	},
 	"devDependencies": {
+		"@playwright/test": "^1.59.1",
 		"@types/node": "^20.0.0",
 		"@xterm/addon-fit": "^0.11.0",
 		"@xterm/xterm": "^6.0.0",

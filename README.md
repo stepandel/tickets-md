@@ -122,6 +122,17 @@ cd tickets-md
 make install
 ```
 
+Development verification from a local checkout:
+
+```sh
+make check
+make plugin-test
+make qa-cli
+make qa-plugin   # requires Obsidian desktop CLI support; set OBSIDIAN_BIN if needed
+```
+
+`make qa` runs both QA harnesses together.
+
 The Obsidian plugin is no longer embedded in the CLI binary — it is
 fetched on demand by `tickets obsidian install` from the GitHub
 release matching your CLI version. See the [Obsidian plugin](#obsidian-plugin)

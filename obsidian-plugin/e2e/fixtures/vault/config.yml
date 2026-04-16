@@ -1,0 +1,7 @@
+name: QA Harness
+prefix: TIC
+project_prefix: PRJ
+stages:
+  - backlog
+  - execute
+  - done

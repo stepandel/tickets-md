@@ -1,4 +1,4 @@
-.PHONY: install build check test vet release plugin-test plugin-bundle plugin-zip plugin-install plugin-stamp-version
+.PHONY: install build check test vet release plugin-test plugin-bundle plugin-zip plugin-install plugin-stamp-version qa-cli qa-plugin qa
 
 PLUGIN_SRC := obsidian-plugin
 # Kept outside dist/ so GoReleaser's `--clean` + "ensure dist is empty"
@@ -62,6 +62,14 @@ check: build vet test
 
 plugin-test:
 	cd $(PLUGIN_SRC) && npm ci --silent && npm test
+
+qa-cli:
+	./scripts/qa-cli.sh
+
+qa-plugin:
+	./scripts/qa-plugin.sh
+
+qa: qa-cli qa-plugin
 
 vet:
 	go vet ./...
