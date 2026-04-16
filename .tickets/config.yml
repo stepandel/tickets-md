@@ -1,0 +1,26 @@
+name: Tickets.md
+prefix: TIC
+stages:
+    - backlog
+    - prep
+    - prep-review
+    - execute
+    - review
+    - qa
+    - docs
+    - done
+    - cancelled
+default_agent:
+    command: claude
+complete_stages:
+    - done
+    - cancelled
+# cron_agents:
+#   - name: backlog-groomer
+#     schedule: "@every 1m"
+#     command: claude
+#     args: ["--dangerously-skip-permissions"]
+#     prompt: |
+#       You are the backlog groomer for {{root}} at {{now}}.
+#       Review the backlog and clean up duplicates or outdated tickets.
+#       Rather than deleting tickets off-right, move them to /cancelled stage
