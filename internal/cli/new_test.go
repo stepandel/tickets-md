@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -72,6 +74,145 @@ func TestNewCommandWithBody(t *testing.T) {
 	}
 }
 
+func TestNewCommandWithProject(t *testing.T) {
+	s := newCLITestStore(t)
+	project, err := s.CreateProject("Project")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	globalFlags.root = s.Root
+	cmd := newNewCmd()
+	cmd.SetArgs([]string{"--project", project.ID, "Scoped work"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	created, err := s.Get("TIC-001")
+	if err != nil {
+		t.Fatalf("Get created: %v", err)
+	}
+	if created.Project != project.ID {
+		t.Fatalf("expected project %s, got %q", project.ID, created.Project)
+	}
+}
+
+func TestNewCommandWithUnknownProjectFails(t *testing.T) {
+	s := newCLITestStore(t)
+
+	globalFlags.root = s.Root
+	cmd := newNewCmd()
+	cmd.SetArgs([]string{"--project", "PRJ-999", "Scoped work"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !errors.Is(err, ticket.ErrProjectNotFound) {
+		t.Fatalf("expected project not found, got %v", err)
+	}
+
+	created, getErr := s.Get("TIC-001")
+	if getErr != nil {
+		t.Fatalf("Get created after failure: %v", getErr)
+	}
+	if created.Project != "" {
+		t.Fatalf("expected project to remain empty, got %q", created.Project)
+	}
+}
+
+func TestNewCommandWithBlockedBy(t *testing.T) {
+	s := newCLITestStore(t)
+	blocker, err := s.Create("Blocker")
+	if err != nil {
+		t.Fatalf("Create blocker: %v", err)
+	}
+
+	globalFlags.root = s.Root
+	cmd := newNewCmd()
+	cmd.SetArgs([]string{"--blocked-by", blocker.ID, "Blocked work"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	created, err := s.Get("TIC-002")
+	if err != nil {
+		t.Fatalf("Get created: %v", err)
+	}
+	if !slices.Contains(created.BlockedBy, blocker.ID) {
+		t.Fatalf("expected blocked_by to contain %s, got %v", blocker.ID, created.BlockedBy)
+	}
+
+	blocker, err = s.Get(blocker.ID)
+	if err != nil {
+		t.Fatalf("Get blocker: %v", err)
+	}
+	if !slices.Contains(blocker.Blocks, created.ID) {
+		t.Fatalf("expected blocker blocks to contain %s, got %v", created.ID, blocker.Blocks)
+	}
+}
+
+func TestNewCommandWithBlocks(t *testing.T) {
+	s := newCLITestStore(t)
+	blocked, err := s.Create("Blocked")
+	if err != nil {
+		t.Fatalf("Create blocked: %v", err)
+	}
+
+	globalFlags.root = s.Root
+	cmd := newNewCmd()
+	cmd.SetArgs([]string{"--blocks", blocked.ID, "Blocker"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	created, err := s.Get("TIC-002")
+	if err != nil {
+		t.Fatalf("Get created: %v", err)
+	}
+	if !slices.Contains(created.Blocks, blocked.ID) {
+		t.Fatalf("expected blocks to contain %s, got %v", blocked.ID, created.Blocks)
+	}
+
+	blocked, err = s.Get(blocked.ID)
+	if err != nil {
+		t.Fatalf("Get blocked: %v", err)
+	}
+	if !slices.Contains(blocked.BlockedBy, created.ID) {
+		t.Fatalf("expected blocked_by to contain %s, got %v", created.ID, blocked.BlockedBy)
+	}
+}
+
+func TestNewCommandWithRelated(t *testing.T) {
+	s := newCLITestStore(t)
+	peer, err := s.Create("Peer")
+	if err != nil {
+		t.Fatalf("Create peer: %v", err)
+	}
+
+	globalFlags.root = s.Root
+	cmd := newNewCmd()
+	cmd.SetArgs([]string{"--related", peer.ID, "Related work"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	created, err := s.Get("TIC-002")
+	if err != nil {
+		t.Fatalf("Get created: %v", err)
+	}
+	if !slices.Contains(created.Related, peer.ID) {
+		t.Fatalf("expected related to contain %s, got %v", peer.ID, created.Related)
+	}
+
+	peer, err = s.Get(peer.ID)
+	if err != nil {
+		t.Fatalf("Get peer: %v", err)
+	}
+	if !slices.Contains(peer.Related, created.ID) {
+		t.Fatalf("expected peer related to contain %s, got %v", created.ID, peer.Related)
+	}
+}
+
 func TestNewCommandWithParentAndPriority(t *testing.T) {
 	s := newCLITestStore(t)
 	parent, err := s.Create("Parent")
@@ -140,6 +281,104 @@ func TestNewCommandWithBodyParentAndPriority(t *testing.T) {
 	}
 	if len(parent.Children) != 1 || parent.Children[0] != child.ID {
 		t.Fatalf("expected parent children [%s], got %v", child.ID, parent.Children)
+	}
+}
+
+func TestNewCommandCombinedFlags(t *testing.T) {
+	s := newCLITestStore(t)
+	project, err := s.CreateProject("Project")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	parent, err := s.Create("Parent")
+	if err != nil {
+		t.Fatalf("Create parent: %v", err)
+	}
+	blocker, err := s.Create("Blocker")
+	if err != nil {
+		t.Fatalf("Create blocker: %v", err)
+	}
+	blocked, err := s.Create("Blocked")
+	if err != nil {
+		t.Fatalf("Create blocked: %v", err)
+	}
+	peer, err := s.Create("Peer")
+	if err != nil {
+		t.Fatalf("Create peer: %v", err)
+	}
+
+	globalFlags.root = s.Root
+	cmd := newNewCmd()
+	cmd.SetArgs([]string{
+		"--body", "## Description\n\nDetailed body.",
+		"--priority", "high",
+		"--project", project.ID,
+		"--parent", parent.ID,
+		"--blocked-by", blocker.ID,
+		"--blocks", blocked.ID,
+		"--related", peer.ID,
+		"Child",
+	})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	child, err := s.Get("TIC-005")
+	if err != nil {
+		t.Fatalf("Get child: %v", err)
+	}
+	if strings.TrimLeft(child.Body, "\n") != "## Description\n\nDetailed body.\n" {
+		t.Fatalf("expected child body to be preserved, got %q", child.Body)
+	}
+	if child.Priority != "high" {
+		t.Fatalf("expected child priority high, got %q", child.Priority)
+	}
+	if child.Project != project.ID {
+		t.Fatalf("expected child project %s, got %q", project.ID, child.Project)
+	}
+	if child.Parent != parent.ID {
+		t.Fatalf("expected child parent %s, got %q", parent.ID, child.Parent)
+	}
+	if !slices.Contains(child.BlockedBy, blocker.ID) {
+		t.Fatalf("expected blocked_by to contain %s, got %v", blocker.ID, child.BlockedBy)
+	}
+	if !slices.Contains(child.Blocks, blocked.ID) {
+		t.Fatalf("expected blocks to contain %s, got %v", blocked.ID, child.Blocks)
+	}
+	if !slices.Contains(child.Related, peer.ID) {
+		t.Fatalf("expected related to contain %s, got %v", peer.ID, child.Related)
+	}
+
+	parent, err = s.Get(parent.ID)
+	if err != nil {
+		t.Fatalf("Get parent: %v", err)
+	}
+	if !slices.Contains(parent.Children, child.ID) {
+		t.Fatalf("expected parent children to contain %s, got %v", child.ID, parent.Children)
+	}
+
+	blocker, err = s.Get(blocker.ID)
+	if err != nil {
+		t.Fatalf("Get blocker: %v", err)
+	}
+	if !slices.Contains(blocker.Blocks, child.ID) {
+		t.Fatalf("expected blocker blocks to contain %s, got %v", child.ID, blocker.Blocks)
+	}
+
+	blocked, err = s.Get(blocked.ID)
+	if err != nil {
+		t.Fatalf("Get blocked: %v", err)
+	}
+	if !slices.Contains(blocked.BlockedBy, child.ID) {
+		t.Fatalf("expected blocked_by to contain %s, got %v", child.ID, blocked.BlockedBy)
+	}
+
+	peer, err = s.Get(peer.ID)
+	if err != nil {
+		t.Fatalf("Get peer: %v", err)
+	}
+	if !slices.Contains(peer.Related, child.ID) {
+		t.Fatalf("expected peer related to contain %s, got %v", child.ID, peer.Related)
 	}
 }
 
