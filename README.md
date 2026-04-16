@@ -513,12 +513,13 @@ tickets new "Document auth flow" --body "## Description\n\nCapture the login sta
 `--blocked-by`, `--blocks`, and `--related` accept multiple ticket IDs,
 either by repeating the flag or by passing a comma-separated list.
 
-`--body` converts literal `\n` sequences in the flag value into real
-newlines, so shell-friendly markdown examples save as multi-line ticket
-bodies. Real newlines passed in (e.g. via `"$(printf ...)"` or a quoted
-multi-line string) are preserved unchanged. There is no escape hatch
-for keeping a literal two-character `\n` in the saved body today, so
-`\\n` is not a workaround — it produces `\<newline>` rather than `\n`.
+`--body` recognizes a small fixed escape set in the flag value:
+`\n` becomes a newline, `\r` a carriage return, `\t` a tab, and `\\`
+a literal backslash. Any other `\X` sequence is left unchanged, so
+regex and markdown escapes like `\d+` or `\*literal\*` still save
+literally. Real newlines passed in (e.g. via `"$(printf ...)"` or a
+quoted multi-line string) are preserved unchanged, and `\\n` is the
+escape hatch for saving a literal two-character `\n`.
 
 All relation targets (`--parent`, `--blocked-by`, `--blocks`,
 `--related`) are validated against the store before the ticket is

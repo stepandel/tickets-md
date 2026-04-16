@@ -93,12 +93,12 @@ func TestNewCommandWithBodyPreservesActualNewlines(t *testing.T) {
 	}
 }
 
-func TestNewCommandWithBodyOnlyNormalizesLiteralNewlines(t *testing.T) {
+func TestNewCommandWithBodyNormalizesEscapesAndPreservesUnknown(t *testing.T) {
 	s := newCLITestStore(t)
 
 	globalFlags.root = s.Root
 	cmd := newNewCmd()
-	cmd.SetArgs([]string{"--body", `Path: C:\tmp\docs\nRegex: \d+\nMarkdown escape: \*literal\*`, "Body title"})
+	cmd.SetArgs([]string{"--body", `Path: C:\\tmp\\docs\nRegex: \d+\nMarkdown escape: \*literal\*`, "Body title"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -109,6 +109,63 @@ func TestNewCommandWithBodyOnlyNormalizesLiteralNewlines(t *testing.T) {
 	}
 	if strings.TrimLeft(created.Body, "\n") != "Path: C:\\tmp\\docs\nRegex: \\d+\nMarkdown escape: \\*literal\\*\n" {
 		t.Fatalf("expected selective normalization, got %q", created.Body)
+	}
+}
+
+func TestNewCommandWithBodyNormalizesSupportedEscapes(t *testing.T) {
+	s := newCLITestStore(t)
+
+	globalFlags.root = s.Root
+	cmd := newNewCmd()
+	cmd.SetArgs([]string{"--body", `First\tline\rKeep\\nTail\\`, "Body title"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	created, err := s.Get("TIC-001")
+	if err != nil {
+		t.Fatalf("Get created: %v", err)
+	}
+	if strings.TrimLeft(created.Body, "\n") != "First\tline\rKeep\\nTail\\\n" {
+		t.Fatalf("expected supported escapes to normalize, got %q", created.Body)
+	}
+}
+
+func TestNewCommandWithBodyPreservesTrailingLoneBackslash(t *testing.T) {
+	s := newCLITestStore(t)
+
+	globalFlags.root = s.Root
+	cmd := newNewCmd()
+	cmd.SetArgs([]string{"--body", "value\\", "Body title"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	created, err := s.Get("TIC-001")
+	if err != nil {
+		t.Fatalf("Get created: %v", err)
+	}
+	if strings.TrimLeft(created.Body, "\n") != "value\\\n" {
+		t.Fatalf("expected trailing lone backslash to survive, got %q", created.Body)
+	}
+}
+
+func TestNewCommandWithBodyPreservesUnknownEscapesAndMixedNewlines(t *testing.T) {
+	s := newCLITestStore(t)
+
+	globalFlags.root = s.Root
+	cmd := newNewCmd()
+	cmd.SetArgs([]string{"--body", "Line 1\nRegex: \\d+\nMarkdown: \\*literal\\*\nTabbed\\tvalue", "Body title"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	created, err := s.Get("TIC-001")
+	if err != nil {
+		t.Fatalf("Get created: %v", err)
+	}
+	if strings.TrimLeft(created.Body, "\n") != "Line 1\nRegex: \\d+\nMarkdown: \\*literal\\*\nTabbed\tvalue\n" {
+		t.Fatalf("expected unknown escapes to remain literal, got %q", created.Body)
 	}
 }
 

@@ -183,5 +183,36 @@ func newNewCmd() *cobra.Command {
 }
 
 func normalizeBodyFlag(body string) string {
-	return strings.ReplaceAll(body, `\n`, "\n")
+	var b strings.Builder
+	b.Grow(len(body))
+
+	for i := 0; i < len(body); i++ {
+		if body[i] != '\\' {
+			b.WriteByte(body[i])
+			continue
+		}
+		if i+1 >= len(body) {
+			b.WriteByte('\\')
+			continue
+		}
+
+		switch body[i+1] {
+		case 'n':
+			b.WriteByte('\n')
+			i++
+		case 'r':
+			b.WriteByte('\r')
+			i++
+		case 't':
+			b.WriteByte('\t')
+			i++
+		case '\\':
+			b.WriteByte('\\')
+			i++
+		default:
+			b.WriteByte('\\')
+		}
+	}
+
+	return b.String()
 }
