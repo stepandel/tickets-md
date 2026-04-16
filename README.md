@@ -520,6 +520,12 @@ multi-line string) are preserved unchanged. There is no escape hatch
 for keeping a literal two-character `\n` in the saved body today, so
 `\\n` is not a workaround — it produces `\<newline>` rather than `\n`.
 
+All relation targets (`--parent`, `--blocked-by`, `--blocks`,
+`--related`) are validated against the store before the ticket is
+created: if any ID is unknown, empty, duplicated within a flag, or
+reused across conflicting relation roles, `tickets new` fails with an
+error and leaves nothing on disk.
+
 ## Links
 
 Tickets can reference each other via symmetric `related` links or

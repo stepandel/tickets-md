@@ -158,6 +158,165 @@ func TestNewCommandWithUnknownProjectFails(t *testing.T) {
 	}
 }
 
+func assertNoTicketCreated(t *testing.T, s *ticket.Store) {
+	t.Helper()
+	if _, err := s.Get("TIC-001"); !errors.Is(err, ticket.ErrNotFound) {
+		t.Fatalf("expected TIC-001 to be absent, got %v", err)
+	}
+	nextID, err := s.NextID()
+	if err != nil {
+		t.Fatalf("NextID: %v", err)
+	}
+	if nextID != "TIC-001" {
+		t.Fatalf("expected next ID TIC-001, got %s", nextID)
+	}
+}
+
+func TestNewCommandWithUnknownParentFailsBeforeCreate(t *testing.T) {
+	s := newCLITestStore(t)
+
+	globalFlags.root = s.Root
+	cmd := newNewCmd()
+	cmd.SetArgs([]string{"--parent", "TIC-999", "Child"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !errors.Is(err, ticket.ErrNotFound) {
+		t.Fatalf("expected ticket not found, got %v", err)
+	}
+
+	assertNoTicketCreated(t, s)
+}
+
+func TestNewCommandWithUnknownBlockedByFailsBeforeCreate(t *testing.T) {
+	s := newCLITestStore(t)
+
+	globalFlags.root = s.Root
+	cmd := newNewCmd()
+	cmd.SetArgs([]string{"--blocked-by", "TIC-999", "Blocked work"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !errors.Is(err, ticket.ErrNotFound) {
+		t.Fatalf("expected ticket not found, got %v", err)
+	}
+
+	assertNoTicketCreated(t, s)
+}
+
+func TestNewCommandWithUnknownBlocksFailsBeforeCreate(t *testing.T) {
+	s := newCLITestStore(t)
+
+	globalFlags.root = s.Root
+	cmd := newNewCmd()
+	cmd.SetArgs([]string{"--blocks", "TIC-999", "Blocker"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !errors.Is(err, ticket.ErrNotFound) {
+		t.Fatalf("expected ticket not found, got %v", err)
+	}
+
+	assertNoTicketCreated(t, s)
+}
+
+func TestNewCommandWithUnknownRelatedFailsBeforeCreate(t *testing.T) {
+	s := newCLITestStore(t)
+
+	globalFlags.root = s.Root
+	cmd := newNewCmd()
+	cmd.SetArgs([]string{"--related", "TIC-999", "Related work"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !errors.Is(err, ticket.ErrNotFound) {
+		t.Fatalf("expected ticket not found, got %v", err)
+	}
+
+	assertNoTicketCreated(t, s)
+}
+
+func TestNewCommandRejectsEmptyRelationIDBeforeCreate(t *testing.T) {
+	s := newCLITestStore(t)
+
+	globalFlags.root = s.Root
+	cmd := newNewCmd()
+	cmd.SetArgs([]string{"--blocked-by", "   ", "Blocked work"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "requires a non-empty ticket ID") {
+		t.Fatalf("expected non-empty ticket ID error, got %v", err)
+	}
+
+	assertNoTicketCreated(t, s)
+}
+
+func TestNewCommandRejectsDuplicateRelationIDsBeforeCreate(t *testing.T) {
+	s := newCLITestStore(t)
+	peer, err := s.Create("Peer")
+	if err != nil {
+		t.Fatalf("Create peer: %v", err)
+	}
+
+	globalFlags.root = s.Root
+	cmd := newNewCmd()
+	cmd.SetArgs([]string{"--blocked-by", peer.ID, "--blocked-by", " " + peer.ID + " ", "Blocked work"})
+	err = cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "duplicate ticket ID") {
+		t.Fatalf("expected duplicate relation error, got %v", err)
+	}
+
+	nextID, nextErr := s.NextID()
+	if nextErr != nil {
+		t.Fatalf("NextID: %v", nextErr)
+	}
+	if nextID != "TIC-002" {
+		t.Fatalf("expected next ID TIC-002, got %s", nextID)
+	}
+	if _, getErr := s.Get("TIC-002"); !errors.Is(getErr, ticket.ErrNotFound) {
+		t.Fatalf("expected TIC-002 to be absent, got %v", getErr)
+	}
+}
+
+func TestNewCommandRejectsConflictingRelationRolesBeforeCreate(t *testing.T) {
+	s := newCLITestStore(t)
+	peer, err := s.Create("Peer")
+	if err != nil {
+		t.Fatalf("Create peer: %v", err)
+	}
+
+	globalFlags.root = s.Root
+	cmd := newNewCmd()
+	cmd.SetArgs([]string{"--blocked-by", peer.ID, "--blocks", " " + peer.ID + " ", "Blocked work"})
+	err = cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "cannot be used with both") {
+		t.Fatalf("expected conflicting relation error, got %v", err)
+	}
+
+	nextID, nextErr := s.NextID()
+	if nextErr != nil {
+		t.Fatalf("NextID: %v", nextErr)
+	}
+	if nextID != "TIC-002" {
+		t.Fatalf("expected next ID TIC-002, got %s", nextID)
+	}
+	if _, getErr := s.Get("TIC-002"); !errors.Is(getErr, ticket.ErrNotFound) {
+		t.Fatalf("expected TIC-002 to be absent, got %v", getErr)
+	}
+}
+
 func TestNewCommandWithBlockedBy(t *testing.T) {
 	s := newCLITestStore(t)
 	blocker, err := s.Create("Blocker")
