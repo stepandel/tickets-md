@@ -11,7 +11,9 @@ agent:
 
     Address every issue flagged in `## Review`, then validate the implementation end to end:
     - run `make check`
-    - exercise the changed feature in an appropriate local sandbox for the code that changed
+    - run `make qa-cli`
+    - run `make qa-plugin` when Obsidian is available; if it is not, record the clear skip output instead of treating the plugin harness as passed
+    - exercise any additional changed feature paths in an appropriate local sandbox for the code that changed
     - look for runtime issues, integration gaps, or regressions review could not catch
 
     If you find issues, fix them directly in {{worktree}}:

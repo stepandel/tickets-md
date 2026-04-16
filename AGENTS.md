@@ -128,6 +128,17 @@ If you change `obsidian-plugin/`, also run:
 make plugin-test
 ```
 
+For the QA harness itself, run:
+
+```sh
+make qa-cli
+make qa-plugin   # requires Obsidian; set OBSIDIAN_BIN if auto-detect misses it
+```
+
+`make qa` runs both harnesses together. `make qa-plugin` exits clearly
+when Obsidian is unavailable so the skip can be recorded instead of
+quietly passing.
+
 For a full rebuild of the installed binary:
 
 ```sh

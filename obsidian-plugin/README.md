@@ -63,6 +63,25 @@ Node.js test runner against `src/**/*.test.ts` (via tsx) and
 `test/**/*.test.mjs`. From the repo root, `make plugin-test` runs
 the same suite after a fresh `npm ci`.
 
+For the desktop smoke test:
+
+```sh
+npm run test:e2e
+```
+
+That test expects an Obsidian desktop binary. Set `OBSIDIAN_BIN` to
+the executable path if auto-detection does not find it; on macOS the
+default checked by `make qa-plugin` is
+`/Applications/Obsidian.app/Contents/MacOS/Obsidian`. Obsidian's
+desktop CLI support must also be enabled under
+*Settings → General → Advanced → Command line interface*.
+
+From the repo root, `make qa-plugin` bundles the plugin and launches
+Playwright, which copies the fixture vault to a temp dir, installs the
+fresh build via `tickets obsidian install --from obsidian-plugin --vault
+<tmp>`, drives Obsidian, opens the board, and verifies that creating a
+ticket works end to end.
+
 ## What it provides
 
 - A board view (`Open: Tickets Board` command) that mirrors the

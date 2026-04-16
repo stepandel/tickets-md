@@ -11,3 +11,6 @@
 !.tickets/*/.stage.yml
 .worktrees
 .obsidian
+!obsidian-plugin/e2e/fixtures/vault/.obsidian/
+obsidian-plugin/playwright-report
+obsidian-plugin/test-results
