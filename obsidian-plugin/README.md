@@ -92,8 +92,9 @@ ticket works end to end.
 - Board cards surface the assigned project as a compact chip, with a
   muted fallback for dangling `project:` references.
 - Per-ticket agent controls: spawn an adhoc run, re-run the stage
-  agent, open a live terminal, replay a completed run's terminal
-  output, view the diff a run produced.
+  agent (or force a re-run that kills the active session), open a
+  live terminal, replay a completed run's terminal output, view the
+  diff a run produced.
 - Cron agents from `config.yml` in the Agents view, including edit,
   enable/disable, run now (desktop), and last-log actions.
 - A projects view (`Open: Tickets Projects` command) listing
