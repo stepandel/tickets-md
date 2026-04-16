@@ -7,9 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- `tickets new --body` now normalizes literal `\n` sequences in the flag
-  value into real newlines, so shell-friendly one-line invocations save
-  as multi-line markdown bodies. Real newlines are preserved unchanged.
+- `tickets new --body` now recognizes `\n`, `\r`, `\t`, and `\\` escape
+  sequences in the flag value, so shell-friendly one-line invocations
+  save as multi-line markdown bodies. Unknown `\X` sequences are left
+  unchanged; `\\n` is the escape hatch for a literal two-character `\n`.
 
 - Fixed the Obsidian plugin's diff view overcounting changed files on
   ticket branches. It now compares against the remote-tracking
