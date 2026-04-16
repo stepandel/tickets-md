@@ -144,6 +144,56 @@ func TestSpawnAgentImmediateExitMarksRunFailed(t *testing.T) {
 	}
 }
 
+func TestSpawnAgentImmediateExitMarksRunDone(t *testing.T) {
+	s := newWatchStore(t)
+	tk, err := s.Create("Alpha")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	tk, err = s.Move(tk.ID, "execute")
+	if err != nil {
+		t.Fatalf("Move: %v", err)
+	}
+
+	runner := agent.NewPTYRunner()
+	mon := agent.NewMonitor(s.Root, runner.Alive, runner.IdleSeconds)
+	mon.OnStatusChange = func(ticketID string) {
+		syncAgentFrontmatter(s.Root, ticketID)
+	}
+
+	session, err := spawnAgent(tk, stage.Config{
+		Agent: &stage.AgentConfig{
+			Command: "/bin/sh",
+			Args:    []string{"-c", "exit 0"},
+			Prompt:  "ignored",
+		},
+	}, s.Root, mon, runner, 0, 0)
+	if err != nil {
+		t.Fatalf("spawnAgent: %v", err)
+	}
+	if session != tk.ID+"-1" {
+		t.Fatalf("session = %q, want %s-1", session, tk.ID)
+	}
+
+	as := waitForRunStatus(t, s.Root, tk.ID, agent.StatusDone)
+	if as.ExitCode == nil || *as.ExitCode != 0 {
+		t.Fatalf("exit code = %v, want 0", as.ExitCode)
+	}
+	got, err := s.Get(tk.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.AgentStatus != string(agent.StatusDone) {
+		t.Fatalf("agent_status = %q, want done", got.AgentStatus)
+	}
+	if got.AgentRun != "001-execute" {
+		t.Fatalf("agent_run = %q, want 001-execute", got.AgentRun)
+	}
+	if got.AgentSession != "" {
+		t.Fatalf("agent_session = %q, want empty", got.AgentSession)
+	}
+}
+
 func TestHandleCreateFsRenameIntoCompleteStageUnblocksDependents(t *testing.T) {
 	s := newWatchStore(t)
 	blocker, err := s.Create("Blocker")
