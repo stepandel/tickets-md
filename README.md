@@ -285,7 +285,7 @@ setup steps.
 | `tickets worktree open <id>`            | Open a ticket's worktree in your editor            |
 | `tickets worktree clean [ids...\|--all]`| Remove worktrees                                   |
 | `tickets completion <shell>`            | Emit a shell completion script                     |
-| `tickets hooks install [--force]`       | Install a pre-commit hook that runs `make check`   |
+| `tickets hooks install [--force]`       | Install a pre-commit hook that runs `make check` (and `make plugin-test` when plugin files are staged) |
 | `tickets obsidian <install\|status\|uninstall>` | Manage the bundled Obsidian companion plugin |
 
 `init` accepts `--prefix` and `--stages` to override the defaults at

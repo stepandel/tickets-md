@@ -25,10 +25,10 @@ func newHooksInstallCmd() *cobra.Command {
 	var force bool
 	cmd := &cobra.Command{
 		Use:   "install",
-		Short: "Install a pre-commit hook that runs `make check`",
+		Short: "Install a pre-commit hook (runs make check, plus make plugin-test on plugin changes)",
 		Long: `Drops a pre-commit hook into the current git repository's
-hooks directory. The hook runs ` + "`make check`" + ` before every commit so
-broken code can't land.
+hooks directory. The hook runs ` + "`make check`" + ` before every commit and
+also runs ` + "`make plugin-test`" + ` when staged changes include ` + "`obsidian-plugin/`" + `.
 
 The hook is opt-in: installing is refused if a pre-commit hook
 already exists, unless --force is passed.`,
@@ -82,10 +82,14 @@ func runGit(cwd string, args ...string) (string, error) {
 }
 
 const preCommitScript = `#!/bin/sh
-# Installed by 'tickets hooks install'.
-# Fails the commit if 'make check' fails. Remove this file to opt out.
+# Installed by 'tickets hooks install'. Remove this file to opt out.
+# Fails the commit if 'make check' fails.
+# Also runs 'make plugin-test' when staged files include obsidian-plugin/.
 set -e
-exec make check
+make check
+if git diff --cached --name-only --diff-filter=ACMR | grep -q '^obsidian-plugin/'; then
+	make plugin-test
+fi
 `
 
 func installPreCommit(hooksDir string, force bool, out io.Writer) error {
@@ -104,6 +108,6 @@ func installPreCommit(hooksDir string, force bool, out io.Writer) error {
 		return fmt.Errorf("writing hook: %w", err)
 	}
 	fmt.Fprintf(out, "Installed pre-commit hook at %s\n", path)
-	fmt.Fprintln(out, "Runs `make check` before every commit — delete the file to opt out.")
+	fmt.Fprintln(out, "Runs `make check` before every commit, plus `make plugin-test` when `obsidian-plugin/` files are staged — delete the file to opt out.")
 	return nil
 }
