@@ -19,6 +19,12 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { html as diff2html } from "diff2html";
 import { planDiffCommand, resolveDefaultBranch } from "./diff";
+import {
+	ACTIVE_AGENT_STATUSES,
+	canReplayTerminal,
+	hasLiveTerminal,
+	ticketRunLogPath,
+} from "./agent-terminal.js";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -44,6 +50,7 @@ interface Ticket {
 	created_at?: string;
 	updated_at?: string;
 	agent_status?: string;
+	agent_run?: string;
 	agent_session?: string;
 	file: TFile;
 	stage: string;
@@ -121,7 +128,6 @@ const CONFIG_PATH = "config.yml";
 const TERMINAL_SERVER_PATH = ".terminal-server";
 const PROJECTS_DIR = "projects";
 
-const ACTIVE_AGENT_STATUSES = ["spawned", "running", "blocked"];
 const AGENTS_VIEW_STATUSES = [...ACTIVE_AGENT_STATUSES, "failed", "errored"];
 
 // ── Shared helpers ─────────────────────────────────────────────────────
@@ -202,6 +208,7 @@ async function parseTicket(app: import("obsidian").App, file: TFile, stage: stri
 			created_at: fm.created_at,
 			updated_at: fm.updated_at,
 			agent_status: fm.agent_status,
+			agent_run: fm.agent_run,
 			agent_session: fm.agent_session,
 			file,
 			stage,
@@ -375,7 +382,7 @@ async function loadLatestCronRun(
 }
 
 function hasActiveAgent(ticket: Ticket): boolean {
-	return !!ticket.agent_status && ACTIVE_AGENT_STATUSES.includes(ticket.agent_status);
+	return !!ticket.agent_status && ACTIVE_AGENT_STATUSES.has(ticket.agent_status);
 }
 
 function canRerunStageAgent(ticket: Ticket): boolean {
@@ -400,6 +407,24 @@ async function openTerminal(app: import("obsidian").App, ticket: Ticket) {
 		state: {
 			sessionName: ticket.agent_session,
 			ticketId: ticket.id,
+		},
+	});
+	app.workspace.revealLeaf(leaf);
+}
+
+async function openRunLog(app: import("obsidian").App, ticket: Ticket) {
+	if (!ticket.agent_run) {
+		new Notice("Run log is missing a run id");
+		return;
+	}
+
+	const leaf = app.workspace.getLeaf(Platform.isMobile ? "tab" : "split");
+	await leaf.setViewState({
+		type: TERMINAL_VIEW_TYPE,
+		state: {
+			ticketId: ticket.id,
+			logPath: ticketRunLogPath(ticket.id, ticket.agent_run),
+			logLabel: `Run log: ${ticket.agent_run}`,
 		},
 	});
 	app.workspace.revealLeaf(leaf);
@@ -1548,6 +1573,8 @@ class TerminalView extends ItemView {
 	private spawnPath = "";
 	private spawnLabel = "";
 	private spawnBody: TerminalSpawnBody = {};
+	private logPath = "";
+	private logLabel = "";
 	private resizeObserver: ResizeObserver | null = null;
 
 	getViewType(): string {
@@ -1568,6 +1595,8 @@ class TerminalView extends ItemView {
 		this.spawnPath = (state.spawnPath as string) ?? "";
 		this.spawnLabel = (state.spawnLabel as string) ?? "";
 		this.spawnBody = ((state.spawnBody as TerminalSpawnBody | undefined) ?? {});
+		this.logPath = (state.logPath as string) ?? "";
+		this.logLabel = (state.logLabel as string) ?? "";
 		await super.setState(state, result);
 		this.start();
 	}
@@ -1575,7 +1604,12 @@ class TerminalView extends ItemView {
 	getState(): Record<string, unknown> {
 		// Persist only the attached session — re-running a spawn after a
 		// reload would create a duplicate run, so we drop spawnPath here.
-		return { sessionName: this.sessionName, ticketId: this.ticketId };
+		return {
+			sessionName: this.sessionName,
+			ticketId: this.ticketId,
+			logPath: this.logPath,
+			logLabel: this.logLabel,
+		};
 	}
 
 	async onOpen() {
@@ -1583,14 +1617,11 @@ class TerminalView extends ItemView {
 	}
 
 	private async start() {
-		const serverInfo = await readServerFile(this.app);
-		if (!serverInfo) {
-			this.showError("No terminal server running. Is `tickets watch` active?");
-			return;
-		}
+		this.contentEl.empty();
+		this.contentEl.addClass("tb-terminal-container");
 
 		this.terminal = new Terminal({
-			cursorBlink: true,
+			cursorBlink: !this.logPath,
 			fontSize: 13,
 			fontFamily: "var(--font-monospace), monospace",
 			theme: {
@@ -1603,6 +1634,17 @@ class TerminalView extends ItemView {
 		this.terminal.loadAddon(this.fitAddon);
 		this.terminal.open(this.contentEl);
 		this.fitAddon.fit();
+
+		if (this.logPath) {
+			await this.loadReplayLog();
+			return;
+		}
+
+		const serverInfo = await readServerFile(this.app);
+		if (!serverInfo) {
+			this.showError("No terminal server running. Is `tickets watch` active?");
+			return;
+		}
 
 		// In spawn mode the PTY hasn't been created yet — POST the
 		// measured geometry first so the agent's first output already
@@ -1627,6 +1669,34 @@ class TerminalView extends ItemView {
 			this.sendResize();
 		});
 		this.resizeObserver.observe(this.contentEl);
+	}
+
+	private async loadReplayLog() {
+		try {
+			if (this.logLabel) {
+				this.terminal?.write(`\x1b[90m[${this.logLabel}]\x1b[0m\r\n`);
+			}
+
+			const exists = await this.app.vault.adapter.exists(this.logPath);
+			if (!exists) {
+				this.terminal?.write("\x1b[90m[log file missing]\x1b[0m\r\n");
+				return;
+			}
+
+			const raw = await this.app.vault.adapter.read(this.logPath);
+			if (raw) {
+				this.terminal?.write(raw.replace(/(?<!\r)\n/g, "\r\n"));
+				if (!raw.endsWith("\n")) {
+					this.terminal?.write("\r\n");
+				}
+			} else {
+				this.terminal?.write("\x1b[90m[log file is empty]\x1b[0m\r\n");
+			}
+			this.terminal?.write("\x1b[90m[read-only replay]\x1b[0m\r\n");
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			this.terminal?.write(`\x1b[31m[failed to read log: ${message}]\x1b[0m\r\n`);
+		}
 	}
 
 	private async postSpawn(port: number): Promise<string | null> {
@@ -1928,8 +1998,12 @@ class AgentsView extends ItemView {
 				this.longPressTriggered = false;
 				return;
 			}
-			if (ticket.agent_session) {
+			if (hasLiveTerminal(ticket)) {
 				await openTerminal(this.app, ticket);
+				return;
+			}
+			if (canReplayTerminal(ticket)) {
+				await openRunLog(this.app, ticket);
 				return;
 			}
 			this.previewLeaf = openPreviewLeaf(this.app, this.previewLeaf);
@@ -1960,9 +2034,14 @@ class AgentsView extends ItemView {
 
 		const right = row.createDiv({ cls: "tb-agent-row-right" });
 		right.createEl("span", { text: ticket.stage, cls: "tb-stage-name" });
-		if (ticket.agent_session) {
+		if (hasLiveTerminal(ticket)) {
 			right.createEl("span", {
 				text: ticket.agent_session,
+				cls: "tb-agent-session",
+			});
+		} else if (ticket.agent_run) {
+			right.createEl("span", {
+				text: ticket.agent_run,
 				cls: "tb-agent-session",
 			});
 		}
@@ -1983,10 +2062,17 @@ class AgentsView extends ItemView {
 				await this.previewLeaf.openFile(ticket.file);
 			}),
 		);
-		if (ticket.agent_session) {
+		if (hasLiveTerminal(ticket)) {
 			menu.addItem((item) =>
 				item.setTitle("Open terminal").setIcon("terminal-square").onClick(() => {
 					openTerminal(this.app, ticket);
+				}),
+			);
+		}
+		if (canReplayTerminal(ticket)) {
+			menu.addItem((item) =>
+				item.setTitle("View run log").setIcon("scroll").onClick(() => {
+					openRunLog(this.app, ticket);
 				}),
 			);
 		}

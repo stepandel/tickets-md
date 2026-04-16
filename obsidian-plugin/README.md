@@ -3,8 +3,9 @@
 Companion plugin for [`tickets-md`](../README.md) — a Linear-style
 ticketing system backed by markdown files. The plugin renders the
 `.tickets/` directory as a Kanban board, with drag-and-drop between
-stages, ticket creation, agent run controls, and a live terminal view
-of the agent PTY served by `tickets watch`.
+stages, ticket creation, agent run controls, a live terminal view
+of the agent PTY served by `tickets watch`, and read-only terminal
+replay for completed agent runs.
 
 The plugin is optional: every operation it exposes is also available
 from the `tickets` CLI. It exists to give Obsidian users a board view
@@ -70,7 +71,8 @@ Node.js test runner against `src/**/*.test.ts` (via tsx).
 - Board cards surface the assigned project as a compact chip, with a
   muted fallback for dangling `project:` references.
 - Per-ticket agent controls: spawn an adhoc run, re-run the stage
-  agent, open a live terminal, view the diff a run produced.
+  agent, open a live terminal, replay a completed run's terminal
+  output, view the diff a run produced.
 - Cron agents from `config.yml` in the Agents view, including edit,
   enable/disable, run now (desktop), and last-log actions.
 - A projects view (`Open: Tickets Projects` command) listing
