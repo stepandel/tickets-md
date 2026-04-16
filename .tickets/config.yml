@@ -15,12 +15,13 @@ default_agent:
 complete_stages:
     - done
     - cancelled
-# cron_agents:
-#   - name: backlog-groomer
-#     schedule: "@every 1m"
-#     command: claude
-#     args: ["--dangerously-skip-permissions"]
-#     prompt: |
-#       You are the backlog groomer for {{root}} at {{now}}.
-#       Review the backlog and clean up duplicates or outdated tickets.
-#       Rather than deleting tickets off-right, move them to /cancelled stage
+cron_agents:
+    - name: backlog-groomer
+      schedule: "@every 1m"
+      command: claude
+      args: ["--dangerously-skip-permissions"]
+      prompt: |
+          You are the backlog groomer for {{root}} at {{now}}.
+          Only operate on tickets in backlog/. Review them and clean up
+          duplicates or outdated ones. Rather than deleting tickets
+          outright, move them to cancelled/.
