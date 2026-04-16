@@ -2284,18 +2284,23 @@ class AgentsView extends ItemView {
 			return;
 		}
 		const path = cronLogPath(name, run.run_id);
-		const file = this.app.vault.getAbstractFileByPath(path);
-		if (file instanceof TFile) {
-			this.previewLeaf = openPreviewLeaf(this.app, this.previewLeaf);
-			await this.previewLeaf.openFile(file);
+		// Obsidian's vault index hides dotfile paths, so getAbstractFileByPath
+		// can't see .agents/... — read through the adapter like the TerminalView
+		// replay does for ticket logs.
+		if (!(await this.app.vault.adapter.exists(path))) {
+			new Notice(`Could not find cron log at ${path}`);
 			return;
 		}
-
-		if (run.log_file) {
-			new Notice(`Cron log is outside the vault: ${run.log_file}`);
-			return;
-		}
-		new Notice(`Could not find cron log at ${path}`);
+		const leaf = this.app.workspace.getLeaf(Platform.isMobile ? "tab" : "split");
+		await leaf.setViewState({
+			type: TERMINAL_VIEW_TYPE,
+			state: {
+				ticketId: `cron/${name}`,
+				logPath: path,
+				logLabel: `Cron log: ${name} / ${run.run_id}`,
+			},
+		});
+		this.app.workspace.revealLeaf(leaf);
 	}
 
 	private onLongPress(el: HTMLElement, callback: (x: number, y: number) => void, delay = 500) {
