@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (done/failed/errored), mirroring the Agents view affordance. The
   live "Open terminal" item stays desktop-only and unchanged; replay
   works on desktop and mobile.
+- Fixed a second PTY-session exit-status race where `PTYRunner.Shutdown`
+  could win the lookup→delete race against the owning CLI waiter and
+  cause a cleanly-exited session to be persisted as `failed`. Shutdown
+  now waits on the session's internal done channel instead of calling
+  `Wait`, leaving the map entry for the owning waiter to consume.
+  Complements the 0.1.9 fast-exit fix.
 
 ## [0.1.10] - 2026-04-16
 
