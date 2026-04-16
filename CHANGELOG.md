@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `tickets crons` now has `enable`, `disable`, and `set` subcommands for
+  managing cron agent configuration from the CLI without editing
+  `config.yml` by hand. `set` supports the `schedule`, `command`,
+  `prompt`, and `args` fields; pass `-` as the value to clear `args`.
+
 - `tickets new --body` now normalizes literal `\n` sequences in the flag
   value into real newlines, so shell-friendly one-line invocations save
   as multi-line markdown bodies. Real newlines are preserved unchanged.
