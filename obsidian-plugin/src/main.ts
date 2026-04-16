@@ -821,6 +821,20 @@ class BoardView extends ItemView {
 				});
 			}
 		}
+
+		if (ticket.project) {
+			const project = this.projects.find((candidate) => candidate.id === ticket.project);
+			footer.createEl("span", {
+				text: ticket.project,
+				cls: project ? "tb-project-chip" : "tb-project-chip tb-project-chip-dangling",
+				attr: {
+					"aria-label": project
+						? `Project ${project.id} — ${project.title}`
+						: `Project ${ticket.project} (missing)`,
+					title: project ? `${project.id} — ${project.title}` : `${ticket.project} (missing)`,
+				},
+			});
+		}
 	}
 
 	// ── Touch Drag Helpers ────────────────────────────────────────────
