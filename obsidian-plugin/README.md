@@ -69,9 +69,10 @@ no test harness yet.
 - Per-ticket agent controls: spawn an adhoc run, re-run the stage
   agent, open a live terminal, view the diff a run produced.
 - A projects view (`Open: Tickets Projects` command) listing
-  `.tickets/projects/` with create, rename, set status, show
-  assigned tickets, and delete (which unassigns `project:` on
-  member tickets first).
+  `.tickets/projects/` alongside a tickets sidebar that shows the
+  selected project's assigned tickets, with create, rename, set
+  status, and delete (which unassigns `project:` on member tickets
+  first).
 - A diff view (powered by diff2html) for any agent run that touched
   files.
 
