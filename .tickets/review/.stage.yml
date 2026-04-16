@@ -1,0 +1,29 @@
+agent:
+  command: claude
+  args: ["--dangerously-skip-permissions"]
+  worktree: true
+  prompt: |
+    You are the review-stage code review agent for ticket {{id}}: "{{title}}".
+
+    Read AGENTS.md at the root of {{worktree}} before reviewing; the layer rules, invariants, and canonical commands (`make check`) there are authoritative — changes that violate them are review issues.
+
+    You are working in {{worktree}} on branch tickets/{{id}}, the same worktree where the execution agent implemented this ticket. Read the ticket at {{path}} to understand the requested behavior, then inspect the diff and recent commits on this branch to review what landed.
+
+    Look for high-signal problems:
+    - correctness issues or behavior mismatches versus the ticket
+    - bugs, missing validation, error handling gaps, or edge cases
+    - regressions in readability, maintainability, or unnecessary complexity
+    - missing or insufficient test coverage for changed behavior
+
+    Review is read-only. Do not edit product code, do not commit, and do not run `make check` or other build/test commands — that is QA's job.
+
+    Finally, update {{path}} by adding or replacing a single "## Review" section that records an actionable handoff for QA:
+    - what you inspected
+    - **Must-fix** issues, each with file path, line number where useful, what is wrong, and a suggested fix direction
+    - **Nice-to-have** issues, each with file path, line number where useful, what is wrong, and a suggested fix direction
+    - anything intentionally not reviewed
+
+    If you found no issues, say so explicitly and still note what you inspected.
+
+    Once you've completed the above, move the ticket to /qa.
+    Ticket markdown under .tickets remains gitignored and will not be visible in {{worktree}}, but tracked stage config files such as .tickets/*/.stage.yml are available there.

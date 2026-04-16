@@ -2,6 +2,8 @@ package ticket
 
 import (
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -27,6 +29,27 @@ func newTestStoreWithConfig(t *testing.T, c config.Config) *Store {
 		t.Fatalf("Init: %v", err)
 	}
 	return s
+}
+
+func runGit(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func newGitRepo(t *testing.T) string {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	root := t.TempDir()
+	runGit(t, root, "init", "-b", "main")
+	return root
 }
 
 func newTestStoreWithCompleteStages(t *testing.T, completeStages ...string) *Store {
@@ -64,6 +87,122 @@ func TestMoveIntoCompleteStageUnblocksDependents(t *testing.T) {
 	if containsID(blocked.BlockedBy, blocker.ID) {
 		t.Fatalf("blocked.BlockedBy = %v, want %s removed", blocked.BlockedBy, blocker.ID)
 	}
+}
+
+func TestEnsureGitignored(t *testing.T) {
+	t.Run("creates block in fresh repo", func(t *testing.T) {
+		root := newGitRepo(t)
+
+		if err := EnsureGitignored(root); err != nil {
+			t.Fatalf("EnsureGitignored: %v", err)
+		}
+		if err := EnsureGitignored(root); err != nil {
+			t.Fatalf("EnsureGitignored second: %v", err)
+		}
+
+		data, err := os.ReadFile(filepath.Join(root, ".gitignore"))
+		if err != nil {
+			t.Fatalf("ReadFile: %v", err)
+		}
+		if string(data) != gitignoreBlock+"\n" {
+			t.Fatalf("gitignore = %q, want %q", string(data), gitignoreBlock+"\n")
+		}
+	})
+
+	t.Run("replaces legacy tickets entry", func(t *testing.T) {
+		root := newGitRepo(t)
+		path := filepath.Join(root, ".gitignore")
+		if err := os.WriteFile(path, []byte("node_modules\n.tickets\n.dist\n"), 0o644); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+
+		if err := EnsureGitignored(root); err != nil {
+			t.Fatalf("EnsureGitignored: %v", err)
+		}
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("ReadFile: %v", err)
+		}
+		want := "node_modules\n" + gitignoreBlock + "\n.dist\n"
+		if string(data) != want {
+			t.Fatalf("gitignore = %q, want %q", string(data), want)
+		}
+	})
+
+	t.Run("replaces legacy tickets entry with trailing slash", func(t *testing.T) {
+		root := newGitRepo(t)
+		path := filepath.Join(root, ".gitignore")
+		if err := os.WriteFile(path, []byte("node_modules\n.tickets/\n.dist\n"), 0o644); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+
+		if err := EnsureGitignored(root); err != nil {
+			t.Fatalf("EnsureGitignored: %v", err)
+		}
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("ReadFile: %v", err)
+		}
+		want := "node_modules\n" + gitignoreBlock + "\n.dist\n"
+		if string(data) != want {
+			t.Fatalf("gitignore = %q, want %q", string(data), want)
+		}
+	})
+
+	t.Run("preserves unrelated entries when appending", func(t *testing.T) {
+		root := newGitRepo(t)
+		path := filepath.Join(root, ".gitignore")
+		if err := os.WriteFile(path, []byte("node_modules\n"), 0o644); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+
+		if err := EnsureGitignored(root); err != nil {
+			t.Fatalf("EnsureGitignored: %v", err)
+		}
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("ReadFile: %v", err)
+		}
+		want := "node_modules\n" + gitignoreBlock + "\n"
+		if string(data) != want {
+			t.Fatalf("gitignore = %q, want %q", string(data), want)
+		}
+	})
+
+	t.Run("git respects stage config exception", func(t *testing.T) {
+		root := newGitRepo(t)
+		if err := EnsureGitignored(root); err != nil {
+			t.Fatalf("EnsureGitignored: %v", err)
+		}
+		if err := os.MkdirAll(filepath.Join(root, ".tickets", "execute"), 0o755); err != nil {
+			t.Fatalf("MkdirAll execute: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(root, ".tickets", "execute", ".stage.yml"), []byte("agent: {}\n"), 0o644); err != nil {
+			t.Fatalf("WriteFile stage config: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(root, ".tickets", "execute", "TIC-001.md"), []byte("# test\n"), 0o644); err != nil {
+			t.Fatalf("WriteFile ticket: %v", err)
+		}
+
+		stageCheck := exec.Command("git", "check-ignore", ".tickets/execute/.stage.yml")
+		stageCheck.Dir = root
+		if out, err := stageCheck.CombinedOutput(); err == nil {
+			t.Fatalf("stage config should not be ignored, got %q", strings.TrimSpace(string(out)))
+		}
+
+		ticketCheck := exec.Command("git", "check-ignore", ".tickets/execute/TIC-001.md")
+		ticketCheck.Dir = root
+		out, err := ticketCheck.CombinedOutput()
+		if err != nil {
+			t.Fatalf("ticket markdown should be ignored: %v\n%s", err, out)
+		}
+		if strings.TrimSpace(string(out)) != ".tickets/execute/TIC-001.md" {
+			t.Fatalf("check-ignore output = %q", strings.TrimSpace(string(out)))
+		}
+	})
 }
 
 func TestMoveIntoNonCompleteStagePreservesBlocks(t *testing.T) {

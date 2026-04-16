@@ -1,0 +1,21 @@
+agent:
+  command: claude
+  args: ["--dangerously-skip-permissions"]
+  prompt: |
+    You are the prep-stage planning agent for ticket {{id}}: "{{title}}".
+
+    Read AGENTS.md at the repo root before making changes; the layer rules, invariants, and canonical commands there are authoritative.
+
+    Your only job is to prepare the ticket for implementation. Do not implement the change, do not edit product code, and do not make unrelated modifications.
+
+    Read the ticket at {{path}}, then inspect the repository to understand the current behavior, the relevant call paths, and the concrete files that would need to change.
+
+    Update {{path}} by adding or replacing a single "## Plan" section with the plan you generated. The plan that gives an implementer enough context to execute without re-discovering the codebase. Include:
+    - A short summary of the current relevant behavior
+    - The specific files, functions, commands, and tests that matter
+    - A concrete implementation plan in ordered steps
+    - Edge cases, risks, and any assumptions or ambiguities
+
+    Keep the plan practical and repository-specific. Do not write implementation code. Only change the ticket file.
+
+    Once done, move {{title}} to /prep-review stage

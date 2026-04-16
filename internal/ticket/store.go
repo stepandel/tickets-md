@@ -69,6 +69,9 @@ func Init(root string, c config.Config) (*Store, error) {
 	if err := config.Save(root, c); err != nil {
 		return nil, err
 	}
+	if err := EnsureGitignored(root); err != nil {
+		return nil, err
+	}
 	return s, nil
 }
 
@@ -105,6 +108,48 @@ func mustBeDirOrAbsent(path string) error {
 		return fmt.Errorf("cannot create directory %s: a non-directory file already exists at that path", path)
 	}
 	return nil
+}
+
+const gitignoreBlock = "# .tickets: track stage config, ignore ticket content and runtime state\n.tickets/**\n!.tickets/*/\n!.tickets/*/.stage.yml"
+
+// EnsureGitignored keeps stage config trackable in git while leaving
+// ticket content and runtime state ignored.
+func EnsureGitignored(root string) error {
+	gitignore := filepath.Join(root, ".gitignore")
+	data, err := os.ReadFile(gitignore)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	content := string(data)
+	if strings.Contains(content, gitignoreBlock) {
+		return nil
+	}
+
+	lines := strings.Split(content, "\n")
+	replaced := false
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == ".tickets" || trimmed == ".tickets/" {
+			lines[i] = gitignoreBlock
+			replaced = true
+		}
+	}
+
+	var out string
+	if replaced {
+		out = strings.Join(lines, "\n")
+		if !strings.HasSuffix(out, "\n") {
+			out += "\n"
+		}
+	} else {
+		out = content
+		if len(out) > 0 && !strings.HasSuffix(out, "\n") {
+			out += "\n"
+		}
+		out += gitignoreBlock + "\n"
+	}
+
+	return os.WriteFile(gitignore, []byte(out), 0o644)
 }
 
 // EnsureStageDirs creates any missing stage directories under

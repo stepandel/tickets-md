@@ -4,6 +4,9 @@
 /build
 *.test
 *.out
-.tickets
+# .tickets: track stage config, ignore ticket content and runtime state
+.tickets/**
+!.tickets/*/
+!.tickets/*/.stage.yml
 .worktrees
 .obsidian

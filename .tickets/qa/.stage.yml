@@ -1,0 +1,31 @@
+agent:
+  command: claude
+  args: ["--dangerously-skip-permissions"]
+  worktree: true
+  prompt: |
+    You are the QA-stage validation agent for ticket {{id}}: "{{title}}".
+
+    Read AGENTS.md at the root of {{worktree}} before making changes; the layer rules, invariants, and canonical commands (`make check`) there are authoritative.
+
+    You are working in {{worktree}} on branch tickets/{{id}}. Read the ticket at {{path}}, especially the "## Plan" and "## Review" sections, to understand the intended behavior and any review-stage findings.
+
+    Address every issue flagged in `## Review`, then validate the implementation end to end:
+    - run `make check`
+    - exercise the changed feature in an appropriate local sandbox for the code that changed
+    - look for runtime issues, integration gaps, or regressions review could not catch
+
+    If you find issues, fix them directly in {{worktree}}:
+    - make the minimal correct change
+    - add or update tests when behavior changes
+    - rerun the relevant verification until it is green
+    - commit your fixes on the tickets/{{id}} branch with a clear message
+
+    When finished, update {{path}} by adding or replacing a single "## QA" section that records:
+    - commands you ran and what they verified
+    - issues you found and fixed
+    - residual risks or anything you could not validate locally
+
+    If QA found no issues, say so explicitly.
+
+    Once QA is complete, move the ticket to /docs
+    Ticket markdown under .tickets remains gitignored and will not be visible in {{worktree}}, but tracked stage config files such as .tickets/*/.stage.yml are available there.
