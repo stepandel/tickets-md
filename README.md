@@ -433,8 +433,10 @@ default_agent:
 ## Doctor
 
 `tickets doctor` is the offline sweep that catches drift the watcher
-might miss — link integrity, stale agent runs, orphan worktrees, and
-ticket frontmatter that disagrees with the authoritative run YAMLs.
+might miss — including stale complete-stage blocks left behind by moves
+that happened while `tickets watch` was down — plus link integrity,
+stale agent runs, orphan worktrees, and ticket frontmatter that
+disagrees with the authoritative run YAMLs.
 
 By default it fixes every issue it finds. Pass `--dry-run` to preview,
 or `--stale-after=<duration>` to change the age at which a
@@ -453,8 +455,11 @@ The checks are:
 
 - **Link integrity** — dangling, one-sided, or self-referential links
   between tickets.
-- **Stale blocks** — `blocks` entries on a ticket sitting in a
-  configured `complete_stages` stage; cleared on both sides.
+- **Stale blocks** — `blocks` / `blocked_by` entries left over on a
+  ticket already sitting in a configured `complete_stages` stage;
+  cleared on both sides. This is the offline counterpart to the
+  automatic unblocking that `tickets move` and `tickets watch` perform
+  at move time, so moves that bypassed both still converge.
 - **Stale runs** — non-terminal run YAMLs whose `updated_at` is older
   than `--stale-after`; flipped to `failed`.
 - **Orphan agent dirs** — `.tickets/.agents/<id>/` directories whose
@@ -544,7 +549,8 @@ fixes them by default (or reports with `--dry-run`):
 - one-sided links where the reciprocal is missing
 - self-referential links
 - stale `blocks` entries on tickets that have entered a configured
-  `complete_stages` stage (cleared on both sides)
+  `complete_stages` stage (the offline repair path for moves missed by
+  `tickets move` or `tickets watch`, cleared on both sides)
 
 ## Sub-tickets
 
@@ -746,8 +752,8 @@ stages:
 # default_agent:
 #   command: claude
 #   args: []
-# Optional — when a ticket enters one of these stages via the CLI,
-# it stops blocking the tickets in its `blocks:` list.
+# Optional — when a ticket enters one of these stages (via tickets move,
+# tickets watch, or doctor), it stops blocking its dependents.
 # complete_stages:
 #   - done
 ```
