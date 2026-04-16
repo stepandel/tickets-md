@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   through the running watcher. The Obsidian plugin's cron agent menu
   also gains a "Run now" action (desktop only).
 
+- `tickets crons add` and `tickets crons rm` let you create and remove
+  cron agent entries from the CLI. `add` accepts `--schedule`, `--command`,
+  and `--prompt` (all required), plus optional `--args` (comma-separated).
+  `rm` removes the config entry by name.
+
 - `tickets crons` now has `enable`, `disable`, and `set` subcommands for
   managing cron agent configuration from the CLI without editing
   `config.yml` by hand. `set` supports the `schedule`, `command`,
