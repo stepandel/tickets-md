@@ -507,10 +507,18 @@ requiring follow-up `set` or `link` commands:
 tickets new "Fix login bug on Safari" --project PRJ-001 --blocked-by TIC-003
 tickets new "Split auth UI" --parent TIC-001 --related TIC-004 --related TIC-005
 tickets new "Ship migration" --blocks TIC-010 --priority critical
+tickets new "Document auth flow" --body "## Description\n\nCapture the login states."
 ```
 
 `--blocked-by`, `--blocks`, and `--related` accept multiple ticket IDs,
 either by repeating the flag or by passing a comma-separated list.
+
+`--body` converts literal `\n` sequences in the flag value into real
+newlines, so shell-friendly markdown examples save as multi-line ticket
+bodies. Real newlines passed in (e.g. via `"$(printf ...)"` or a quoted
+multi-line string) are preserved unchanged. There is no escape hatch
+for keeping a literal two-character `\n` in the saved body today, so
+`\\n` is not a workaround — it produces `\<newline>` rather than `\n`.
 
 ## Links
 

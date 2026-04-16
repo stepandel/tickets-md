@@ -60,6 +60,25 @@ func TestNewCommandWithBody(t *testing.T) {
 
 	globalFlags.root = s.Root
 	cmd := newNewCmd()
+	cmd.SetArgs([]string{"--body", `## Description\n\nDetailed body.`, "Body title"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	created, err := s.Get("TIC-001")
+	if err != nil {
+		t.Fatalf("Get created: %v", err)
+	}
+	if strings.TrimLeft(created.Body, "\n") != "## Description\n\nDetailed body.\n" {
+		t.Fatalf("expected custom body, got %q", created.Body)
+	}
+}
+
+func TestNewCommandWithBodyPreservesActualNewlines(t *testing.T) {
+	s := newCLITestStore(t)
+
+	globalFlags.root = s.Root
+	cmd := newNewCmd()
 	cmd.SetArgs([]string{"--body", "## Description\n\nDetailed body.", "Body title"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -71,6 +90,25 @@ func TestNewCommandWithBody(t *testing.T) {
 	}
 	if strings.TrimLeft(created.Body, "\n") != "## Description\n\nDetailed body.\n" {
 		t.Fatalf("expected custom body, got %q", created.Body)
+	}
+}
+
+func TestNewCommandWithBodyOnlyNormalizesLiteralNewlines(t *testing.T) {
+	s := newCLITestStore(t)
+
+	globalFlags.root = s.Root
+	cmd := newNewCmd()
+	cmd.SetArgs([]string{"--body", `Path: C:\tmp\docs\nRegex: \d+\nMarkdown escape: \*literal\*`, "Body title"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	created, err := s.Get("TIC-001")
+	if err != nil {
+		t.Fatalf("Get created: %v", err)
+	}
+	if strings.TrimLeft(created.Body, "\n") != "Path: C:\\tmp\\docs\nRegex: \\d+\nMarkdown escape: \\*literal\\*\n" {
+		t.Fatalf("expected selective normalization, got %q", created.Body)
 	}
 }
 
@@ -256,7 +294,7 @@ func TestNewCommandWithBodyParentAndPriority(t *testing.T) {
 
 	globalFlags.root = s.Root
 	cmd := newNewCmd()
-	cmd.SetArgs([]string{"--body", "## Description\n\nDetailed body.", "--parent", parent.ID, "--priority", "high", "Child"})
+	cmd.SetArgs([]string{"--body", `## Description\n\nDetailed body.`, "--parent", parent.ID, "--priority", "high", "Child"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -310,7 +348,7 @@ func TestNewCommandCombinedFlags(t *testing.T) {
 	globalFlags.root = s.Root
 	cmd := newNewCmd()
 	cmd.SetArgs([]string{
-		"--body", "## Description\n\nDetailed body.",
+		"--body", `## Description\n\nDetailed body.`,
 		"--priority", "high",
 		"--project", project.ID,
 		"--parent", parent.ID,

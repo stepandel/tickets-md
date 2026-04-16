@@ -31,7 +31,7 @@ func newNewCmd() *cobra.Command {
 			}
 			scalarChanged := false
 			if body != "" {
-				t.Body = body
+				t.Body = normalizeBodyFlag(body)
 				scalarChanged = true
 			}
 			if priority != "" {
@@ -105,4 +105,8 @@ func newNewCmd() *cobra.Command {
 	cmd.Flags().StringSliceVar(&blocks, "blocks", nil, "set one or more ticket IDs blocked by the new ticket")
 	cmd.Flags().StringSliceVar(&related, "related", nil, "set one or more related ticket IDs")
 	return cmd
+}
+
+func normalizeBodyFlag(body string) string {
+	return strings.ReplaceAll(body, `\n`, "\n")
 }
