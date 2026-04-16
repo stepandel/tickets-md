@@ -80,7 +80,10 @@ From the repo root, `make qa-plugin` bundles the plugin and launches
 Playwright, which copies the fixture vault to a temp dir, installs the
 fresh build via `tickets obsidian install --from obsidian-plugin --vault
 <tmp>`, drives Obsidian, opens the board, and verifies that creating a
-ticket works end to end.
+ticket works end to end. For the headless Linux CI setup, see the
+`qa-plugin` job in `.github/workflows/ci.yml`: it pins the Obsidian
+AppImage via the workflow-level `OBSIDIAN_VERSION` env var and wraps
+`make qa-plugin` in `xvfb-run` with `QA_PLUGIN_SKIP_OBSIDIAN_CLI_CHECK=1`.
 
 ## What it provides
 

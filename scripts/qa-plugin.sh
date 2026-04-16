@@ -61,40 +61,43 @@ EOF
 	exit 2
 fi
 
-set +e
-obsidian_check_output="$(check_obsidian_cli "$obsidian_bin")"
-obsidian_check_status=$?
-set -e
+# CI launches Obsidian via Playwright's Electron entrypoint and never uses Obsidian's CLI subcommands, so the gate is skipped there.
+if [[ "${QA_PLUGIN_SKIP_OBSIDIAN_CLI_CHECK:-0}" != "1" ]]; then
+	set +e
+	obsidian_check_output="$(check_obsidian_cli "$obsidian_bin")"
+	obsidian_check_status=$?
+	set -e
 
-case $obsidian_check_status in
-	0) ;;
-	2)
-		cat >&2 <<EOF
+	case $obsidian_check_status in
+		0) ;;
+		2)
+			cat >&2 <<EOF
 qa-plugin: Obsidian was found at $obsidian_bin, but its command line interface is disabled.
 Enable Settings -> General -> Advanced -> Command line interface, then rerun \`make qa-plugin\`.
 
 $obsidian_check_output
 EOF
-		exit 2
-		;;
-	3)
-		cat >&2 <<EOF
+			exit 2
+			;;
+		3)
+			cat >&2 <<EOF
 qa-plugin: Obsidian was found at $obsidian_bin, but the installer reports outdated CLI support.
 Update Obsidian to a build with CLI support, then rerun \`make qa-plugin\`.
 
 $obsidian_check_output
 EOF
-		exit 2
-		;;
-	*)
-		cat >&2 <<EOF
+			exit 2
+			;;
+		*)
+			cat >&2 <<EOF
 qa-plugin: failed to probe Obsidian at $obsidian_bin before running the smoke test.
 
 $obsidian_check_output
 EOF
-		exit 2
-		;;
-esac
+			exit 2
+			;;
+	esac
+fi
 
 mkdir -p "$bin_dir"
 
