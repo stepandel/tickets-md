@@ -766,9 +766,10 @@ stages:
   command invocation. The name `projects` is reserved for the project
   store and cannot be used as a stage.
 - **complete_stages** — optional subset of `stages`. When a ticket
-  enters one of these stages — via `tickets move` or a filesystem
-  move picked up by `tickets watch` — its `blocks` links are cleared
-  and the peer tickets lose the matching `blocked_by` entry.
+  enters one of these stages — via `tickets move`, a filesystem
+  move picked up by `tickets watch`, or a `tickets doctor` sweep —
+  its `blocks` links are cleared and the peer tickets lose the
+  matching `blocked_by` entry.
 - **default_agent** — optional. The command `tickets agents run` uses
   to launch an interactive session for any ticket.
 
