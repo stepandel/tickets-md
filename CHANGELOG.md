@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-04-16
+
+### Fixed
+
+- The Obsidian plugin manifest is now stamped with the release version
+  at build time, so `tickets watch` no longer logs a spurious
+  `obsidian plugin updated 0.1.0 → 0.1.0` reinstall on every startup
+  after upgrading the CLI.
+
 ## [0.1.9] - 2026-04-15
 
 ### Added
