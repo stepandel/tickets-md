@@ -298,10 +298,8 @@ func (r *PTYRunner) Sessions() []string {
 // to 5 seconds before force-killing survivors.
 func (r *PTYRunner) Shutdown() {
 	r.mu.RLock()
-	names := make([]string, 0, len(r.sessions))
 	sessions := make([]*ptySession, 0, len(r.sessions))
-	for name, sess := range r.sessions {
-		names = append(names, name)
+	for _, sess := range r.sessions {
 		sessions = append(sessions, sess)
 	}
 	r.mu.RUnlock()
@@ -310,10 +308,15 @@ func (r *PTYRunner) Shutdown() {
 		sess.cmd.Process.Signal(syscall.SIGTERM)
 	}
 
+	// Wait on sess.done directly rather than calling r.Wait(name): the
+	// owning CLI waiter consumes the map entry via Wait to persist the
+	// exit status, and competing with it would let Shutdown delete the
+	// entry first and return "session not found" to the legitimate
+	// waiter — which then persists StatusFailed over a clean exit.
 	done := make(chan struct{})
 	go func() {
-		for _, name := range names {
-			r.Wait(name)
+		for _, sess := range sessions {
+			<-sess.done
 		}
 		close(done)
 	}()
@@ -321,11 +324,9 @@ func (r *PTYRunner) Shutdown() {
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
-		r.mu.RLock()
-		for _, sess := range r.sessions {
+		for _, sess := range sessions {
 			sess.cmd.Process.Kill()
 		}
-		r.mu.RUnlock()
 	}
 }
 

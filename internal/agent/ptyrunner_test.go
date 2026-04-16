@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -107,6 +108,49 @@ func TestPTYRunnerWaitReceivesFastExitCode(t *testing.T) {
 				t.Fatalf("Alive(%q) = true after Wait", session)
 			}
 		})
+	}
+}
+
+// TestPTYRunnerShutdownDoesNotStealExitFromConcurrentWaiter exercises a
+// goroutine-scheduling race: under the old implementation, either
+// Shutdown or the owning Wait could delete the map entry first. This
+// test is therefore probabilistic — rely on `-race -count=N` (the
+// ticket's verification uses count=20) to surface regressions; a single
+// run may pass against buggy code by luck.
+func TestPTYRunnerShutdownDoesNotStealExitFromConcurrentWaiter(t *testing.T) {
+	t.Parallel()
+
+	runner := NewPTYRunner()
+	session := "shutdown-race"
+	logPath := filepath.Join(t.TempDir(), "session.log")
+	if err := runner.Start(session, t.TempDir(), []string{"/bin/sh", "-c", "exit 0"}, logPath, 0, 0); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	waitForSessionExit(t, runner, session)
+
+	var (
+		wg       sync.WaitGroup
+		exitCode *int
+		waitErr  error
+	)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		exitCode, waitErr = runner.Wait(session)
+	}()
+
+	runner.Shutdown()
+	wg.Wait()
+
+	if waitErr != nil {
+		t.Fatalf("Wait: %v", waitErr)
+	}
+	if exitCode == nil {
+		t.Fatal("Wait returned nil exit code")
+	}
+	if *exitCode != 0 {
+		t.Fatalf("Wait exit code = %d, want 0", *exitCode)
 	}
 }
 
