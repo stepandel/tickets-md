@@ -59,7 +59,9 @@ npx tsc --noEmit # standalone typecheck (CI runs this too)
 ```
 
 `npm run build` produces a production bundle. `npm test` runs the
-Node.js test runner against `src/**/*.test.ts` (via tsx).
+Node.js test runner against `src/**/*.test.ts` (via tsx) and
+`test/**/*.test.mjs`. From the repo root, `make plugin-test` runs
+the same suite after a fresh `npm ci`.
 
 ## What it provides
 
