@@ -1,27 +1,29 @@
 name: Tickets.md
 prefix: TIC
 stages:
-    - backlog
-    - prep
-    - prep-review
-    - execute
-    - review
-    - qa
-    - docs
-    - done
-    - cancelled
+  - backlog
+  - prep
+  - prep-review
+  - execute
+  - review
+  - qa
+  - docs
+  - done
+  - cancelled
 default_agent:
-    command: claude
+  command: claude
 complete_stages:
-    - done
-    - cancelled
+  - done
+  - cancelled
 cron_agents:
-    - name: backlog-groomer
-      schedule: "@every 1m"
-      command: claude
-      args: ["--dangerously-skip-permissions"]
-      prompt: |
-          You are the backlog groomer for {{root}} at {{now}}.
-          Only operate on tickets in backlog/. Review them and clean up
-          duplicates or outdated ones. Rather than deleting tickets
-          outright, move them to cancelled/.
+  - name: backlog-groomer
+    schedule: "@every 1m"
+    command: claude
+    args:
+      - --dangerously-skip-permissions
+    prompt: |-
+      You are the backlog groomer for {{root}} at {{now}}.
+      Only operate on tickets in backlog/. Review them and clean up
+      duplicates or outdated ones. Rather than deleting tickets
+      outright, move them to cancelled/.
+    enabled: false
