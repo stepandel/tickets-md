@@ -4,7 +4,8 @@
 	"private": true,
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
-		"build": "node esbuild.config.mjs production"
+		"build": "node esbuild.config.mjs production",
+		"test": "node --test --import tsx 'src/**/*.test.ts'"
 	},
 	"devDependencies": {
 		"@types/node": "^20.0.0",
@@ -13,6 +14,7 @@
 		"diff2html": "^3.4.0",
 		"esbuild": "^0.21.0",
 		"obsidian": "^1.5.0",
+		"tsx": "^4.20.6",
 		"typescript": "^5.4.0"
 	}
 }
