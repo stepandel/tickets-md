@@ -1738,7 +1738,7 @@ class DiffView extends ItemView {
 				defaultBranch = execFileSync(
 					"git", ["rev-parse", "--abbrev-ref", "origin/HEAD"],
 					execOpts,
-				).trim().replace(/^origin\//, "");
+				).trim();
 			} catch {
 				// origin/HEAD not set — check if "main" exists, otherwise try "master"
 				try {
@@ -1749,14 +1749,29 @@ class DiffView extends ItemView {
 			}
 
 			if (fs.existsSync(worktreePath)) {
-				output = execFileSync("git", ["diff", defaultBranch], {
-					cwd: worktreePath,
-					encoding: "utf-8",
-					maxBuffer: 10 * 1024 * 1024,
-				});
+				try {
+					const base = execFileSync("git", ["merge-base", "HEAD", defaultBranch], {
+						cwd: worktreePath,
+						encoding: "utf-8",
+						maxBuffer: 10 * 1024 * 1024,
+					}).trim();
+					if (!base) throw new Error("no merge-base");
+					output = execFileSync("git", ["diff", `${base}...HEAD`], {
+						cwd: worktreePath,
+						encoding: "utf-8",
+						maxBuffer: 10 * 1024 * 1024,
+					});
+				} catch (err) {
+					console.error(err);
+					output = execFileSync("git", ["diff", `${defaultBranch}...HEAD`], {
+						cwd: worktreePath,
+						encoding: "utf-8",
+						maxBuffer: 10 * 1024 * 1024,
+					});
+				}
 			} else {
 				const branch = `tickets/${this.ticketId}`;
-				output = execFileSync("git", ["diff", defaultBranch, branch], {
+				output = execFileSync("git", ["diff", `${defaultBranch}...${branch}`], {
 					cwd: basePath,
 					encoding: "utf-8",
 					maxBuffer: 10 * 1024 * 1024,
