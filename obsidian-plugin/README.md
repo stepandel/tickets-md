@@ -57,9 +57,8 @@ npm run dev      # esbuild in watch mode → main.js
 npx tsc --noEmit # standalone typecheck (CI runs this too)
 ```
 
-`npm run build` produces a production bundle. The plugin is a single
-TypeScript source file (`src/main.ts`) bundled with esbuild; there is
-no test harness yet.
+`npm run build` produces a production bundle. `npm test` runs the
+Node.js test runner against `src/**/*.test.ts` (via tsx).
 
 ## What it provides
 
