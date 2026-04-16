@@ -285,6 +285,25 @@
 	color: #fff;
 }
 
+.tb-project-chip {
+	font-size: 0.6em;
+	font-weight: 700;
+	text-transform: uppercase;
+	padding: 1px 5px;
+	border-radius: 3px;
+	background: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+	color: var(--interactive-accent);
+	max-width: 10em;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.tb-project-chip-dangling {
+	background: var(--background-modifier-border);
+	color: var(--text-muted);
+}
+
 /* ── Stage Config Modal ─────────────────────────────────────────────── */
 
 .tb-config-modal {

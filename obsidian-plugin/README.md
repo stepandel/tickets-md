@@ -68,6 +68,8 @@ no test harness yet.
 - Inline ticket creation, edits, priority and link controls.
 - Board card project assignment controls: assign, change, or remove
   `project:` from the ticket context menu.
+- Board cards surface the assigned project as a compact chip, with a
+  muted fallback for dangling `project:` references.
 - Per-ticket agent controls: spawn an adhoc run, re-run the stage
   agent, open a live terminal, view the diff a run produced.
 - Cron agents from `config.yml` in the Agents view, including edit,
