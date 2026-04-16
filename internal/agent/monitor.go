@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
 )
@@ -235,22 +234,10 @@ func (m *Monitor) poll() {
 			continue
 		}
 		if e.Name() == cronNamespace {
-			cronEntries, err := os.ReadDir(filepath.Join(Dir(m.root), cronNamespace))
-			if err != nil {
-				continue
-			}
-			for _, ce := range cronEntries {
-				if !ce.IsDir() {
-					continue
-				}
-				ownerID := CronOwnerID(ce.Name())
-				if ticketsWithLiveRuns[ownerID] {
-					continue
-				}
-				if err := RemoveCron(m.root, ce.Name()); err != nil {
-					log.Printf("monitor: failed to prune %s: %v", ownerID, err)
-				}
-			}
+			// Cron owner dirs are owned by user config; only
+			// `tickets doctor --fix` prunes orphans. Skipping also
+			// avoids RemoveTicket(".cron") wiping every cron owner
+			// at once, since no live-run key equals bare ".cron".
 			continue
 		}
 		if ticketsWithLiveRuns[e.Name()] {

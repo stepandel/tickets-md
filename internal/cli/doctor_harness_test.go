@@ -289,6 +289,41 @@ func TestHarnessDoctorOrphanCronAgentDir(t *testing.T) {
 	}
 }
 
+func TestHarnessDoctorKeepsConfiguredCronDir(t *testing.T) {
+	s := newHarnessStore(t)
+	s.Config.CronAgents = []config.CronAgentConfig{
+		{Name: "groomer", Schedule: "@every 5m", Command: "claude", Prompt: "x"},
+	}
+
+	runID := agent.FormatRunID(1, "cron")
+	writeRunRaw(t, s.Root, agent.AgentStatus{
+		TicketID:  agent.CronOwnerID("groomer"),
+		RunID:     runID,
+		Seq:       1,
+		Attempt:   1,
+		Stage:     "cron",
+		Agent:     "claude",
+		Session:   ".cron-groomer-1",
+		Status:    agent.StatusDone,
+		SpawnedAt: time.Now().Add(-48 * time.Hour).UTC().Truncate(time.Second),
+		UpdatedAt: time.Now().Add(-48 * time.Hour).UTC().Truncate(time.Second),
+		LogFile:   agent.CronLogPath(s.Root, "groomer", runID),
+	})
+
+	issues, err := HarnessDoctor(s, true, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("HarnessDoctor: %v", err)
+	}
+	for _, iss := range issues {
+		if iss.Kind == OrphanAgentDir && iss.Target == filepath.Join(".cron", "groomer") {
+			t.Fatalf("configured cron dir flagged as orphan: %v", iss)
+		}
+	}
+	if _, err := os.Stat(agent.CronDir(s.Root, "groomer")); err != nil {
+		t.Fatalf("configured cron dir removed: %v", err)
+	}
+}
+
 func TestHarnessDoctorOrphanTmpFile(t *testing.T) {
 	s := newHarnessStore(t)
 	tk, _ := s.Create("Alpha")

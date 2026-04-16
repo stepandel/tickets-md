@@ -517,7 +517,11 @@ The checks are:
 - **Stale runs** — non-terminal run YAMLs whose `updated_at` is older
   than `--stale-after`; flipped to `failed`.
 - **Orphan agent dirs** — `.tickets/.agents/<id>/` directories whose
-  ticket no longer exists; removed.
+  ticket no longer exists, and `.tickets/.agents/.cron/<name>/`
+  directories whose cron agent is no longer in `cron_agents:`;
+  removed. These cron owner dirs are user-config territory, so the
+  watcher's monitor never prunes them — only `tickets doctor --fix`
+  does.
 - **Orphan `.tmp` files** — leftover `<run>.yml.tmp` from an
   interrupted atomic rename; removed.
 - **Orphan worktrees** — `.worktrees/<id>/` directories whose ticket
