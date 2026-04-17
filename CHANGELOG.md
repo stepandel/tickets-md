@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `tickets watch` now auto-reloads the `stages:` list in
+  `.tickets/config.yml` while the watcher is running. Stages added to
+  the list are scaffolded (directory + default `.stage.yml`) and added
+  to the watch set on the next debounce; stages removed from the list
+  are unwatched. No `tickets watch` restart is required.
 - `tickets watch` now auto-reloads per-stage `.stage.yml` files while
   the watcher is running. Editing, creating, or removing a stage's
   `.stage.yml` is picked up on the next debounce without a restart;
