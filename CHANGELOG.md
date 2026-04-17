@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- The `tickets watch` monitor's poll interval (default 5s) and the
+  idle-pane threshold that promotes a run to `blocked` (default 30s)
+  are now configurable via a new optional `watch:` block in
+  `.tickets/config.yml` (`poll_interval`, `idle_block_after`).
+  Durations parse with Go's `time.ParseDuration`; `idle_block_after`
+  must be ≥ 1s.
+
 - Board-level cron runs of the `claude` agent now auto-inject
   `--print` (unless the user already passed `--print`/`-p` in the
   cron's `args:`) so Claude exits after producing its response instead
