@@ -308,6 +308,7 @@ setup steps.
 | `tickets agents run <id>`               | Start an interactive agent session for a ticket    |
 | `tickets crons list`                    | List configured cron agents and their last run     |
 | `tickets crons run <name>`              | Manually fire a cron agent through the watcher     |
+| `tickets crons stop <name>`             | Terminate the active PTY session for a cron agent  |
 | `tickets crons log <name> [run-id]`     | Print output for a cron agent run                  |
 | `tickets crons add --name N --schedule S --command C --prompt P [--arg A...] [--disabled]` | Add a new cron agent entry |
 | `tickets crons rm <name>`               | Remove a configured cron agent                     |
