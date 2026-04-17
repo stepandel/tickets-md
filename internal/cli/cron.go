@@ -120,13 +120,10 @@ func warnCronNeedsOneShotArgs(ca config.CronAgentConfig) {
 	if len(ca.Args) > 0 {
 		return
 	}
-	integ, ok := agent.Lookup(ca.Command)
-	if !ok {
-		log.Printf("cron %s: command %q has no cron-specific integration and no args; configure one-shot/exit flags in cron args if it should exit after each tick", ca.Name, ca.Command)
-		return
-	}
-	if _, ok := integ.(agent.CronIntegration); ok {
-		return
+	if integ, ok := agent.Lookup(ca.Command); ok {
+		if _, ok := integ.(agent.CronIntegration); ok {
+			return
+		}
 	}
 	log.Printf("cron %s: command %q has no cron-specific integration and no args; configure one-shot/exit flags in cron args if it should exit after each tick", ca.Name, ca.Command)
 }

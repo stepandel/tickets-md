@@ -16,6 +16,7 @@ func cronAgent(name, schedule string) config.CronAgentConfig {
 		Name:     name,
 		Schedule: schedule,
 		Command:  "/bin/sh",
+		Args:     []string{"-c", "exit 0"},
 		Prompt:   "echo hi",
 	}
 }
