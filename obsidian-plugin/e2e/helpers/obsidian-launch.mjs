@@ -14,6 +14,16 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "..", "..", "..");
 const ticketsBin = process.env.TICKETS_BIN || "tickets";
 const obsidianBin = process.env.OBSIDIAN_BIN;
+const cdpReadyTimeoutMs = envInt("OBSIDIAN_CDP_READY_TIMEOUT_MS", 45_000);
+const cdpConnectTimeoutMs = envInt("OBSIDIAN_CDP_CONNECT_TIMEOUT_MS", 15_000);
+const pageReadyTimeoutMs = envInt("OBSIDIAN_PAGE_READY_TIMEOUT_MS", 45_000);
+
+function envInt(name, fallback) {
+	const raw = process.env[name];
+	if (!raw) return fallback;
+	const parsed = Number.parseInt(raw, 10);
+	return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
 
 async function registerVault(vaultPath, configDir) {
 	await fs.mkdir(configDir, { recursive: true });
@@ -201,11 +211,11 @@ export async function launchObsidianWithVault({ fixtureVault }) {
 		});
 
 		const cdpEndpoint = `http://127.0.0.1:${debugPort}`;
-		const versionInfo = await waitForCdpEndpoint(cdpEndpoint, 120_000, obsidianProcess, processOutput);
+		const versionInfo = await waitForCdpEndpoint(cdpEndpoint, cdpReadyTimeoutMs, obsidianProcess, processOutput);
 		const wsEndpoint = versionInfo?.webSocketDebuggerUrl || cdpEndpoint;
 
-		browser = await connectOverCdp(wsEndpoint, 30_000);
-		const { context, page } = await waitForObsidianPage(browser, 120_000);
+		browser = await connectOverCdp(wsEndpoint, cdpConnectTimeoutMs);
+		const { context, page } = await waitForObsidianPage(browser, pageReadyTimeoutMs);
 
 		return {
 			page,
