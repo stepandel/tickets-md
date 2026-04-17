@@ -33,15 +33,15 @@ func TestNewBoardModelHidesArchiveStageByDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newBoardModel(showArchived=false): %v", err)
 	}
-	if len(m.stages) != len(s.Config.Stages)-1 {
-		t.Fatalf("len(m.stages) = %d, want %d", len(m.stages), len(s.Config.Stages)-1)
+	if !slices.Equal(m.stages, []string{"backlog", "done"}) {
+		t.Fatalf("m.stages = %v, want [backlog done]", m.stages)
 	}
 
 	m, err = newBoardModel(s, "", true)
 	if err != nil {
 		t.Fatalf("newBoardModel(showArchived=true): %v", err)
 	}
-	if len(m.stages) != len(s.Config.Stages) {
-		t.Fatalf("len(m.stages) = %d, want %d", len(m.stages), len(s.Config.Stages))
+	if !slices.Equal(m.stages, s.Config.Stages) {
+		t.Fatalf("m.stages = %v, want %v", m.stages, s.Config.Stages)
 	}
 }

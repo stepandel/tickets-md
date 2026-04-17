@@ -148,6 +148,104 @@ func TestArchiveCommandBulkRefusesArchiveStageSource(t *testing.T) {
 	}
 }
 
+func TestArchiveCommandDryRunSingleTicket(t *testing.T) {
+	s := newArchiveStore(t)
+	tk, err := s.Create("Done ticket")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if _, err := s.Move(tk.ID, "done"); err != nil {
+		t.Fatalf("Move: %v", err)
+	}
+
+	globalFlags.root = s.Root
+	cmd := newArchiveCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{tk.ID, "--dry-run"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	got, err := s.Get(tk.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Stage != "done" {
+		t.Fatalf("Stage = %q, want done (dry-run must not move)", got.Stage)
+	}
+	want := "Would archive " + tk.ID + ": done -> archive"
+	if !strings.Contains(out.String(), want) {
+		t.Fatalf("output = %q, want %q", out.String(), want)
+	}
+}
+
+func TestArchiveCommandSingleAlreadyArchived(t *testing.T) {
+	s := newArchiveStore(t)
+	tk, err := s.Create("Already archived")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if _, err := s.Move(tk.ID, "archive"); err != nil {
+		t.Fatalf("Move: %v", err)
+	}
+
+	globalFlags.root = s.Root
+	cmd := newArchiveCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{tk.ID})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(out.String(), tk.ID+" already archived") {
+		t.Fatalf("output = %q, want already-archived message", out.String())
+	}
+}
+
+func TestArchiveCommandBulkDryRun(t *testing.T) {
+	s := newArchiveStore(t)
+	tk, err := s.Create("Old ticket")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if _, err := s.Move(tk.ID, "done"); err != nil {
+		t.Fatalf("Move: %v", err)
+	}
+	tk, err = s.Get(tk.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	tk.UpdatedAt = time.Now().UTC().Add(-31 * 24 * time.Hour).Truncate(time.Second)
+	if err := tk.WriteFile(); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	globalFlags.root = s.Root
+	cmd := newArchiveCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"--from", "done", "--older-than", "720h", "--dry-run"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	got, err := s.Get(tk.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Stage != "done" {
+		t.Fatalf("Stage = %q, want done (dry-run must not move)", got.Stage)
+	}
+	outStr := out.String()
+	if !strings.Contains(outStr, "Would archive "+tk.ID+": done -> archive") {
+		t.Fatalf("output = %q, want per-ticket Would archive line", outStr)
+	}
+	if !strings.Contains(outStr, "1 ticket(s) would be archived") {
+		t.Fatalf("output = %q, want dry-run summary", outStr)
+	}
+}
+
 func TestArchiveCommandBulkSkipsActiveRuns(t *testing.T) {
 	s := newArchiveStore(t)
 	tk, err := s.Create("Active ticket")

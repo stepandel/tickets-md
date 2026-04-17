@@ -35,6 +35,10 @@ func newArchiveCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "archive <id>",
 		Short: "Move tickets into the configured archive stage",
+		Long: `Move a ticket into the configured archive stage.
+
+Single-ID mode archives one ticket regardless of agent state.
+Bulk mode (--from) archives tickets whose updated_at is older than --older-than and skips any ticket with a live (non-terminal) agent run.`,
 		Args: func(cmd *cobra.Command, args []string) error {
 			if from != "" {
 				if len(args) != 0 {
@@ -64,27 +68,31 @@ func newArchiveCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&from, "from", "", "bulk archive tickets from this source stage")
-	cmd.Flags().DurationVar(&olderThan, "older-than", 0, "only archive tickets with updated_at older than this duration")
+	cmd.Flags().StringVar(&from, "from", "", "bulk archive tickets from this source stage (skips tickets with live agent runs)")
+	cmd.Flags().DurationVar(&olderThan, "older-than", 0, "only archive tickets with updated_at older than this duration (updated_at is bumped on every stage move)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "report archive moves without performing them")
 	return cmd
 }
 
 func archiveTicket(cmd *cobra.Command, s *ticket.Store, id, archiveStage string, dryRun bool) error {
 	out := cmd.OutOrStdout()
-	if dryRun {
-		tk, err := s.Get(id)
-		if err != nil {
-			return err
-		}
-		fmt.Fprintf(out, "Would archive %s: %s -> %s\n", tk.ID, tk.Stage, archiveStage)
-		return nil
-	}
-	tk, err := s.Move(id, archiveStage)
+	tk, err := s.Get(id)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "Archived %s -> %s\n", tk.ID, tk.Stage)
+	if tk.Stage == archiveStage {
+		fmt.Fprintf(out, "%s already archived\n", tk.ID)
+		return nil
+	}
+	if dryRun {
+		fmt.Fprintf(out, "Would archive %s: %s -> %s\n", tk.ID, tk.Stage, archiveStage)
+		return nil
+	}
+	moved, err := s.Move(id, archiveStage)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "Archived %s -> %s\n", moved.ID, moved.Stage)
 	return nil
 }
 
