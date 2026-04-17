@@ -12,18 +12,18 @@ import (
 
 // --- priority ---
 
-var priorityOptions = []string{"critical", "high", "medium", "low", "none"}
-
 func (m *boardModel) startSetPriority() {
 	t, ok := m.selectedTicket()
 	if !ok {
 		return
 	}
+	priorityOptions := append(m.store.Config.OrderedPriorityNames(), "none")
 	items := make([]pickerItem, 0, len(priorityOptions))
 	current := strings.ToLower(strings.TrimSpace(t.Priority))
 	for _, p := range priorityOptions {
 		marker := ""
-		if p == current || (p == "none" && current == "") {
+		normalized := strings.ToLower(strings.TrimSpace(p))
+		if normalized == current || (normalized == "none" && current == "") {
 			marker = "(current)"
 		}
 		items = append(items, pickerItem{label: p, key: marker, value: p})
