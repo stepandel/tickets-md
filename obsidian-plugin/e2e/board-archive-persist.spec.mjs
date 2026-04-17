@@ -1,4 +1,3 @@
-import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -15,7 +14,7 @@ test("persists archived-stage visibility across renderer reloads", async () => {
 	let cleanup = async () => {};
 	try {
 		const launched = await launchObsidianWithVault({ fixtureVault });
-		const { page, vaultPath } = launched;
+		const { page } = launched;
 		cleanup = launched.cleanup;
 		await dismissTrustDialogIfPresent(page);
 		await openBoard(page);
@@ -24,7 +23,7 @@ test("persists archived-stage visibility across renderer reloads", async () => {
 		await expect(page.locator(".tb-card-list[data-stage='archive']")).toHaveCount(0);
 		await expect(page.locator(".tb-ticket-id").filter({ hasText: "TIC-003" })).toHaveCount(0);
 
-		await setArchivedVisibility(page, vaultPath, true);
+		await setArchivedVisibility(page, true);
 		await expect(page.locator(".tb-stage-name")).toContainText(["backlog", "doing", "archive"]);
 		await expect(page.locator(".tb-card-list[data-stage='archive']")).toHaveCount(1);
 		await expect(page.locator(".tb-card-list[data-stage='archive'] .tb-ticket-id")).toContainText(["TIC-003"]);
@@ -34,7 +33,7 @@ test("persists archived-stage visibility across renderer reloads", async () => {
 		await expect(page.locator(".tb-card-list[data-stage='archive']")).toHaveCount(1);
 		await expect(page.locator(".tb-card-list[data-stage='archive'] .tb-ticket-id")).toContainText(["TIC-003"]);
 
-		await setArchivedVisibility(page, vaultPath, false);
+		await setArchivedVisibility(page, false);
 		await expect(page.locator(".tb-card-list[data-stage='archive']")).toHaveCount(0);
 		await expect(page.locator(".tb-ticket-id").filter({ hasText: "TIC-003" })).toHaveCount(0);
 
@@ -66,10 +65,7 @@ async function openBoard(page) {
 	await expect(page.locator(".tb-board")).toBeVisible();
 }
 
-async function setArchivedVisibility(page, vaultPath, visible) {
-	const workspacePath = path.join(vaultPath, ".obsidian", "workspace.json");
-	const previousMtime = await readMtimeMs(workspacePath);
-
+async function setArchivedVisibility(page, visible) {
 	await page.locator('.tb-header-btn[aria-label="Board menu"]').click();
 	await page.getByRole("menuitem", { name: visible ? "Show archived stage" : "Hide archived stage" }).click();
 
@@ -85,8 +81,19 @@ async function setArchivedVisibility(page, vaultPath, visible) {
 	});
 
 	await expect
-		.poll(async () => (await readMtimeMs(workspacePath)) > previousMtime, { timeout: 30_000 })
-		.toBe(true);
+		.poll(
+			async () =>
+				page.evaluate(() => {
+					const leaf = window.app.workspace.getLeavesOfType("tickets-board")[0];
+					const state =
+						leaf?.view?.getState?.() ??
+						leaf?.getViewState?.().state ??
+						null;
+					return state?.showArchived ?? null;
+				}),
+			{ timeout: 30_000 },
+		)
+		.toBe(visible);
 }
 
 async function reloadRenderer(page) {
@@ -107,13 +114,4 @@ async function reloadRenderer(page) {
 		.toBe("complete");
 	await dismissTrustDialogIfPresent(page);
 	await openBoard(page);
-}
-
-async function readMtimeMs(filePath) {
-	try {
-		const stat = await fs.stat(filePath);
-		return stat.mtimeMs;
-	} catch {
-		return 0;
-	}
 }
