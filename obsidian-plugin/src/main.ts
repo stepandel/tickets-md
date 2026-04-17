@@ -19,6 +19,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { html as diff2html } from "diff2html";
 import { readBoardViewState } from "./board-view-state";
+import { matchesFilter } from "./board-filter";
 import { planDiffCommand, resolveDefaultBranch } from "./diff";
 import { formatForceRerunDescription } from "./force-rerun";
 import { orderedPriorityNames, PriorityConfig, priorityBadgeStyle } from "./priority";
@@ -685,11 +686,13 @@ export default class TicketsBoardPlugin extends Plugin {
 class BoardView extends ItemView {
 	private config: TicketsConfig | null = null;
 	private showArchived = false;
+	private filterQuery = "";
 	private stages: string[] = [];
 	private tickets: Ticket[] = [];
 	private projects: Project[] = [];
 	private agentStages: Set<string> = new Set();
 	private previewLeaf: WorkspaceLeaf | null = null;
+	private boardEl: HTMLElement | null = null;
 
 	// Touch drag state
 	private dragTicketPath: string | null = null;
@@ -711,13 +714,15 @@ class BoardView extends ItemView {
 	}
 
 	async setState(state: Record<string, unknown>, result: ViewStateResult) {
-		this.showArchived = readBoardViewState(state).showArchived;
+		const boardState = readBoardViewState(state);
+		this.showArchived = boardState.showArchived;
+		this.filterQuery = boardState.query;
 		await super.setState(state, result);
 		await this.refresh();
 	}
 
 	getState(): Record<string, unknown> {
-		return { showArchived: this.showArchived };
+		return { showArchived: this.showArchived, query: this.filterQuery };
 	}
 
 	async onOpen() {
@@ -796,8 +801,8 @@ class BoardView extends ItemView {
 	private render() {
 		const container = this.contentEl;
 		container.empty();
+		container.addClass("tb-board-view");
 
-		// Header
 		const header = container.createDiv({ cls: "tb-header" });
 		const boardName = this.config?.name || "Tickets Board";
 		const titleEl = header.createEl("h2", { text: boardName, cls: "tb-board-title" });
@@ -821,6 +826,20 @@ class BoardView extends ItemView {
 			titleEl.addEventListener("click", () => openRenameModal());
 		}
 		const headerActions = header.createDiv({ cls: "tb-header-actions" });
+		const filterInput = headerActions.createEl("input", {
+			cls: "tb-filter-input",
+			type: "search",
+			attr: {
+				"aria-label": "Filter tickets",
+				placeholder: "Filter tickets",
+			},
+		});
+		filterInput.value = this.filterQuery;
+		filterInput.addEventListener("input", () => {
+			this.filterQuery = filterInput.value;
+			this.renderBoard();
+			this.app.workspace.requestSaveLayout();
+		});
 
 		const refreshBtn = headerActions.createEl("button", {
 			cls: "tb-header-btn",
@@ -862,17 +881,23 @@ class BoardView extends ItemView {
 			menu.showAtMouseEvent(e);
 		});
 
-		// Board
-		const board = container.createDiv({ cls: "tb-board" });
-
-		for (const stage of this.stages) {
-			const stageTickets = this.tickets.filter((t) => t.stage === stage);
-			this.renderColumn(board, stage, stageTickets);
-		}
-
+		this.boardEl = container.createDiv({ cls: "tb-board" });
+		this.renderBoard();
 	}
 
-	private renderColumn(board: HTMLElement, stage: string, tickets: Ticket[]) {
+	private renderBoard() {
+		const board = this.boardEl;
+		if (!board) {
+			return;
+		}
+		board.empty();
+		for (const stage of this.stages) {
+			const stageTickets = this.tickets.filter((t) => t.stage === stage && matchesFilter(t, this.filterQuery));
+			this.renderColumn(board, stage, stageTickets, this.filterQuery.trim().length > 0);
+		}
+	}
+
+	private renderColumn(board: HTMLElement, stage: string, tickets: Ticket[], filtered: boolean) {
 		const column = board.createDiv({ cls: "tb-column" });
 
 		// Column header with right-click context menu
@@ -936,7 +961,7 @@ class BoardView extends ItemView {
 
 		// Empty state
 		if (tickets.length === 0) {
-			cardList.createDiv({ cls: "tb-empty", text: "No tickets" });
+			cardList.createDiv({ cls: "tb-empty", text: filtered ? "No matching tickets" : "No tickets" });
 		}
 
 		// Add ticket button

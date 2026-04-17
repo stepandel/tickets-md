@@ -1,9 +1,17 @@
 /* ── Board Layout ───────────────────────────────────────────────────── */
 
+.tb-board-view {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+}
+
 .tb-header {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
+	flex-wrap: wrap;
+	gap: 8px;
 	padding: 8px 12px;
 	border-bottom: 1px solid var(--background-modifier-border);
 }
@@ -24,7 +32,22 @@
 
 .tb-header-actions {
 	display: flex;
+	flex: 1 1 240px;
+	justify-content: flex-end;
+	align-items: center;
 	gap: 2px;
+}
+
+.tb-filter-input {
+	flex: 1 1 180px;
+	min-width: 0;
+	max-width: 280px;
+	height: 32px;
+	padding: 0 10px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	background: var(--background-primary);
+	color: var(--text-normal);
 }
 
 .tb-header-btn {
@@ -44,10 +67,11 @@
 
 .tb-board {
 	display: flex;
+	flex: 1;
+	min-height: 0;
 	gap: 8px;
 	padding: 12px;
 	overflow-x: auto;
-	height: calc(100% - 52px);
 	align-items: flex-start;
 }
 
@@ -521,6 +545,11 @@ body.is-mobile .tb-header-btn {
 	padding: 8px 12px;
 	min-height: 44px;
 	min-width: 44px;
+}
+
+body.is-mobile .tb-filter-input {
+	max-width: none;
+	font-size: 16px;
 }
 
 /* Phone: wider columns with scroll snap */

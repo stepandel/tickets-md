@@ -1,5 +1,6 @@
 export interface BoardViewState {
 	showArchived: boolean;
+	query: string;
 }
 
 export function readBoardViewState(state: unknown): BoardViewState {
@@ -9,5 +10,13 @@ export function readBoardViewState(state: unknown): BoardViewState {
 		"showArchived" in state &&
 		(state as { showArchived?: unknown }).showArchived === true;
 
-	return { showArchived };
+	const query =
+		typeof state === "object" &&
+		state !== null &&
+		"query" in state &&
+		typeof (state as { query?: unknown }).query === "string"
+			? (state as { query: string }).query
+			: "";
+
+	return { showArchived, query };
 }
