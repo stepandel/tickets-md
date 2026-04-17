@@ -75,8 +75,16 @@ jobs:
         run: npm run build
 
   qa-plugin:
-    name: qa-plugin
-    runs-on: ubuntu-latest
+    name: qa-plugin (${{ matrix.label }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            label: linux
+          - os: macos-latest
+            label: macos
     defaults:
       run:
         shell: bash
@@ -96,12 +104,13 @@ jobs:
 
       - uses: actions/cache@v4
         with:
-          path: ~/.cache/obsidian-appimage/${{ env.OBSIDIAN_VERSION }}
-          key: obsidian-appimage-${{ runner.os }}-${{ env.OBSIDIAN_VERSION }}
+          path: ~/.cache/obsidian-desktop/${{ env.OBSIDIAN_VERSION }}
+          key: obsidian-desktop-${{ runner.os }}-${{ env.OBSIDIAN_VERSION }}
 
-      - name: Provision Obsidian
+      - name: Provision Obsidian (Linux)
+        if: runner.os == 'Linux'
         run: |
-          cache_dir="$HOME/.cache/obsidian-appimage/${OBSIDIAN_VERSION}"
+          cache_dir="$HOME/.cache/obsidian-desktop/${OBSIDIAN_VERSION}"
           appimage="$cache_dir/Obsidian-${OBSIDIAN_VERSION}.AppImage"
           extracted="$cache_dir/squashfs-root/AppRun"
 
@@ -124,25 +133,67 @@ jobs:
           test -x "$extracted"
           echo "OBSIDIAN_BIN=$extracted" >> "$GITHUB_ENV"
 
+      - name: Provision Obsidian (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cache_dir="$HOME/.cache/obsidian-desktop/${OBSIDIAN_VERSION}"
+          dmg="$cache_dir/Obsidian-${OBSIDIAN_VERSION}.dmg"
+          app_dir="$cache_dir/Obsidian.app"
+
+          mkdir -p "$cache_dir"
+
+          if [[ ! -f "$dmg" ]]; then
+            curl -fsSL -o "$dmg" "https://github.com/obsidianmd/obsidian-releases/releases/download/v${OBSIDIAN_VERSION}/Obsidian-${OBSIDIAN_VERSION}.dmg"
+          fi
+
+          if [[ ! -x "$app_dir/Contents/MacOS/Obsidian" ]]; then
+            rm -rf "$app_dir"
+            mount_dir="$(mktemp -d)"
+            trap 'hdiutil detach "$mount_dir" >/dev/null 2>&1 || true; rm -rf "$mount_dir"' EXIT
+            hdiutil attach "$dmg" -nobrowse -readonly -mountpoint "$mount_dir"
+            cp -R "$mount_dir/Obsidian.app" "$app_dir"
+            hdiutil detach "$mount_dir"
+            rm -rf "$mount_dir"
+            trap - EXIT
+            xattr -dr com.apple.quarantine "$app_dir" 2>/dev/null || true
+          fi
+
+          test -x "$app_dir/Contents/MacOS/Obsidian"
+          echo "OBSIDIAN_BIN=$app_dir/Contents/MacOS/Obsidian" >> "$GITHUB_ENV"
+
       - name: Install Obsidian runtime deps
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb libnss3 libatk-bridge2.0-0 libgtk-3-0 libgbm1 libasound2t64
 
-      - name: Prepare Obsidian config dir
+      - name: Prepare Obsidian config dir (Linux)
+        if: runner.os == 'Linux'
         run: mkdir -p "$HOME/.config/obsidian"
 
-      - name: QA plugin smoke test
+      - name: Prepare Obsidian config dir (macOS)
+        if: runner.os == 'macOS'
+        run: mkdir -p "$HOME/Library/Application Support/obsidian"
+
+      - name: QA plugin smoke test (Linux)
+        if: runner.os == 'Linux'
         env:
           CI: "1"
           QA_PLUGIN_SKIP_OBSIDIAN_CLI_CHECK: "1"
         run: xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" make qa-plugin
 
+      - name: QA plugin smoke test (macOS)
+        if: runner.os == 'macOS'
+        env:
+          CI: "1"
+          QA_PLUGIN_SKIP_OBSIDIAN_CLI_CHECK: "1"
+        run: make qa-plugin
+
       - name: Upload Playwright artifacts
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: qa-plugin-artifacts
+          name: qa-plugin-artifacts-${{ matrix.label }}
           path: |
             obsidian-plugin/playwright-report
             obsidian-plugin/test-results
