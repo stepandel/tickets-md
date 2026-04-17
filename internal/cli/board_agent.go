@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -45,19 +46,50 @@ func (m *boardModel) startAdhocAgent() {
 // --- re-run stage agent ---
 
 func (m *boardModel) startRerunStageAgent() {
-	m.startStageAgentRerun(false)
-}
-
-func (m *boardModel) forceRerunStageAgent() {
-	m.startStageAgentRerun(true)
-}
-
-func (m *boardModel) startStageAgentRerun(force bool) {
 	t, ok := m.selectedTicket()
 	if !ok {
 		return
 	}
-	body := map[string]any{"ticket_id": t.ID}
+	m.startStageAgentRerun(t.ID, false)
+}
+
+func (m *boardModel) forceRerunStageAgent() {
+	t, ok := m.selectedTicket()
+	if !ok {
+		return
+	}
+	as, err := agent.Latest(m.store.Root, t.ID)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			m.overlay = newNotice("info", "no active stage agent for "+t.ID)
+			return
+		}
+		m.overlay = newNotice("error", "force rerun: "+err.Error())
+		return
+	}
+	if as.Status.IsTerminal() || strings.TrimSpace(as.Session) == "" {
+		m.overlay = newNotice("info", "no active stage agent for "+t.ID)
+		return
+	}
+	m.overlay = newConfirm(forceRerunPrompt(t.ID, as.Session))
+	m.overlayKind = "force-rerun"
+	m.overlayCtx = forceRerunCtx{ticketID: t.ID}
+}
+
+func forceRerunPrompt(ticketID, sessionID string) string {
+	return fmt.Sprintf("Force re-run stage agent for %s? This will kill active session %s.", ticketID, sessionID)
+}
+
+func (m *boardModel) applyForceRerun(ctx any) {
+	frc, ok := ctx.(forceRerunCtx)
+	if !ok || strings.TrimSpace(frc.ticketID) == "" {
+		return
+	}
+	m.startStageAgentRerun(frc.ticketID, true)
+}
+
+func (m *boardModel) startStageAgentRerun(ticketID string, force bool) {
+	body := map[string]any{"ticket_id": ticketID}
 	if force {
 		body["force"] = true
 	}
