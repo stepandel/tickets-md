@@ -18,5 +18,5 @@ agent:
     - which docs you updated and why, or
     - that no documentation changes were needed, with a short reason
 
-    Once documentation review is complete, move the ticket to /done
+    Once documentation review is complete, move the ticket to /merge with `go run ./cmd/tickets -C ../.. move {{id}} merge` from {{worktree}}. Do not use raw `mv`.
     Ticket markdown under .tickets remains gitignored and will not be visible in {{worktree}}, but tracked stage config files such as .tickets/*/.stage.yml are available there.

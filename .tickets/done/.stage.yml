@@ -1,7 +1,3 @@
-agent:
-  command: codex
-  args: ["--full-auto"]
-  prompt: |
-    Ticket {{id}} ({{title}}) is done. Merge branch tickets/{{id}} into main, then remove the worktree at .worktrees/{{id}} and delete the branch.
-
-    You are running in the root checkout, which is shared with other done-stage agents merging concurrently — expect conflicts and resolve them. The ticket at {{path}} describes the intent of this branch if you need it. Do not push.
+cleanup:
+  worktree: true
+  branch: true

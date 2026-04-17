@@ -8,6 +8,7 @@ stages:
   - review
   - qa
   - docs
+  - merge
   - done
   - archive
   - cancelled
@@ -34,4 +35,28 @@ cron_agents:
       Only operate on tickets in backlog/. Review them and clean up
       duplicates or outdated ones. Rather than deleting tickets
       outright, move them to cancelled/.
+    enabled: false
+  - name: merge-queue
+    schedule: "@every 2m"
+    command: claude
+    args:
+      - --dangerously-skip-permissions
+    prompt: |-
+      You are the merge-queue cron agent for {{root}} at {{now}}.
+
+      Work only in the repository root checkout at {{root}}. Do not create or use a git worktree. Do not push. Do not use --no-verify. Do not force anything.
+
+      Process tickets queued in .tickets/merge/ one at a time, in sorted filename order. Before each merge attempt:
+      - verify the repo root is on branch main
+      - verify there is no in-progress merge or rebase
+      - verify `git status --short` is empty
+
+      For each queued ticket file .tickets/merge/TIC-*.md:
+      1. Derive the ticket id from the filename.
+      2. Merge branch tickets/<id> into main with a normal git merge.
+      3. If the merge succeeds, move the ticket to done with `go run ./cmd/tickets -C {{root}} move <id> done`.
+      4. If the merge conflicts or any merge step fails after the merge starts, run `git merge --abort`, leave the ticket in merge/, and stop processing further tickets in this tick.
+
+      If the repo is dirty or otherwise not safe to merge, report that clearly and exit without changing tickets.
+      If there are no tickets in .tickets/merge/, exit quietly.
     enabled: false
