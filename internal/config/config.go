@@ -296,6 +296,9 @@ func validatePriorities(priorities map[string]PriorityConfig) error {
 		if normalized == "" {
 			return errors.New("priority name is empty")
 		}
+		if normalized == "none" {
+			return fmt.Errorf("priority %q is reserved", name)
+		}
 		if prev, dup := seen[normalized]; dup {
 			return fmt.Errorf("duplicate priority %q conflicts with %q", name, prev)
 		}

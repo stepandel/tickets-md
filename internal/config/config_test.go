@@ -395,6 +395,22 @@ func TestValidate(t *testing.T) {
 				"P0": {Color: ""},
 			},
 		}, wantErr: `priority "P0" color is empty`},
+		{name: "reserved none priority", cfg: Config{
+			Prefix:        "TIC",
+			ProjectPrefix: "PRJ",
+			Stages:        []string{"backlog", "done"},
+			Priorities: map[string]PriorityConfig{
+				"none": {Color: "gray"},
+			},
+		}, wantErr: `reserved`},
+		{name: "reserved none priority normalized", cfg: Config{
+			Prefix:        "TIC",
+			ProjectPrefix: "PRJ",
+			Stages:        []string{"backlog", "done"},
+			Priorities: map[string]PriorityConfig{
+				" NONE ": {Color: "gray"},
+			},
+		}, wantErr: `reserved`},
 		{name: "duplicate normalized priority", cfg: Config{
 			Prefix:        "TIC",
 			ProjectPrefix: "PRJ",
