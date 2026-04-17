@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Durations parse with Go's `time.ParseDuration`; `idle_block_after`
   must be ≥ 1s.
 
+- Board priority styling is now config-driven via an optional
+  `priorities:` map in `.tickets/config.yml`. Each key is a priority
+  name matched case-insensitively; values accept `color` (hex) and
+  optional `bold`. When the map is omitted, the built-in defaults for
+  `critical`, `urgent`, `high`, `medium`, `med`, and `low` are used so
+  existing boards render unchanged.
+
 - Board-level cron runs of the `claude` agent now auto-inject
   `--print` (unless the user already passed `--print`/`-p` in the
   cron's `args:`) so Claude exits after producing its response instead

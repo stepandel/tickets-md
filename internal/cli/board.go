@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/stepandel/tickets-md/internal/agent"
+	"github.com/stepandel/tickets-md/internal/config"
 	"github.com/stepandel/tickets-md/internal/ticket"
 )
 
@@ -876,7 +877,7 @@ func (m *boardModel) View() tea.View {
 			id := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Render(t.ID)
 			priority := ""
 			if t.Priority != "" {
-				priority = " " + priorityStyle(t.Priority).Render("● "+t.Priority)
+				priority = " " + priorityStyle(m.store.Config, t.Priority).Render("● "+t.Priority)
 			}
 
 			// Agent status badge.
@@ -1031,20 +1032,13 @@ func (m *boardModel) agentBadge(ticketID string) string {
 // priorityStyle returns a lipgloss style colored by priority level.
 // Unknown values fall back to the legacy gold color so free-form
 // priorities still render visibly.
-func priorityStyle(value string) lipgloss.Style {
+func priorityStyle(cfg config.Config, value string) lipgloss.Style {
 	s := lipgloss.NewStyle()
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "critical", "urgent":
-		return s.Foreground(lipgloss.Color("#FF5F5F")).Bold(true)
-	case "high":
-		return s.Foreground(lipgloss.Color("#FF8C00")).Bold(true)
-	case "medium", "med":
-		return s.Foreground(lipgloss.Color("#FFD700"))
-	case "low":
-		return s.Foreground(lipgloss.Color("#888888"))
-	default:
+	priority, ok := cfg.LookupPriority(value)
+	if !ok {
 		return s.Foreground(lipgloss.Color("#FFD700"))
 	}
+	return s.Foreground(lipgloss.Color(priority.Color)).Bold(priority.Bold)
 }
 
 func truncate(s string, max int) string {

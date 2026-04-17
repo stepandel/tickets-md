@@ -257,6 +257,30 @@ func TestSaveLoadCronAgents(t *testing.T) {
 	}
 }
 
+func TestSaveLoadPriorities(t *testing.T) {
+	root := t.TempDir()
+	want := Config{
+		Prefix:        "TIC",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "done"},
+		Priorities: map[string]PriorityConfig{
+			"P0":   {Color: "#ff0000", Bold: true},
+			"size": {Color: "12"},
+		},
+	}
+
+	if err := Save(root, want); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !reflect.DeepEqual(got.Priorities, want.Priorities) {
+		t.Fatalf("Priorities = %#v, want %#v", got.Priorities, want.Priorities)
+	}
+}
+
 func TestValidate(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -323,6 +347,23 @@ func TestValidate(t *testing.T) {
 			Stages:        []string{"backlog", "done"},
 			ArchiveStage:  "archive",
 		}, wantErr: `unknown archive stage "archive"`},
+		{name: "empty priority color", cfg: Config{
+			Prefix:        "TIC",
+			ProjectPrefix: "PRJ",
+			Stages:        []string{"backlog", "done"},
+			Priorities: map[string]PriorityConfig{
+				"P0": {Color: ""},
+			},
+		}, wantErr: `priority "P0" color is empty`},
+		{name: "duplicate normalized priority", cfg: Config{
+			Prefix:        "TIC",
+			ProjectPrefix: "PRJ",
+			Stages:        []string{"backlog", "done"},
+			Priorities: map[string]PriorityConfig{
+				"High":   {Color: "#f00"},
+				" high ": {Color: "#0f0"},
+			},
+		}, wantErr: `duplicate priority`},
 		{name: "duplicate cron agent", cfg: Config{
 			Prefix:        "TIC",
 			ProjectPrefix: "PRJ",
@@ -397,6 +438,57 @@ func TestValidate(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestLookupPriority(t *testing.T) {
+	t.Run("defaults when priorities absent", func(t *testing.T) {
+		cfg := Config{}
+
+		got, ok := cfg.LookupPriority(" Critical ")
+		if !ok {
+			t.Fatal("LookupPriority() = missing, want built-in critical")
+		}
+		if got.Color != "#FF5F5F" || !got.Bold {
+			t.Fatalf("LookupPriority() = %#v, want built-in critical styling", got)
+		}
+
+		got, ok = cfg.LookupPriority("med")
+		if !ok {
+			t.Fatal("LookupPriority() = missing, want built-in med")
+		}
+		if got.Color != "#FFD700" || got.Bold {
+			t.Fatalf("LookupPriority() = %#v, want built-in med styling", got)
+		}
+	})
+
+	t.Run("configured priorities override defaults", func(t *testing.T) {
+		cfg := Config{
+			Priorities: map[string]PriorityConfig{
+				"P0":   {Color: "#123456", Bold: true},
+				"high": {Color: "#654321"},
+			},
+		}
+
+		got, ok := cfg.LookupPriority(" p0 ")
+		if !ok {
+			t.Fatal("LookupPriority() = missing, want configured P0")
+		}
+		if got.Color != "#123456" || !got.Bold {
+			t.Fatalf("LookupPriority() = %#v, want configured P0 styling", got)
+		}
+
+		got, ok = cfg.LookupPriority("high")
+		if !ok {
+			t.Fatal("LookupPriority() = missing, want configured high")
+		}
+		if got.Color != "#654321" || got.Bold {
+			t.Fatalf("LookupPriority() = %#v, want configured high styling", got)
+		}
+
+		if _, ok := cfg.LookupPriority("critical"); ok {
+			t.Fatal("LookupPriority() unexpectedly found built-in priority when config override is present")
+		}
+	})
 }
 
 func TestValidateCronName(t *testing.T) {
