@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `tickets watch` gained `pause [reason]`, `resume`, and `status`
+  subcommands. Pausing writes `.tickets/.watch-paused`, which causes
+  the running watcher to skip agent spawns on stage arrivals, stage
+  reruns, and cron ticks until `resume` clears the file. In-flight
+  sessions are unaffected.
+
 ## [0.1.11] - 2026-04-16
 
 - The `tickets watch` monitor's poll interval (default 5s) and the
