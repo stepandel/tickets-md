@@ -4,8 +4,11 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
+
+	"github.com/fsnotify/fsnotify"
 
 	"github.com/stepandel/tickets-md/internal/agent"
 	"github.com/stepandel/tickets-md/internal/config"
@@ -22,6 +25,25 @@ func newReloadWatchStore(t *testing.T, cfg config.Config) *ticket.Store {
 	return s
 }
 
+func newReloadWatcher(t *testing.T, root string, stages []string) *fsnotify.Watcher {
+	t.Helper()
+	w, err := fsnotify.NewWatcher()
+	if err != nil {
+		t.Fatalf("NewWatcher: %v", err)
+	}
+	t.Cleanup(func() { _ = w.Close() })
+	for _, st := range stages {
+		if err := w.Add(filepath.Join(root, config.ConfigDir, st)); err != nil {
+			t.Fatalf("Add(%s): %v", st, err)
+		}
+	}
+	return w
+}
+
+func watchListContains(w *fsnotify.Watcher, path string) bool {
+	return slices.Contains(w.WatchList(), path)
+}
+
 func TestReloadWatchConfigUpdatesMonitorTiming(t *testing.T) {
 	s := newReloadWatchStore(t, config.Config{
 		Prefix:        "TIC",
@@ -29,6 +51,12 @@ func TestReloadWatchConfigUpdatesMonitorTiming(t *testing.T) {
 		Stages:        []string{"backlog", "execute", "done"},
 	})
 	mon := agent.NewMonitor(s.Root, 0, 0, 0, func(string) bool { return false }, func(string) int { return -1 }, func(string) error { return nil })
+	w := newReloadWatcher(t, s.Root, s.Config.Stages)
+	stageConfigs := newStageConfigStore()
+	knownPaths := map[string]bool{}
+	for _, st := range s.Config.Stages {
+		stageConfigs.Set(st, stage.Config{})
+	}
 
 	nextCfg := s.Config
 	nextCfg.Watch = &config.WatchConfig{
@@ -43,7 +71,7 @@ func TestReloadWatchConfigUpdatesMonitorTiming(t *testing.T) {
 		t.Fatalf("Save: %v", err)
 	}
 
-	timings, changed, err := reloadWatchConfig(s.Root, &s.Config, mon, func(cfg config.Config) error { return nil })
+	timings, changed, err := reloadWatchConfig(s.Root, &s.Config, mon, w, stageConfigs, knownPaths, func(cfg config.Config) error { return nil })
 	if err != nil {
 		t.Fatalf("reloadWatchConfig: %v", err)
 	}
@@ -72,6 +100,12 @@ func TestReloadWatchConfigInvalidConfigPreservesMonitorTiming(t *testing.T) {
 		Stages:        []string{"backlog", "execute", "done"},
 	})
 	mon := agent.NewMonitor(s.Root, 5*time.Second, 30*time.Second, 10*time.Minute, func(string) bool { return false }, func(string) int { return -1 }, func(string) error { return nil })
+	w := newReloadWatcher(t, s.Root, s.Config.Stages)
+	stageConfigs := newStageConfigStore()
+	knownPaths := map[string]bool{}
+	for _, st := range s.Config.Stages {
+		stageConfigs.Set(st, stage.Config{})
+	}
 
 	// Bypass Save's Validate to put an invalid config on disk, so we
 	// actually exercise reloadWatchConfig's Load-failure branch.
@@ -81,7 +115,9 @@ func TestReloadWatchConfigInvalidConfigPreservesMonitorTiming(t *testing.T) {
 	}
 
 	pollBefore, idleBefore, killBefore := mon.Timing()
-	_, changed, err := reloadWatchConfig(s.Root, &s.Config, mon, func(cfg config.Config) error {
+	stagesBefore := slices.Clone(s.Config.Stages)
+	watchesBefore := slices.Clone(w.WatchList())
+	_, changed, err := reloadWatchConfig(s.Root, &s.Config, mon, w, stageConfigs, knownPaths, func(cfg config.Config) error {
 		t.Fatal("reloadCron should not run when config.Load fails")
 		return nil
 	})
@@ -95,6 +131,12 @@ func TestReloadWatchConfigInvalidConfigPreservesMonitorTiming(t *testing.T) {
 	if pollAfter != pollBefore || idleAfter != idleBefore || killAfter != killBefore {
 		t.Fatalf("monitor timing = %s/%s/%s, want unchanged %s/%s/%s", pollAfter, idleAfter, killAfter, pollBefore, idleBefore, killBefore)
 	}
+	if !slices.Equal(s.Config.Stages, stagesBefore) {
+		t.Fatalf("Stages = %v, want unchanged %v", s.Config.Stages, stagesBefore)
+	}
+	if !slices.Equal(w.WatchList(), watchesBefore) {
+		t.Fatalf("WatchList = %v, want unchanged %v", w.WatchList(), watchesBefore)
+	}
 }
 
 func TestReloadWatchConfigCronReloadFailurePreservesMonitorTiming(t *testing.T) {
@@ -104,6 +146,12 @@ func TestReloadWatchConfigCronReloadFailurePreservesMonitorTiming(t *testing.T) 
 		Stages:        []string{"backlog", "execute", "done"},
 	})
 	mon := agent.NewMonitor(s.Root, 5*time.Second, 30*time.Second, 10*time.Minute, func(string) bool { return false }, func(string) int { return -1 }, func(string) error { return nil })
+	w := newReloadWatcher(t, s.Root, s.Config.Stages)
+	stageConfigs := newStageConfigStore()
+	knownPaths := map[string]bool{}
+	for _, st := range s.Config.Stages {
+		stageConfigs.Set(st, stage.Config{})
+	}
 
 	nextCfg := s.Config
 	nextCfg.Watch = &config.WatchConfig{
@@ -117,7 +165,9 @@ func TestReloadWatchConfigCronReloadFailurePreservesMonitorTiming(t *testing.T) 
 
 	reloadErr := errors.New("cron reload failed")
 	pollBefore, idleBefore, killBefore := mon.Timing()
-	_, changed, err := reloadWatchConfig(s.Root, &s.Config, mon, func(cfg config.Config) error { return reloadErr })
+	stagesBefore := slices.Clone(s.Config.Stages)
+	watchesBefore := slices.Clone(w.WatchList())
+	_, changed, err := reloadWatchConfig(s.Root, &s.Config, mon, w, stageConfigs, knownPaths, func(cfg config.Config) error { return reloadErr })
 	if !errors.Is(err, reloadErr) {
 		t.Fatalf("reloadWatchConfig error = %v, want %v", err, reloadErr)
 	}
@@ -130,6 +180,171 @@ func TestReloadWatchConfigCronReloadFailurePreservesMonitorTiming(t *testing.T) 
 	}
 	if s.Config.Watch != nil {
 		t.Fatalf("Watch = %#v, want unchanged nil", s.Config.Watch)
+	}
+	if !slices.Equal(s.Config.Stages, stagesBefore) {
+		t.Fatalf("Stages = %v, want unchanged %v", s.Config.Stages, stagesBefore)
+	}
+	if !slices.Equal(w.WatchList(), watchesBefore) {
+		t.Fatalf("WatchList = %v, want unchanged %v", w.WatchList(), watchesBefore)
+	}
+}
+
+func TestReconcileWatchStagesAddsStage(t *testing.T) {
+	s := newReloadWatchStore(t, config.Config{
+		Prefix:        "TIC",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "done"},
+	})
+	w := newReloadWatcher(t, s.Root, s.Config.Stages)
+	stageConfigs := newStageConfigStore()
+	stageConfigs.Set("backlog", stage.Config{})
+	stageConfigs.Set("done", stage.Config{})
+
+	executeDir := filepath.Join(s.Root, config.ConfigDir, "execute")
+	if err := os.MkdirAll(executeDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(executeDir, "TIC-007.md"), []byte("---\ntitle: Added\n---\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile ticket: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(executeDir, ".stage.yml"), []byte("agent:\n  command: /bin/sh\n  prompt: go\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile stage config: %v", err)
+	}
+
+	knownPaths := map[string]bool{}
+	if err := reconcileWatchStages(w, stageConfigs, knownPaths, s.Root, s.Config.Stages, []string{"backlog", "execute", "done"}); err != nil {
+		t.Fatalf("reconcileWatchStages: %v", err)
+	}
+
+	if !watchListContains(w, executeDir) {
+		t.Fatalf("WatchList = %v, want %s added", w.WatchList(), executeDir)
+	}
+	got, ok := stageConfigs.Get("execute")
+	if !ok {
+		t.Fatal("stage config missing for execute")
+	}
+	if !got.HasAgent() || got.Agent.Command != "/bin/sh" {
+		t.Fatalf("stage config = %#v, want /bin/sh agent", got)
+	}
+	ticketPath := filepath.Join(executeDir, "TIC-007.md")
+	if !knownPaths[ticketPath] {
+		t.Fatalf("knownPaths missing %s", ticketPath)
+	}
+}
+
+func TestReconcileWatchStagesRemovesStage(t *testing.T) {
+	s := newReloadWatchStore(t, config.Config{
+		Prefix:        "TIC",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "execute", "done"},
+	})
+	w := newReloadWatcher(t, s.Root, s.Config.Stages)
+	stageConfigs := newStageConfigStore()
+	for _, st := range s.Config.Stages {
+		stageConfigs.Set(st, stage.Config{})
+	}
+
+	executeDir := filepath.Join(s.Root, config.ConfigDir, "execute")
+	executeTicket := filepath.Join(executeDir, "TIC-007.md")
+	backlogTicket := filepath.Join(s.Root, config.ConfigDir, "backlog", "TIC-001.md")
+	knownPaths := map[string]bool{
+		executeTicket: true,
+		backlogTicket: true,
+	}
+
+	if err := reconcileWatchStages(w, stageConfigs, knownPaths, s.Root, s.Config.Stages, []string{"backlog", "done"}); err != nil {
+		t.Fatalf("reconcileWatchStages: %v", err)
+	}
+
+	if watchListContains(w, executeDir) {
+		t.Fatalf("WatchList = %v, did not expect %s", w.WatchList(), executeDir)
+	}
+	if _, ok := stageConfigs.Get("execute"); ok {
+		t.Fatal("execute stage config still cached")
+	}
+	if knownPaths[executeTicket] {
+		t.Fatalf("knownPaths still contains %s", executeTicket)
+	}
+	if !knownPaths[backlogTicket] {
+		t.Fatalf("knownPaths dropped unrelated path %s", backlogTicket)
+	}
+}
+
+func TestReloadWatchConfigReconcilesStageSet(t *testing.T) {
+	s := newReloadWatchStore(t, config.Config{
+		Prefix:         "TIC",
+		ProjectPrefix:  "PRJ",
+		Stages:         []string{"backlog", "done"},
+		CompleteStages: []string{"done"},
+	})
+	w := newReloadWatcher(t, s.Root, s.Config.Stages)
+	stageConfigs := newStageConfigStore()
+	stageConfigs.Set("backlog", stage.Config{})
+	stageConfigs.Set("done", stage.Config{})
+
+	doneDir := filepath.Join(s.Root, config.ConfigDir, "done")
+	executeDir := filepath.Join(s.Root, config.ConfigDir, "execute")
+	executeTicket := filepath.Join(executeDir, "TIC-009.md")
+	if err := os.MkdirAll(executeDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll execute: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(executeDir, "TIC-009.md"), []byte("---\ntitle: Added\n---\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile ticket: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(executeDir, ".stage.yml"), []byte("cleanup:\n  worktree: true\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile stage config: %v", err)
+	}
+
+	knownPaths := map[string]bool{
+		filepath.Join(doneDir, "TIC-003.md"): true,
+	}
+	mon := agent.NewMonitor(s.Root, 0, 0, 0, func(string) bool { return false }, func(string) int { return -1 }, func(string) error { return nil })
+
+	nextCfg := s.Config
+	nextCfg.Stages = []string{"backlog", "execute"}
+	nextCfg.CompleteStages = []string{"execute"}
+	nextCfg.ArchiveStage = "execute"
+	if err := config.Save(s.Root, nextCfg); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	_, changed, err := reloadWatchConfig(s.Root, &s.Config, mon, w, stageConfigs, knownPaths, func(cfg config.Config) error { return nil })
+	if err != nil {
+		t.Fatalf("reloadWatchConfig: %v", err)
+	}
+	if changed {
+		t.Fatal("changed = true, want false")
+	}
+	if !slices.Equal(s.Config.Stages, []string{"backlog", "execute"}) {
+		t.Fatalf("Stages = %v, want [backlog execute]", s.Config.Stages)
+	}
+	if !slices.Equal(s.Config.CompleteStages, []string{"execute"}) {
+		t.Fatalf("CompleteStages = %v, want [execute]", s.Config.CompleteStages)
+	}
+	if s.Config.ArchiveStage != "execute" {
+		t.Fatalf("ArchiveStage = %q, want execute", s.Config.ArchiveStage)
+	}
+	if watchListContains(w, doneDir) {
+		t.Fatalf("WatchList = %v, did not expect %s", w.WatchList(), doneDir)
+	}
+	if !watchListContains(w, executeDir) {
+		t.Fatalf("WatchList = %v, want %s", w.WatchList(), executeDir)
+	}
+	if _, ok := stageConfigs.Get("done"); ok {
+		t.Fatal("done stage config still cached")
+	}
+	got, ok := stageConfigs.Get("execute")
+	if !ok {
+		t.Fatal("execute stage config missing")
+	}
+	if !got.HasCleanup() {
+		t.Fatalf("execute stage config = %#v, want cleanup config", got)
+	}
+	if !knownPaths[executeTicket] {
+		t.Fatalf("knownPaths missing %s", executeTicket)
+	}
+	if knownPaths[filepath.Join(doneDir, "TIC-003.md")] {
+		t.Fatalf("knownPaths still contains removed-stage path %s", filepath.Join(doneDir, "TIC-003.md"))
 	}
 }
 

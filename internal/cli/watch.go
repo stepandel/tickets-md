@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -91,6 +92,12 @@ func (s *stageConfigStore) Set(stageName string, cfg stage.Config) {
 	s.configs[stageName] = cfg
 }
 
+func (s *stageConfigStore) Delete(stageName string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.configs, stageName)
+}
+
 func stageConfigStatus(cfg stage.Config) string {
 	switch {
 	case cfg.HasAgent():
@@ -136,7 +143,60 @@ func watchTimingsForConfig(cfg config.Config) watchTimings {
 	return timings
 }
 
-func reloadWatchConfig(root string, cfg *config.Config, mon *agent.Monitor, reloadCron func(config.Config) error) (watchTimings, bool, error) {
+func reconcileWatchStages(w *fsnotify.Watcher, stageConfigs *stageConfigStore, knownPaths map[string]bool, root string, oldStages, newStages []string) error {
+	for _, st := range oldStages {
+		if slices.Contains(newStages, st) {
+			continue
+		}
+		dir := filepath.Join(root, config.ConfigDir, st)
+		if err := w.Remove(dir); err != nil && err != fsnotify.ErrNonExistentWatch {
+			return fmt.Errorf("removing watch %s: %w", dir, err)
+		}
+		stageConfigs.Delete(st)
+		prefix := dir + string(os.PathSeparator)
+		for path := range knownPaths {
+			if strings.HasPrefix(path, prefix) {
+				delete(knownPaths, path)
+			}
+		}
+	}
+
+	for _, st := range newStages {
+		if slices.Contains(oldStages, st) {
+			continue
+		}
+		dir := filepath.Join(root, config.ConfigDir, st)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("creating %s: %w", dir, err)
+		}
+		if err := stage.WriteDefault(dir); err != nil {
+			return fmt.Errorf("writing default stage config for %s: %w", st, err)
+		}
+		if err := w.Add(dir); err != nil {
+			return fmt.Errorf("watching %s: %w", dir, err)
+		}
+		sc, err := stage.Load(dir)
+		if err != nil {
+			return fmt.Errorf("loading stage config for %s: %w", st, err)
+		}
+		stageConfigs.Set(st, sc)
+
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return fmt.Errorf("scanning %s: %w", dir, err)
+		}
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+				continue
+			}
+			knownPaths[filepath.Join(dir, e.Name())] = true
+		}
+	}
+
+	return nil
+}
+
+func reloadWatchConfig(root string, cfg *config.Config, mon *agent.Monitor, w *fsnotify.Watcher, stageConfigs *stageConfigStore, knownPaths map[string]bool, reloadCron func(config.Config) error) (watchTimings, bool, error) {
 	newCfg, err := config.Load(root)
 	if err != nil {
 		return watchTimings{}, false, err
@@ -147,6 +207,13 @@ func reloadWatchConfig(root string, cfg *config.Config, mon *agent.Monitor, relo
 
 	timings := watchTimingsForConfig(newCfg)
 	changed := mon.SetTiming(timings.PollInterval, timings.IdleBlockAfter, timings.IdleKillAfter)
+	oldStages := slices.Clone(cfg.Stages)
+	if err := reconcileWatchStages(w, stageConfigs, knownPaths, root, oldStages, newCfg.Stages); err != nil {
+		return watchTimings{}, false, err
+	}
+	cfg.Stages = newCfg.Stages
+	cfg.CompleteStages = newCfg.CompleteStages
+	cfg.ArchiveStage = newCfg.ArchiveStage
 	cfg.CronAgents = newCfg.CronAgents
 	cfg.Watch = newCfg.Watch
 	return timings, changed, nil
@@ -404,7 +471,7 @@ func runWatch(s *ticket.Store) error {
 			handleCreate(s, stageConfigs, event.Name, mon, runner)
 
 		case <-configReloadCh:
-			timings, changed, err := reloadWatchConfig(s.Root, &s.Config, mon, cronScheduler.Reload)
+			timings, changed, err := reloadWatchConfig(s.Root, &s.Config, mon, w, stageConfigs, knownPaths, cronScheduler.Reload)
 			if err != nil {
 				log.Printf("config: reload failed: %v", err)
 				continue
@@ -418,6 +485,9 @@ func runWatch(s *ticket.Store) error {
 			pending := pendingStageReloads
 			pendingStageReloads = make(map[string]string)
 			for stageName, stageDir := range pending {
+				if !s.Config.HasStage(stageName) {
+					continue
+				}
 				sc, err := reloadStageConfig(stageConfigs, stageName, stageDir)
 				if err != nil {
 					log.Printf("%s/.stage.yml: reload failed: %v (keeping previous config)", stageName, err)
