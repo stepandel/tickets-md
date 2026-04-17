@@ -547,6 +547,35 @@ export default class TicketsBoardPlugin extends Plugin {
 			callback: () => this.activateProjectsView(),
 		});
 
+		this.addCommand({
+			id: "search-tickets",
+			name: "Search tickets",
+			callback: async () => {
+				const config = await loadConfig(this.app);
+				if (!config) {
+					new Notice("Could not load config.yml — is this a tickets-md vault?");
+					return;
+				}
+
+				const tickets = (await loadTickets(this.app, visibleStages(config, false)))
+					.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+				if (tickets.length === 0) {
+					new Notice("No tickets found");
+					return;
+				}
+
+				new FuzzyPickerModal<Ticket>(
+					this.app,
+					tickets,
+					(ticket) => `${ticket.id} — ${ticket.title} (${ticket.stage})`,
+					async (ticket) => {
+						const leaf = openPreviewLeaf(this.app, null);
+						await leaf.openFile(ticket.file);
+					},
+				).open();
+			},
+		});
+
 		this.watchForHotReload();
 	}
 
