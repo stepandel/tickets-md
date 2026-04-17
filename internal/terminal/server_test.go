@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 type fakeRunner struct {
@@ -97,6 +98,9 @@ func newTestHandler(t *testing.T, runner *fakeRunner, root string) http.Handler 
 	mux.HandleFunc("/spawn", srv.handleSpawn)
 	mux.HandleFunc("/rerun-stage-agent", srv.handleRerunStageAgent)
 	mux.HandleFunc("/run-cron-agent", srv.handleRunCronAgent)
+	mux.HandleFunc("/watch/status", srv.handleWatchStatus)
+	mux.HandleFunc("/watch/pause", srv.handleWatchPause)
+	mux.HandleFunc("/watch/resume", srv.handleWatchResume)
 	return withCORS(mux)
 }
 
@@ -547,6 +551,231 @@ func TestRerun_ForceSuccess(t *testing.T) {
 	}
 }
 
+func TestWatchStatus_BadMethod(t *testing.T) {
+	h := newTestHandler(t, &fakeRunner{}, t.TempDir())
+	req := httptest.NewRequest(http.MethodPost, "/watch/status", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want 405", rr.Code)
+	}
+}
+
+func TestWatchStatus_NoCallback(t *testing.T) {
+	h := newTestHandler(t, &fakeRunner{}, t.TempDir())
+	req := httptest.NewRequest(http.MethodGet, "/watch/status", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", rr.Code)
+	}
+}
+
+func TestWatchStatus_CallbackError(t *testing.T) {
+	root := t.TempDir()
+	srv := New(&fakeRunner{}, root)
+	srv.WatchStatus = func() (WatchState, error) {
+		return WatchState{}, errors.New("read failed")
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/watch/status", srv.handleWatchStatus)
+	h := withCORS(mux)
+	req := httptest.NewRequest(http.MethodGet, "/watch/status", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	body := responseBody(t, rr)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rr.Code)
+	}
+	if !strings.Contains(body, "read failed") {
+		t.Fatalf("body = %q", body)
+	}
+}
+
+func TestWatchStatus_Success(t *testing.T) {
+	root := t.TempDir()
+	srv := New(&fakeRunner{}, root)
+	srv.WatchStatus = func() (WatchState, error) {
+		return WatchState{
+			Paused:   true,
+			PausedAt: mustTime(t, "2026-04-17T18:00:00Z"),
+			Reason:   "release freeze",
+		}, nil
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/watch/status", srv.handleWatchStatus)
+	h := withCORS(mux)
+	req := httptest.NewRequest(http.MethodGet, "/watch/status", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	var got watchStateResponse
+	if err := json.NewDecoder(rr.Result().Body).Decode(&got); err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	want := watchStateResponse{
+		Paused:   true,
+		PausedAt: "2026-04-17T18:00:00Z",
+		Reason:   "release freeze",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("watch status = %#v, want %#v", got, want)
+	}
+}
+
+func TestWatchStatus_PausedWithWarning(t *testing.T) {
+	root := t.TempDir()
+	srv := New(&fakeRunner{}, root)
+	srv.WatchStatus = func() (WatchState, error) {
+		return WatchState{
+			Paused:  true,
+			Warning: "invalid character '}' looking for beginning of value",
+		}, nil
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/watch/status", srv.handleWatchStatus)
+	h := withCORS(mux)
+	req := httptest.NewRequest(http.MethodGet, "/watch/status", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	var got watchStateResponse
+	if err := json.NewDecoder(rr.Result().Body).Decode(&got); err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if !got.Paused || got.Warning == "" {
+		t.Fatalf("watch status = %#v, want paused warning response", got)
+	}
+}
+
+func TestWatchPause_BadMethod(t *testing.T) {
+	h := newTestHandler(t, &fakeRunner{}, t.TempDir())
+	req := httptest.NewRequest(http.MethodGet, "/watch/pause", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want 405", rr.Code)
+	}
+}
+
+func TestWatchPause_NoCallback(t *testing.T) {
+	h := newTestHandler(t, &fakeRunner{}, t.TempDir())
+	req := httptest.NewRequest(http.MethodPost, "/watch/pause", strings.NewReader(`{"reason":"freeze"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", rr.Code)
+	}
+}
+
+func TestWatchPause_BadJSON(t *testing.T) {
+	root := t.TempDir()
+	srv := New(&fakeRunner{}, root)
+	srv.PauseWatch = func(reason string) (WatchState, error) { return WatchState{}, nil }
+	mux := http.NewServeMux()
+	mux.HandleFunc("/watch/pause", srv.handleWatchPause)
+	h := withCORS(mux)
+	req := httptest.NewRequest(http.MethodPost, "/watch/pause", strings.NewReader("{"))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	body := responseBody(t, rr)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+	if !strings.Contains(body, "bad request") {
+		t.Fatalf("body = %q", body)
+	}
+}
+
+func TestWatchPause_Success(t *testing.T) {
+	root := t.TempDir()
+	var gotReason string
+	srv := New(&fakeRunner{}, root)
+	srv.PauseWatch = func(reason string) (WatchState, error) {
+		gotReason = reason
+		return WatchState{
+			Paused:   true,
+			PausedAt: mustTime(t, "2026-04-17T18:10:00Z"),
+			Reason:   reason,
+		}, nil
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/watch/pause", srv.handleWatchPause)
+	h := withCORS(mux)
+	req := httptest.NewRequest(http.MethodPost, "/watch/pause", strings.NewReader(`{"reason":"release freeze"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	if gotReason != "release freeze" {
+		t.Fatalf("reason = %q, want %q", gotReason, "release freeze")
+	}
+}
+
+func TestWatchResume_BadMethod(t *testing.T) {
+	h := newTestHandler(t, &fakeRunner{}, t.TempDir())
+	req := httptest.NewRequest(http.MethodGet, "/watch/resume", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want 405", rr.Code)
+	}
+}
+
+func TestWatchResume_NoCallback(t *testing.T) {
+	h := newTestHandler(t, &fakeRunner{}, t.TempDir())
+	req := httptest.NewRequest(http.MethodPost, "/watch/resume", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", rr.Code)
+	}
+}
+
+func TestWatchResume_Success(t *testing.T) {
+	root := t.TempDir()
+	srv := New(&fakeRunner{}, root)
+	srv.ResumeWatch = func() (WatchState, error) {
+		return WatchState{}, nil
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/watch/resume", srv.handleWatchResume)
+	h := withCORS(mux)
+	req := httptest.NewRequest(http.MethodPost, "/watch/resume", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	var got watchStateResponse
+	if err := json.NewDecoder(rr.Result().Body).Decode(&got); err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if got.Paused {
+		t.Fatalf("paused = true, want false")
+	}
+}
+
 func TestTerminal_MissingSession(t *testing.T) {
 	h := newTestHandler(t, &fakeRunner{}, t.TempDir())
 	req := httptest.NewRequest(http.MethodGet, "/terminal/", nil)
@@ -609,4 +838,13 @@ func TestResizeMsg_Unmarshal(t *testing.T) {
 	if msg.Type == "resize" {
 		t.Fatalf("expected noop message to be rejected: %#v", msg)
 	}
+}
+
+func mustTime(t *testing.T, value string) time.Time {
+	t.Helper()
+	ts, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		t.Fatalf("Parse(%q): %v", value, err)
+	}
+	return ts
 }

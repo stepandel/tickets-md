@@ -344,6 +344,21 @@ func runWatch(s *ticket.Store) error {
 		}
 		return "", fmt.Errorf("cron %q not configured", name)
 	}
+	termSrv.WatchStatus = func() (terminal.WatchState, error) {
+		return terminalWatchState(s.Root)
+	}
+	termSrv.PauseWatch = func(reason string) (terminal.WatchState, error) {
+		if err := writeWatchPause(s.Root, reason); err != nil {
+			return terminal.WatchState{}, fmt.Errorf("pausing watch: %w", err)
+		}
+		return terminalWatchState(s.Root)
+	}
+	termSrv.ResumeWatch = func() (terminal.WatchState, error) {
+		if err := clearWatchPause(s.Root); err != nil {
+			return terminal.WatchState{}, fmt.Errorf("resuming watch: %w", err)
+		}
+		return terminalWatchState(s.Root)
+	}
 
 	log.Println("ready — move tickets between stages to trigger agents (ctrl+c to stop)")
 
@@ -433,6 +448,24 @@ func runWatch(s *ticket.Store) error {
 			log.Printf("watcher error: %v", err)
 		}
 	}
+}
+
+func terminalWatchState(root string) (terminal.WatchState, error) {
+	state, paused, err := readWatchPause(root)
+	if err != nil {
+		if paused {
+			return terminal.WatchState{
+				Paused:  true,
+				Warning: err.Error(),
+			}, nil
+		}
+		return terminal.WatchState{}, fmt.Errorf("reading watch pause state: %w", err)
+	}
+	return terminal.WatchState{
+		Paused:   paused,
+		PausedAt: state.PausedAt,
+		Reason:   state.Reason,
+	}, nil
 }
 
 func handleCreate(s *ticket.Store, stageConfigs *stageConfigStore, path string, mon *agent.Monitor, runner *agent.PTYRunner) {

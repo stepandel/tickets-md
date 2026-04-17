@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/coder/websocket"
 )
@@ -37,9 +38,29 @@ type Server struct {
 	// through the watcher's live PTY runner. Nil means the watcher did
 	// not register a callback, so /run-cron-agent is rejected.
 	RunCronAgent func(name string, rows, cols uint16) (string, error)
+
+	// WatchStatus, if set, returns the watcher pause state. Nil means
+	// the watcher did not register a callback, so /watch/status is
+	// rejected.
+	WatchStatus func() (WatchState, error)
+
+	// PauseWatch, if set, pauses watcher-managed spawns. Nil means the
+	// watcher did not register a callback, so /watch/pause is rejected.
+	PauseWatch func(reason string) (WatchState, error)
+
+	// ResumeWatch, if set, resumes watcher-managed spawns. Nil means the
+	// watcher did not register a callback, so /watch/resume is rejected.
+	ResumeWatch func() (WatchState, error)
 }
 
 var ErrCronRunActive = errors.New("cron run already active")
+
+type WatchState struct {
+	Paused   bool
+	PausedAt time.Time
+	Reason   string
+	Warning  string
+}
 
 // New creates a terminal server backed by the given PTYRunner.
 // root is the project root, used to spawn on-demand agent sessions.
@@ -62,6 +83,9 @@ func (s *Server) Start() (int, error) {
 	mux.HandleFunc("/spawn", s.handleSpawn)
 	mux.HandleFunc("/rerun-stage-agent", s.handleRerunStageAgent)
 	mux.HandleFunc("/run-cron-agent", s.handleRunCronAgent)
+	mux.HandleFunc("/watch/status", s.handleWatchStatus)
+	mux.HandleFunc("/watch/pause", s.handleWatchPause)
+	mux.HandleFunc("/watch/resume", s.handleWatchResume)
 
 	s.srv = &http.Server{Handler: withCORS(mux)}
 	go s.srv.Serve(ln)
@@ -254,9 +278,33 @@ type runCronRequest struct {
 	Cols uint16 `json:"cols,omitempty"`
 }
 
+type watchPauseRequest struct {
+	Reason string `json:"reason,omitempty"`
+}
+
 // spawnResponse is returned by POST /spawn.
 type spawnResponse struct {
 	Session string `json:"session"`
+}
+
+type watchStateResponse struct {
+	Paused   bool   `json:"paused"`
+	PausedAt string `json:"paused_at,omitempty"`
+	Reason   string `json:"reason,omitempty"`
+	Warning  string `json:"warning,omitempty"`
+}
+
+func writeWatchState(w http.ResponseWriter, state WatchState) {
+	resp := watchStateResponse{
+		Paused:  state.Paused,
+		Reason:  state.Reason,
+		Warning: state.Warning,
+	}
+	if !state.PausedAt.IsZero() {
+		resp.PausedAt = state.PausedAt.UTC().Format(time.RFC3339)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
 
 // handleSpawn creates an on-demand interactive agent PTY session
@@ -381,4 +429,64 @@ func (s *Server) handleRunCronAgent(w http.ResponseWriter, r *http.Request) {
 	log.Printf("ran cron agent %s (session %s)", req.Name, session)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(spawnResponse{Session: session})
+}
+
+func (s *Server) handleWatchStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.WatchStatus == nil {
+		http.Error(w, "watch status not available (watcher did not register a callback)", http.StatusServiceUnavailable)
+		return
+	}
+
+	state, err := s.WatchStatus()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeWatchState(w, state)
+}
+
+func (s *Server) handleWatchPause(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.PauseWatch == nil {
+		http.Error(w, "watch pause not available (watcher did not register a callback)", http.StatusServiceUnavailable)
+		return
+	}
+
+	var req watchPauseRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	state, err := s.PauseWatch(req.Reason)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeWatchState(w, state)
+}
+
+func (s *Server) handleWatchResume(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.ResumeWatch == nil {
+		http.Error(w, "watch resume not available (watcher did not register a callback)", http.StatusServiceUnavailable)
+		return
+	}
+
+	state, err := s.ResumeWatch()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeWatchState(w, state)
 }
