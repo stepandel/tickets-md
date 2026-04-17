@@ -216,11 +216,12 @@ func TestHandleCreateFsRenameIntoCompleteStageUnblocksDependents(t *testing.T) {
 		t.Fatalf("Rename: %v", err)
 	}
 
-	handleCreate(s, map[string]stage.Config{
-		"backlog": {},
-		"execute": {},
-		"done":    {},
-	}, dst, nil, nil)
+	stageConfigs := newStageConfigStore()
+	stageConfigs.Set("backlog", stage.Config{})
+	stageConfigs.Set("execute", stage.Config{})
+	stageConfigs.Set("done", stage.Config{})
+
+	handleCreate(s, stageConfigs, dst, nil, nil)
 
 	blocker, err = s.Get(blocker.ID)
 	if err != nil {
@@ -257,17 +258,17 @@ func TestRerunStageAgentRefusesActiveSessionWithoutForce(t *testing.T) {
 	}
 	layout := worktreeLayout(s.Config)
 
-	stageConfigs := map[string]stage.Config{
-		"execute": {
-			Agent: &stage.AgentConfig{
-				Command: "/bin/sh",
-				Args:    []string{"-c", "sleep 30"},
-				Prompt:  "ignored",
-			},
+	stageConfigs := newStageConfigStore()
+	stageConfigs.Set("execute", stage.Config{
+		Agent: &stage.AgentConfig{
+			Command: "/bin/sh",
+			Args:    []string{"-c", "sleep 30"},
+			Prompt:  "ignored",
 		},
-	}
+	})
 
-	session, err := spawnAgent(tk, stageConfigs["execute"], s.Root, layout, mon, runner, 0, 0)
+	sc, _ := stageConfigs.Get("execute")
+	session, err := spawnAgent(tk, sc, s.Root, layout, mon, runner, 0, 0)
 	if err != nil {
 		t.Fatalf("spawnAgent: %v", err)
 	}
@@ -319,17 +320,17 @@ func TestRerunStageAgentForceReplacesActiveSession(t *testing.T) {
 	}
 	layout := worktreeLayout(s.Config)
 
-	stageConfigs := map[string]stage.Config{
-		"execute": {
-			Agent: &stage.AgentConfig{
-				Command: "/bin/sh",
-				Args:    []string{"-c", "sleep 30"},
-				Prompt:  "ignored",
-			},
+	stageConfigs := newStageConfigStore()
+	stageConfigs.Set("execute", stage.Config{
+		Agent: &stage.AgentConfig{
+			Command: "/bin/sh",
+			Args:    []string{"-c", "sleep 30"},
+			Prompt:  "ignored",
 		},
-	}
+	})
 
-	firstSession, err := spawnAgent(tk, stageConfigs["execute"], s.Root, layout, mon, runner, 0, 0)
+	sc, _ := stageConfigs.Get("execute")
+	firstSession, err := spawnAgent(tk, sc, s.Root, layout, mon, runner, 0, 0)
 	if err != nil {
 		t.Fatalf("spawnAgent: %v", err)
 	}
