@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 
-import { isolatedObsidianEnv, obsidianConfigDir, prepareObsidianConfigIsolation } from "../e2e/obsidian-config.mjs";
+import { isolatedObsidianEnv, obsidianConfigDir } from "../e2e/obsidian-config.mjs";
 
 test("obsidianConfigDir resolves Linux config under XDG_CONFIG_HOME", () => {
 	assert.equal(
@@ -37,9 +37,9 @@ test("isolatedObsidianEnv redirects Windows config via APPDATA", () => {
 	assert.equal(configDir, path.join(tempRoot, "AppData", "Roaming", "obsidian"));
 });
 
-test("prepareObsidianConfigIsolation reuses the isolated env mapping", async () => {
+test("isolatedObsidianEnv preserves unrelated env vars like APPDIR", () => {
 	const tempRoot = "/tmp/tickets-obsidian-home";
-	const { env, configDir } = await prepareObsidianConfigIsolation(tempRoot, {
+	const { env, configDir } = isolatedObsidianEnv(tempRoot, {
 		platform: "darwin",
 		env: { APPDIR: "/Applications/Obsidian.app" },
 	});

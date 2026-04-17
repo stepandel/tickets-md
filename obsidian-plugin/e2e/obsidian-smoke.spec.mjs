@@ -8,7 +8,7 @@ import { execFileSync, spawn } from "node:child_process";
 
 import { chromium, expect, test } from "@playwright/test";
 
-import { prepareObsidianConfigIsolation } from "./obsidian-config.mjs";
+import { isolatedObsidianEnv } from "./obsidian-config.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "..", "..");
@@ -25,9 +25,7 @@ test("opens the board and creates a ticket from the fixture vault", async () => 
 
 	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "tickets-obsidian-e2e-"));
 	const vaultPath = path.join(tempRoot, "vault");
-	const { env: obsidianEnv, configDir, restore } = await prepareObsidianConfigIsolation(
-		path.join(tempRoot, "obsidian-home"),
-	);
+	const { env: obsidianEnv, configDir } = isolatedObsidianEnv(path.join(tempRoot, "obsidian-home"));
 	await fs.cp(fixtureVault, vaultPath, { recursive: true });
 
 	let obsidianProcess;
@@ -131,7 +129,6 @@ test("opens the board and creates a ticket from the fixture vault", async () => 
 				}
 			}
 		}
-		await restore();
 		await fs.rm(tempRoot, { recursive: true, force: true });
 	}
 });

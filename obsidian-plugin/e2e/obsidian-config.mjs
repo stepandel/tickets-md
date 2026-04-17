@@ -30,10 +30,3 @@ export function isolatedObsidianEnv(tempRoot, { platform = process.platform, env
 		}
 	}
 }
-
-export async function prepareObsidianConfigIsolation(tempRoot, { platform = process.platform, env = process.env } = {}) {
-	return {
-		...isolatedObsidianEnv(tempRoot, { platform, env }),
-		restore: async () => {},
-	};
-}
