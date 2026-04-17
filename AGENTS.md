@@ -234,6 +234,11 @@ worse than none — it advertises capability that does not exist.
    without `watch` and catches drift (stale non-terminal runs,
    orphan agent dirs, orphan worktrees, frontmatter drift).
 
+`tickets watch pause` / `resume` gates step 2 (and the equivalent
+cron and rerun entry points) by toggling `.tickets/.watch-paused`;
+the monitor in step 4 still reconciles running sessions while the
+watcher is paused.
+
 ## When you break a rule
 
 If you had to reach across a layer boundary, modify a run YAML

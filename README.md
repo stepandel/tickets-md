@@ -289,6 +289,9 @@ setup steps.
 | `tickets doctor [--dry-run]`            | Scan for drift across tickets, runs, worktrees     |
 | `tickets board [--project P] [--archived]` | Interactive kanban board TUI (alias: `tui`)     |
 | `tickets watch`                         | Watch for ticket movements and spawn agents        |
+| `tickets watch pause [reason]`          | Pause watcher-managed agent spawns (including crons) |
+| `tickets watch resume`                  | Resume watcher-managed agent spawns                |
+| `tickets watch status`                  | Show whether the watcher is paused                 |
 | `tickets agents [-a] [--history]`       | List agent runs                                    |
 | `tickets agents log <id> [run]`         | Print the captured output for a run                |
 | `tickets agents plan <id> [run]`        | Open the plan file written by a Claude Code run    |
@@ -509,6 +512,23 @@ also picked up without a restart — the watcher reloads the affected
 stage config on the next debounce and logs the new status. If the
 reloaded file fails to parse, the previous config is kept so the
 watcher stays running.
+
+### Pausing the watcher
+
+Use `tickets watch pause` to temporarily stop the watcher from
+spawning new agents when tickets arrive in a stage, when a stage
+rerun is requested, or when a board-level cron fires. Already-running
+sessions keep running; only new spawns are gated.
+
+```sh
+tickets watch pause "release freeze"   # optional reason is recorded
+tickets watch status                   # "watch is paused since …"
+tickets watch resume                   # clears the pause
+```
+
+Pause state is tracked in `.tickets/.watch-paused`, so it survives
+restarts and is picked up immediately by any `tickets watch` process
+without reconfiguration.
 
 ### Monitoring agents
 
