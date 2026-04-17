@@ -35,6 +35,7 @@ func waitForRunStatus(t *testing.T, root, ticketID string, want agent.Status) ag
 	for time.Now().Before(deadline) {
 		as, err := agent.Latest(root, ticketID)
 		if err == nil && as.Status == want {
+			syncAgentFrontmatter(root, ticketID)
 			return as
 		}
 		time.Sleep(20 * time.Millisecond)

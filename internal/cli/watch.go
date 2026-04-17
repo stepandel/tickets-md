@@ -892,6 +892,13 @@ func waitForSession(t ticket.Ticket, runID, agentName, sessionName, root string,
 		statusErr = fmt.Sprintf("agent exited with code %d", *exitCode)
 	}
 
+	if exitCode != nil && *exitCode == -1 {
+		if _, ok := waitForConcurrentTerminalStatus(root, t.ID, runID, 200*time.Millisecond); ok {
+			syncAgentFrontmatter(root, t.ID)
+			return
+		}
+	}
+
 	// Update run file — skip if handleRemove already set a terminal
 	// state (resolves the race where both paths try to update after
 	// the session closes).
@@ -908,6 +915,20 @@ func waitForSession(t ticket.Ticket, runID, agentName, sessionName, root string,
 	// Rewrite frontmatter from the (now-final) run YAML. The YAML is the
 	// source of truth; syncAgentFrontmatter projects it onto the md.
 	syncAgentFrontmatter(root, t.ID)
+}
+
+func waitForConcurrentTerminalStatus(root, ticketID, runID string, timeout time.Duration) (agent.AgentStatus, bool) {
+	deadline := time.Now().Add(timeout)
+	for {
+		as, err := agent.ReadRun(root, ticketID, runID)
+		if err == nil && as.Status.IsTerminal() {
+			return as, true
+		}
+		if time.Now().After(deadline) {
+			return agent.AgentStatus{}, false
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 // backfillPlanFiles walks every recorded run and, for runs that have

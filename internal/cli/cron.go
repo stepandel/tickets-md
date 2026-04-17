@@ -323,6 +323,13 @@ func waitForCronSession(name, runID, agentName, sessionName, root string, mon *a
 		statusErr = fmt.Sprintf("agent exited with code %d", *exitCode)
 	}
 
+	if exitCode != nil && *exitCode == -1 {
+		if _, ok := waitForConcurrentTerminalStatus(root, ownerID, runID, 200*time.Millisecond); ok {
+			log.Printf("cron %s/%s: agent %s finished (session %s closed)", name, runID, agentName, sessionName)
+			return
+		}
+	}
+
 	if as, err := agent.ReadRun(root, ownerID, runID); err == nil && !as.Status.IsTerminal() {
 		as.Status = finalStatus
 		as.ExitCode = exitCode
