@@ -219,9 +219,11 @@ worse than none — it advertises capability that does not exist.
    `agent.NextRun` to pick the next `<seq>-<stage>` run id.
 3. A `StatusSpawned` run YAML is written, then the PTY session is
    started (optionally inside a per-ticket worktree).
-4. The monitor (`internal/agent/monitor.go`) polls every 5s,
-   promoting `spawned → running`, demoting long-idle `running →
-   blocked`, and marking disappeared sessions `failed`.
+4. The monitor (`internal/agent/monitor.go`) polls every 5s by
+   default (override with `watch.poll_interval`), promoting `spawned
+   → running`, demoting `running → blocked` once a session has been
+   idle for ≥30s by default (override with `watch.idle_block_after`),
+   and marking disappeared sessions `failed`.
 5. On session exit, the `waitForSession` goroutine writes the
    terminal status and `syncAgentFrontmatter` projects it onto the
    ticket file.

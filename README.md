@@ -473,6 +473,19 @@ Multiple agents can run concurrently for different tickets. The
 watcher also picks up manual file moves (`mv`, Finder, git) — it
 watches the filesystem directly, not just the `tickets move` command.
 
+The watcher's monitor polls every 5s by default and flips a session
+to `blocked` after 30s of pane silence. Both thresholds are
+configurable in `.tickets/config.yml`:
+
+```yaml
+watch:
+  poll_interval: 10s      # how often the monitor reconciles state
+  idle_block_after: 60s   # pane silence before a run flips to blocked
+```
+
+Durations use Go's `time.ParseDuration` syntax (`500ms`, `2s`,
+`1m`, …). `idle_block_after` must be ≥ `1s`.
+
 ### Monitoring agents
 
 List currently active agent runs:
