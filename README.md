@@ -649,13 +649,14 @@ priorities:
     order: 1
 ```
 
-`order` is optional and only affects the CLI board's `p` priority
-picker. When `priorities:` is omitted, that picker keeps the built-in
+`order` is optional and affects the priority pickers in both the CLI
+board (`p`) and the Obsidian board (right-click → "Set priority").
+When `priorities:` is omitted, those pickers keep the built-in
 `critical`, `high`, `medium`, `low`, `none` order. When `priorities:`
 is present, ordered entries come first by ascending `order`, unordered
 entries follow sorted case-insensitively by name, and `none` is still
 appended last. `priorities: {}` is an explicit opt-out that leaves the
-picker with only `none`.
+pickers with only `none`.
 
 Omit `priorities:` to keep the current default styling and picker
 ordering.

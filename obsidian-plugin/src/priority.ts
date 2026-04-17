@@ -1,6 +1,7 @@
 export interface PriorityConfig {
 	color: string;
 	bold?: boolean;
+	order?: number;
 }
 
 export interface PriorityBadgeStyle {
@@ -52,6 +53,43 @@ export function priorityBadgeStyle(
 		color: idealTextColor(backgroundColor),
 		fontWeight: priority?.bold ? "700" : "600",
 	};
+}
+
+export function orderedPriorityNames(
+	priorities: Record<string, PriorityConfig> | undefined,
+): string[] {
+	if (priorities == null) {
+		return ["critical", "high", "medium", "low"];
+	}
+
+	type Entry = {
+		name: string;
+		normalized: string;
+		order?: number;
+	};
+
+	const entries: Entry[] = Object.entries(priorities).map(([name, priority]) => ({
+		name,
+		normalized: normalizePriorityName(name),
+		order: priority.order,
+	}));
+
+	entries.sort((left, right) => {
+		switch (true) {
+			case left.order !== undefined && right.order !== undefined:
+				if (left.order !== right.order) {
+					return left.order - right.order;
+				}
+				break;
+			case left.order !== undefined:
+				return -1;
+			case right.order !== undefined:
+				return 1;
+		}
+		return left.normalized.localeCompare(right.normalized);
+	});
+
+	return entries.map((entry) => entry.name);
 }
 
 function idealTextColor(backgroundColor: string): string {

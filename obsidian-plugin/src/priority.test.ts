@@ -1,7 +1,12 @@
 import * as assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { lookupPriority, normalizePriorityName, priorityBadgeStyle } from "./priority";
+import {
+	lookupPriority,
+	normalizePriorityName,
+	orderedPriorityNames,
+	priorityBadgeStyle,
+} from "./priority";
 
 test("lookupPriority returns the built-in critical priority", () => {
 	assert.deepEqual(lookupPriority(undefined, "critical"), {
@@ -54,5 +59,64 @@ test("priorityBadgeStyle preserves bold and non-bold weights", () => {
 	assert.equal(
 		priorityBadgeStyle({ minor: { color: "#EFEFEF" } }, "minor").fontWeight,
 		"600",
+	);
+});
+
+test("orderedPriorityNames uses built-in defaults when priorities are absent", () => {
+	assert.deepEqual(orderedPriorityNames(undefined), ["critical", "high", "medium", "low"]);
+});
+
+test("orderedPriorityNames treats a null priorities map like unset", () => {
+	assert.deepEqual(
+		orderedPriorityNames(null as unknown as undefined),
+		["critical", "high", "medium", "low"],
+	);
+});
+
+test("orderedPriorityNames keeps an empty configured map empty", () => {
+	assert.deepEqual(orderedPriorityNames({}), []);
+});
+
+test("orderedPriorityNames treats order zero as explicit", () => {
+	assert.deepEqual(
+		orderedPriorityNames({
+			P2: { color: "#222222" },
+			P0: { color: "#000000", order: 0 },
+		}),
+		["P0", "P2"],
+	);
+});
+
+test("orderedPriorityNames sorts negative orders before larger values", () => {
+	assert.deepEqual(
+		orderedPriorityNames({
+			later: { color: "#333333", order: 5 },
+			first: { color: "#111111", order: -10 },
+			middle: { color: "#222222", order: 0 },
+		}),
+		["first", "middle", "later"],
+	);
+});
+
+test("orderedPriorityNames sorts ordered entries before unordered ones", () => {
+	assert.deepEqual(
+		orderedPriorityNames({
+			Medium: { color: "#333333", order: 10 },
+			P0: { color: "#111111", order: 0 },
+			"z-last": { color: "#999999" },
+			"A first": { color: "#aaaaaa" },
+		}),
+		["P0", "Medium", "A first", "z-last"],
+	);
+});
+
+test("orderedPriorityNames sorts unordered entries by normalized name", () => {
+	assert.deepEqual(
+		orderedPriorityNames({
+			" zeta ": { color: "#111111" },
+			Alpha: { color: "#222222" },
+			beta: { color: "#333333" },
+		}),
+		["Alpha", "beta", " zeta "],
 	);
 });

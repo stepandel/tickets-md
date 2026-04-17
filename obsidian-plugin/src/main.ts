@@ -21,7 +21,7 @@ import { html as diff2html } from "diff2html";
 import { readBoardViewState } from "./board-view-state";
 import { planDiffCommand, resolveDefaultBranch } from "./diff";
 import { formatForceRerunDescription } from "./force-rerun";
-import { PriorityConfig, priorityBadgeStyle } from "./priority";
+import { orderedPriorityNames, PriorityConfig, priorityBadgeStyle } from "./priority";
 import { visibleStages } from "./visible-stages";
 import {
 	ACTIVE_AGENT_STATUSES,
@@ -1191,7 +1191,7 @@ class BoardView extends ItemView {
 		menu.addSeparator();
 		menu.addItem((item) =>
 			item.setTitle("Set priority").setIcon("alert-triangle").onClick(() => {
-				const options = ["critical", "high", "medium", "low", "none"];
+				const options = [...orderedPriorityNames(this.config?.priorities), "none"];
 				new FuzzyPickerModal<string>(
 					this.app,
 					options,
