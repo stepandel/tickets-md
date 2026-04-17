@@ -18,17 +18,16 @@ const obsidianBin = process.env.OBSIDIAN_BIN;
 async function registerVault(vaultPath, configDir) {
 	await fs.mkdir(configDir, { recursive: true });
 	const configPath = path.join(configDir, "obsidian.json");
-	let existing = { vaults: {} };
+	let existing = { vaults: {}, cli: true };
 	try {
 		existing = JSON.parse(await fs.readFile(configPath, "utf8"));
-		if (typeof existing !== "object" || existing === null) existing = { vaults: {} };
+		if (typeof existing !== "object" || existing === null) existing = { vaults: {}, cli: true };
 		if (typeof existing.vaults !== "object" || existing.vaults === null) existing.vaults = {};
-		// Unset any other vaults' `open` flag so ours is the one that boots.
 		for (const entry of Object.values(existing.vaults)) {
 			if (entry && typeof entry === "object") delete entry.open;
 		}
 	} catch {
-		existing = { vaults: {} };
+		existing = { vaults: {}, cli: true };
 	}
 	const vaultId = randomBytes(8).toString("hex");
 	existing.vaults[vaultId] = {
@@ -36,6 +35,7 @@ async function registerVault(vaultPath, configDir) {
 		ts: Date.now(),
 		open: true,
 	};
+	existing.cli = true;
 	await fs.writeFile(configPath, JSON.stringify(existing, null, 2));
 }
 
@@ -52,10 +52,15 @@ async function pickFreePort() {
 	});
 }
 
-async function waitForCdpEndpoint(endpoint, timeoutMs) {
+async function waitForCdpEndpoint(endpoint, timeoutMs, obsidianProcess, processOutput) {
 	const deadline = Date.now() + timeoutMs;
 	let lastError;
 	while (Date.now() < deadline) {
+		if (obsidianProcess?.exitCode !== null && obsidianProcess?.exitCode !== undefined) {
+			const output = processOutput.join("").trim();
+			const details = output ? `\n\nObsidian output:\n${output}` : "";
+			throw new Error(`Obsidian exited with code ${obsidianProcess.exitCode} before CDP was ready.${details}`);
+		}
 		try {
 			const res = await fetch(`${endpoint}/json/version`);
 			if (res.ok) return;
@@ -65,7 +70,31 @@ async function waitForCdpEndpoint(endpoint, timeoutMs) {
 		}
 		await new Promise((r) => setTimeout(r, 500));
 	}
-	throw new Error(`Obsidian CDP endpoint ${endpoint} not reachable within ${timeoutMs}ms: ${lastError?.message ?? "unknown error"}`);
+	const output = processOutput.join("").trim();
+	const details = output ? `\n\nObsidian output:\n${output}` : "";
+	throw new Error(
+		`Obsidian CDP endpoint ${endpoint} not reachable within ${timeoutMs}ms: ${lastError?.message ?? "unknown error"}${details}`,
+	);
+}
+
+async function terminateProcess(processHandle) {
+	if (!processHandle || processHandle.exitCode !== null) {
+		return;
+	}
+	processHandle.kill("SIGTERM");
+	const exited = await new Promise((resolve) => {
+		const timer = setTimeout(() => resolve(false), 3_000);
+		processHandle.once("exit", () => {
+			clearTimeout(timer);
+			resolve(true);
+		});
+	});
+	if (!exited) {
+		try {
+			processHandle.kill("SIGKILL");
+		} catch {
+		}
+	}
 }
 
 export async function dismissTrustDialogIfPresent(page) {
@@ -87,6 +116,7 @@ export async function launchObsidianWithVault({ fixtureVault }) {
 	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "tickets-obsidian-e2e-"));
 	const vaultPath = path.join(tempRoot, "vault");
 	const { env: obsidianEnv, configDir } = isolatedObsidianEnv(path.join(tempRoot, "obsidian-home"));
+	const processOutput = [];
 	await fs.cp(fixtureVault, vaultPath, { recursive: true });
 
 	let obsidianProcess;
@@ -128,9 +158,15 @@ export async function launchObsidianWithVault({ fixtureVault }) {
 			// workflow needs.
 			env: obsidianEnv,
 		});
+		obsidianProcess.stdout?.on("data", (chunk) => {
+			processOutput.push(chunk.toString());
+		});
+		obsidianProcess.stderr?.on("data", (chunk) => {
+			processOutput.push(chunk.toString());
+		});
 
 		const cdpEndpoint = `http://127.0.0.1:${debugPort}`;
-		await waitForCdpEndpoint(cdpEndpoint, 120_000);
+		await waitForCdpEndpoint(cdpEndpoint, 120_000, obsidianProcess, processOutput);
 
 		browser = await chromium.connectOverCDP(cdpEndpoint);
 		const context = browser.contexts()[0] ?? (await browser.newContext());
@@ -152,23 +188,7 @@ export async function launchObsidianWithVault({ fixtureVault }) {
 						// Browser disconnect races with Obsidian tearing down; swallow.
 					}
 				}
-				if (obsidianProcess && obsidianProcess.exitCode === null) {
-					obsidianProcess.kill("SIGTERM");
-					const exited = await new Promise((resolve) => {
-						const timer = setTimeout(() => resolve(false), 3_000);
-						obsidianProcess.once("exit", () => {
-							clearTimeout(timer);
-							resolve(true);
-						});
-					});
-					if (!exited) {
-						try {
-							obsidianProcess.kill("SIGKILL");
-						} catch {
-							// Already gone.
-						}
-					}
-				}
+				await terminateProcess(obsidianProcess);
 				await fs.rm(tempRoot, { recursive: true, force: true });
 			},
 		};
@@ -180,23 +200,7 @@ export async function launchObsidianWithVault({ fixtureVault }) {
 				// Browser disconnect races with Obsidian tearing down; swallow.
 			}
 		}
-		if (obsidianProcess && obsidianProcess.exitCode === null) {
-			obsidianProcess.kill("SIGTERM");
-			const exited = await new Promise((resolve) => {
-				const timer = setTimeout(() => resolve(false), 3_000);
-				obsidianProcess.once("exit", () => {
-					clearTimeout(timer);
-					resolve(true);
-				});
-			});
-			if (!exited) {
-				try {
-					obsidianProcess.kill("SIGKILL");
-				} catch {
-					// Already gone.
-				}
-			}
-		}
+		await terminateProcess(obsidianProcess);
 		await fs.rm(tempRoot, { recursive: true, force: true });
 		throw err;
 	}
