@@ -77,6 +77,25 @@ async function waitForCdpEndpoint(endpoint, timeoutMs, obsidianProcess, processO
 	);
 }
 
+async function waitForObsidianPage(browser, timeoutMs) {
+	const deadline = Date.now() + timeoutMs;
+	while (Date.now() < deadline) {
+		for (const context of browser.contexts()) {
+			for (const page of context.pages()) {
+				try {
+					const isObsidianPage = await page.evaluate(() => Boolean(window.app?.workspace));
+					if (isObsidianPage) {
+						return { context, page };
+					}
+				} catch {
+				}
+			}
+		}
+		await new Promise((r) => setTimeout(r, 500));
+	}
+	throw new Error(`Timed out after ${timeoutMs}ms waiting for an Obsidian renderer page`);
+}
+
 async function terminateProcess(processHandle) {
 	if (!processHandle || processHandle.exitCode !== null) {
 		return;
@@ -169,9 +188,7 @@ export async function launchObsidianWithVault({ fixtureVault }) {
 		await waitForCdpEndpoint(cdpEndpoint, 120_000, obsidianProcess, processOutput);
 
 		browser = await chromium.connectOverCDP(cdpEndpoint);
-		const context = browser.contexts()[0] ?? (await browser.newContext());
-		const page = context.pages()[0] ?? (await context.waitForEvent("page", { timeout: 60_000 }));
-		await page.waitForLoadState("domcontentloaded");
+		const { context, page } = await waitForObsidianPage(browser, 120_000);
 
 		return {
 			page,
