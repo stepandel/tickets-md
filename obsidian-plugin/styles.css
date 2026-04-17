@@ -212,26 +212,6 @@
 	letter-spacing: 0.03em;
 }
 
-.tb-priority-critical {
-	background: var(--color-red);
-	color: #fff;
-}
-
-.tb-priority-high {
-	background: var(--text-error);
-	color: #fff;
-}
-
-.tb-priority-medium {
-	background: var(--color-orange);
-	color: #fff;
-}
-
-.tb-priority-low {
-	background: var(--background-modifier-border);
-	color: var(--text-muted);
-}
-
 /* Title */
 .tb-card-title {
 	font-size: 0.85em;
