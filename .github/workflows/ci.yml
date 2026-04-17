@@ -171,14 +171,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y xvfb libnss3 libatk-bridge2.0-0 libgtk-3-0 libgbm1 libasound2t64
 
-      - name: Prepare Obsidian config dir (Linux)
-        if: runner.os == 'Linux'
-        run: mkdir -p "$HOME/.config/obsidian"
-
-      - name: Prepare Obsidian config dir (macOS)
-        if: runner.os == 'macOS'
-        run: mkdir -p "$HOME/Library/Application Support/obsidian"
-
       - name: QA plugin smoke test (Linux)
         if: runner.os == 'Linux'
         env:
