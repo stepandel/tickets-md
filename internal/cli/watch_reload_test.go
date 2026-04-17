@@ -2,6 +2,7 @@ package cli
 
 import (
 	"errors"
+	"os"
 	"testing"
 	"time"
 
@@ -67,28 +68,22 @@ func TestReloadWatchConfigInvalidConfigPreservesMonitorTiming(t *testing.T) {
 		ProjectPrefix: "PRJ",
 		Stages:        []string{"backlog", "execute", "done"},
 	})
-	s.Config.Watch = &config.WatchConfig{
-		PollInterval:   &config.Duration{Duration: 5 * time.Second},
-		IdleBlockAfter: &config.Duration{Duration: 30 * time.Second},
-	}
 	mon := agent.NewMonitor(s.Root, 5*time.Second, 30*time.Second, func(string) bool { return false }, func(string) int { return -1 })
 
-	if err := config.Save(s.Root, config.Config{
-		Prefix:        "TIC",
-		ProjectPrefix: "PRJ",
-		Stages:        []string{"backlog", "execute", "done"},
-		Watch: &config.WatchConfig{
-			PollInterval:   &config.Duration{Duration: 0},
-			IdleBlockAfter: &config.Duration{Duration: 45 * time.Second},
-		},
-	}); err == nil {
-		t.Fatal("Save succeeded, want validation error")
+	// Bypass Save's Validate to put an invalid config on disk, so we
+	// actually exercise reloadWatchConfig's Load-failure branch.
+	invalid := []byte("prefix: TIC\nproject_prefix: PRJ\nstages: [backlog, execute, done]\nwatch:\n  poll_interval: notaduration\n")
+	if err := os.WriteFile(config.Path(s.Root), invalid, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
 	}
 
 	pollBefore, idleBefore := mon.Timing()
-	_, changed, err := reloadWatchConfig(s.Root, &s.Config, mon, func(cfg config.Config) error { return nil })
-	if err != nil {
-		t.Fatalf("reloadWatchConfig: %v", err)
+	_, changed, err := reloadWatchConfig(s.Root, &s.Config, mon, func(cfg config.Config) error {
+		t.Fatal("reloadCron should not run when config.Load fails")
+		return nil
+	})
+	if err == nil {
+		t.Fatal("reloadWatchConfig err = nil, want Load error")
 	}
 	if changed {
 		t.Fatal("changed = true, want false")
