@@ -224,7 +224,9 @@ worse than none — it advertises capability that does not exist.
    default (override with `watch.poll_interval`), promoting `spawned
    → running`, demoting `running → blocked` once a session has been
    idle for ≥30s by default (override with `watch.idle_block_after`),
-   and marking disappeared sessions `failed`.
+   and marking disappeared sessions `failed`. If
+   `watch.idle_kill_after` is set, the monitor SIGTERMs the PTY once
+   idle output exceeds that threshold and marks the run `failed`.
 5. On session exit, the `waitForSession` goroutine writes the
    terminal status and `syncAgentFrontmatter` projects it onto the
    ticket file.
