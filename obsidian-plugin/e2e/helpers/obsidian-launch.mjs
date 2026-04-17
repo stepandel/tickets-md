@@ -63,7 +63,9 @@ async function waitForCdpEndpoint(endpoint, timeoutMs, obsidianProcess, processO
 		}
 		try {
 			const res = await fetch(`${endpoint}/json/version`);
-			if (res.ok) return;
+			if (res.ok) {
+				return await res.json();
+			}
 			lastError = new Error(`HTTP ${res.status}`);
 		} catch (err) {
 			lastError = err;
@@ -75,6 +77,20 @@ async function waitForCdpEndpoint(endpoint, timeoutMs, obsidianProcess, processO
 	throw new Error(
 		`Obsidian CDP endpoint ${endpoint} not reachable within ${timeoutMs}ms: ${lastError?.message ?? "unknown error"}${details}`,
 	);
+}
+
+async function connectOverCdp(wsEndpoint, timeoutMs) {
+	let timer;
+	try {
+		return await Promise.race([
+			chromium.connectOverCDP(wsEndpoint),
+			new Promise((_, reject) => {
+				timer = setTimeout(() => reject(new Error(`Timed out after ${timeoutMs}ms connecting over CDP`)), timeoutMs);
+			}),
+		]);
+	} finally {
+		clearTimeout(timer);
+	}
 }
 
 async function waitForObsidianPage(browser, timeoutMs) {
@@ -185,9 +201,10 @@ export async function launchObsidianWithVault({ fixtureVault }) {
 		});
 
 		const cdpEndpoint = `http://127.0.0.1:${debugPort}`;
-		await waitForCdpEndpoint(cdpEndpoint, 120_000, obsidianProcess, processOutput);
+		const versionInfo = await waitForCdpEndpoint(cdpEndpoint, 120_000, obsidianProcess, processOutput);
+		const wsEndpoint = versionInfo?.webSocketDebuggerUrl || cdpEndpoint;
 
-		browser = await chromium.connectOverCDP(cdpEndpoint);
+		browser = await connectOverCdp(wsEndpoint, 30_000);
 		const { context, page } = await waitForObsidianPage(browser, 120_000);
 
 		return {
