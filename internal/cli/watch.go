@@ -334,7 +334,7 @@ func handleCreate(s *ticket.Store, stageConfigs map[string]stage.Config, path st
 
 	// Run cleanup actions (worktree/branch removal) inline — no agent needed.
 	if sc.HasCleanup() {
-		runCleanup(ticketID, sc.Cleanup, s.Root)
+		runCleanup(ticketID, sc.Cleanup, s.Root, worktreeLayout(s.Config))
 	}
 
 	if !sc.HasAgent() {
@@ -350,25 +350,25 @@ func handleCreate(s *ticket.Store, stageConfigs map[string]stage.Config, path st
 		return
 	}
 
-	if _, err := spawnAgent(t, sc, s.Root, mon, runner, 0, 0); err != nil {
+	if _, err := spawnAgent(t, sc, s.Root, worktreeLayout(s.Config), mon, runner, 0, 0); err != nil {
 		log.Printf("%s → %s: spawn failed: %v", t.ID, t.Stage, err)
 	}
 }
 
 // runCleanup performs inline worktree and branch cleanup for a ticket.
-func runCleanup(ticketID string, cfg *stage.CleanupConfig, root string) {
+func runCleanup(ticketID string, cfg *stage.CleanupConfig, root string, layout worktree.Layout) {
 	if cfg.Worktree {
-		if err := worktree.Remove(root, ticketID); err != nil {
+		if err := worktree.Remove(root, layout, ticketID); err != nil {
 			log.Printf("%s: cleanup: worktree remove failed: %v", ticketID, err)
 		} else {
 			log.Printf("%s: cleanup: removed worktree", ticketID)
 		}
 	}
 	if cfg.Branch {
-		if err := worktree.DeleteBranch(root, ticketID); err != nil {
+		if err := worktree.DeleteBranch(root, layout, ticketID); err != nil {
 			log.Printf("%s: cleanup: branch delete failed: %v", ticketID, err)
 		} else {
-			log.Printf("%s: cleanup: deleted branch %s%s", ticketID, worktree.BranchPrefix, ticketID)
+			log.Printf("%s: cleanup: deleted branch %s", ticketID, layout.Branch(ticketID))
 		}
 	}
 }
@@ -467,12 +467,12 @@ func rerunStageAgent(ticketID string, force bool, s *ticket.Store, stageConfigs 
 			}
 		}
 	}
-	return spawnAgent(t, sc, s.Root, mon, runner, rows, cols)
+	return spawnAgent(t, sc, s.Root, worktreeLayout(s.Config), mon, runner, rows, cols)
 }
 
 // --- agent spawner ---
 
-func spawnAgent(t ticket.Ticket, sc stage.Config, root string, mon *agent.Monitor, runner *agent.PTYRunner, rows, cols uint16) (string, error) {
+func spawnAgent(t ticket.Ticket, sc stage.Config, root string, layout worktree.Layout, mon *agent.Monitor, runner *agent.PTYRunner, rows, cols uint16) (string, error) {
 	ac := sc.Agent
 
 	runID, seq, attempt, err := agent.NextRun(root, t.ID, t.Stage)
@@ -492,13 +492,13 @@ func spawnAgent(t ticket.Ticket, sc stage.Config, root string, mon *agent.Monito
 	var wtPath string
 	if ac.Worktree {
 		var err error
-		wtPath, err = worktree.Create(root, t.ID, ac.BaseBranch)
+		wtPath, err = worktree.Create(root, layout, t.ID, ac.BaseBranch)
 		if err != nil {
 			log.Printf("%s: failed to create worktree: %v", t.ID, err)
 			return "", fmt.Errorf("creating worktree: %w", err)
 		}
-		worktree.EnsureGitignored(root)
-		log.Printf("%s: created worktree at %s (branch %s)", t.ID, wtPath, worktree.BranchPrefix+t.ID)
+		worktree.EnsureGitignored(root, layout)
+		log.Printf("%s: created worktree at %s (branch %s)", t.ID, wtPath, layout.Branch(t.ID))
 	}
 
 	argv := buildAgentArgs(t, ac, wtPath)
@@ -571,7 +571,7 @@ func spawnAgent(t ticket.Ticket, sc stage.Config, root string, mon *agent.Monito
 
 	wtInfo := ""
 	if wtPath != "" {
-		wtInfo = fmt.Sprintf(" [worktree: %s]", worktree.BranchPrefix+t.ID)
+		wtInfo = fmt.Sprintf(" [worktree: %s]", layout.Branch(t.ID))
 	}
 	attemptInfo := ""
 	if attempt > 1 {

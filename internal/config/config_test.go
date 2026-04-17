@@ -49,7 +49,7 @@ func TestLoad_InvalidConfig(t *testing.T) {
 
 func TestLoad_Success(t *testing.T) {
 	root := t.TempDir()
-	writeConfig(t, root, "name: Board\nprefix: BUG\nproject_prefix: PRJ\nstages:\n  - triage\n  - doing\nwatch:\n  poll_interval: 7s\n  idle_block_after: 45s\ndefault_agent:\n  command: claude\n  args:\n    - --json\ncron_agents:\n  - name: groomer\n    schedule: \"@every 5m\"\n    command: codex\n    prompt: \"tidy\"\n")
+	writeConfig(t, root, "name: Board\nprefix: BUG\nproject_prefix: PRJ\nstages:\n  - triage\n  - doing\nwatch:\n  poll_interval: 7s\n  idle_block_after: 45s\nworktrees:\n  dir: .trees\n  branch_prefix: agent/\ndefault_agent:\n  command: claude\n  args:\n    - --json\ncron_agents:\n  - name: groomer\n    schedule: \"@every 5m\"\n    command: codex\n    prompt: \"tidy\"\n")
 
 	got, err := Load(root)
 	if err != nil {
@@ -73,6 +73,9 @@ func TestLoad_Success(t *testing.T) {
 	if got.Watch.IdleBlockAfter == nil || got.Watch.IdleBlockAfter.Duration != 45*time.Second {
 		t.Fatalf("unexpected watch.idle_block_after: %#v", got.Watch)
 	}
+	if got.WorktreeDir() != ".trees" || got.WorktreeBranchPrefix() != "agent/" {
+		t.Fatalf("unexpected worktrees config: %#v", got.Worktrees)
+	}
 	if got.DefaultAgent == nil || got.DefaultAgent.Command != "claude" || len(got.DefaultAgent.Args) != 1 || got.DefaultAgent.Args[0] != "--json" {
 		t.Fatalf("unexpected default agent: %#v", got.DefaultAgent)
 	}
@@ -92,6 +95,12 @@ func TestLoad_BackfillsMissingProjectPrefix(t *testing.T) {
 	if got.ProjectPrefix != "PRJ" {
 		t.Fatalf("ProjectPrefix = %q, want PRJ (backfilled)", got.ProjectPrefix)
 	}
+	if got.WorktreeDir() != ".worktrees" {
+		t.Fatalf("WorktreeDir() = %q, want .worktrees", got.WorktreeDir())
+	}
+	if got.WorktreeBranchPrefix() != "tickets/" {
+		t.Fatalf("WorktreeBranchPrefix() = %q, want tickets/", got.WorktreeBranchPrefix())
+	}
 }
 
 func TestSaveThenLoad(t *testing.T) {
@@ -105,11 +114,38 @@ func TestSaveThenLoad(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("Load() = %#v, want %#v", got, want)
+	if got.Prefix != want.Prefix || got.ProjectPrefix != want.ProjectPrefix || !reflect.DeepEqual(got.Stages, want.Stages) {
+		t.Fatalf("Load() = %#v, want defaults %#v", got, want)
+	}
+	if got.WorktreeDir() != ".worktrees" || got.WorktreeBranchPrefix() != "tickets/" {
+		t.Fatalf("resolved worktree defaults = (%q, %q)", got.WorktreeDir(), got.WorktreeBranchPrefix())
 	}
 	if _, err := os.Stat(Path(root)); err != nil {
 		t.Fatalf("Stat(%q): %v", Path(root), err)
+	}
+}
+
+func TestSaveLoadWorktreesConfig(t *testing.T) {
+	root := t.TempDir()
+	want := Config{
+		Prefix:        "TIC",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "done"},
+		Worktrees: &WorktreesConfig{
+			Dir:          ".trees",
+			BranchPrefix: "agent/",
+		},
+	}
+
+	if err := Save(root, want); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.WorktreeDir() != ".trees" || got.WorktreeBranchPrefix() != "agent/" {
+		t.Fatalf("resolved worktrees = (%q, %q)", got.WorktreeDir(), got.WorktreeBranchPrefix())
 	}
 }
 
@@ -364,6 +400,30 @@ func TestValidate(t *testing.T) {
 				" high ": {Color: "#0f0"},
 			},
 		}, wantErr: `duplicate priority`},
+		{name: "invalid worktree dir absolute", cfg: Config{
+			Prefix:        "TIC",
+			ProjectPrefix: "PRJ",
+			Stages:        []string{"backlog", "done"},
+			Worktrees:     &WorktreesConfig{Dir: "/tmp/worktrees"},
+		}, wantErr: `must be relative`},
+		{name: "invalid worktree dir escape", cfg: Config{
+			Prefix:        "TIC",
+			ProjectPrefix: "PRJ",
+			Stages:        []string{"backlog", "done"},
+			Worktrees:     &WorktreesConfig{Dir: "../worktrees"},
+		}, wantErr: `must not escape the repo root`},
+		{name: "invalid worktree branch prefix", cfg: Config{
+			Prefix:        "TIC",
+			ProjectPrefix: "PRJ",
+			Stages:        []string{"backlog", "done"},
+			Worktrees:     &WorktreesConfig{BranchPrefix: "agent"},
+		}, wantErr: `must end with /`},
+		{name: "invalid worktree branch whitespace", cfg: Config{
+			Prefix:        "TIC",
+			ProjectPrefix: "PRJ",
+			Stages:        []string{"backlog", "done"},
+			Worktrees:     &WorktreesConfig{BranchPrefix: "agent /"},
+		}, wantErr: `must not contain whitespace`},
 		{name: "duplicate cron agent", cfg: Config{
 			Prefix:        "TIC",
 			ProjectPrefix: "PRJ",
@@ -578,6 +638,12 @@ func TestConfig_Helpers(t *testing.T) {
 	if cfg.HasDefaultAgent() {
 		t.Fatal("HasDefaultAgent() = true, want false")
 	}
+	if cfg.WorktreeDir() != ".worktrees" {
+		t.Fatalf("WorktreeDir() = %q, want .worktrees", cfg.WorktreeDir())
+	}
+	if cfg.WorktreeBranchPrefix() != "tickets/" {
+		t.Fatalf("WorktreeBranchPrefix() = %q, want tickets/", cfg.WorktreeBranchPrefix())
+	}
 
 	cfg.DefaultAgent = &DefaultAgentConfig{Command: "claude"}
 	if !cfg.HasDefaultAgent() {
@@ -603,6 +669,11 @@ func TestConfig_Helpers(t *testing.T) {
 	}
 	if cfg.IsCompleteStage("prep") {
 		t.Fatal("IsCompleteStage(prep) = true, want false")
+	}
+
+	cfg.Worktrees = &WorktreesConfig{Dir: ".trees", BranchPrefix: "agent/"}
+	if cfg.WorktreeDir() != ".trees" || cfg.WorktreeBranchPrefix() != "agent/" {
+		t.Fatalf("custom worktree helpers = (%q, %q)", cfg.WorktreeDir(), cfg.WorktreeBranchPrefix())
 	}
 
 	cfg.ArchiveStage = "done"

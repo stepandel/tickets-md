@@ -61,13 +61,14 @@ func TestSpawnAgentStartFailureMarksRunErrored(t *testing.T) {
 	mon.OnStatusChange = func(ticketID string) {
 		syncAgentFrontmatter(s.Root, ticketID)
 	}
+	layout := worktreeLayout(s.Config)
 
 	_, err = spawnAgent(tk, stage.Config{
 		Agent: &stage.AgentConfig{
 			Command: "/definitely/missing/tickets-agent",
 			Prompt:  "ignored",
 		},
-	}, s.Root, mon, runner, 0, 0)
+	}, s.Root, layout, mon, runner, 0, 0)
 	if err == nil {
 		t.Fatal("spawnAgent succeeded, want error")
 	}
@@ -110,6 +111,7 @@ func TestSpawnAgentImmediateExitMarksRunFailed(t *testing.T) {
 	mon.OnStatusChange = func(ticketID string) {
 		syncAgentFrontmatter(s.Root, ticketID)
 	}
+	layout := worktreeLayout(s.Config)
 
 	session, err := spawnAgent(tk, stage.Config{
 		Agent: &stage.AgentConfig{
@@ -117,7 +119,7 @@ func TestSpawnAgentImmediateExitMarksRunFailed(t *testing.T) {
 			Args:    []string{"-c", "exit 127"},
 			Prompt:  "ignored",
 		},
-	}, s.Root, mon, runner, 0, 0)
+	}, s.Root, layout, mon, runner, 0, 0)
 	if err != nil {
 		t.Fatalf("spawnAgent: %v", err)
 	}
@@ -160,6 +162,7 @@ func TestSpawnAgentImmediateExitMarksRunDone(t *testing.T) {
 	mon.OnStatusChange = func(ticketID string) {
 		syncAgentFrontmatter(s.Root, ticketID)
 	}
+	layout := worktreeLayout(s.Config)
 
 	session, err := spawnAgent(tk, stage.Config{
 		Agent: &stage.AgentConfig{
@@ -167,7 +170,7 @@ func TestSpawnAgentImmediateExitMarksRunDone(t *testing.T) {
 			Args:    []string{"-c", "exit 0"},
 			Prompt:  "ignored",
 		},
-	}, s.Root, mon, runner, 0, 0)
+	}, s.Root, layout, mon, runner, 0, 0)
 	if err != nil {
 		t.Fatalf("spawnAgent: %v", err)
 	}
@@ -252,6 +255,7 @@ func TestRerunStageAgentRefusesActiveSessionWithoutForce(t *testing.T) {
 	mon.OnStatusChange = func(ticketID string) {
 		syncAgentFrontmatter(s.Root, ticketID)
 	}
+	layout := worktreeLayout(s.Config)
 
 	stageConfigs := map[string]stage.Config{
 		"execute": {
@@ -263,7 +267,7 @@ func TestRerunStageAgentRefusesActiveSessionWithoutForce(t *testing.T) {
 		},
 	}
 
-	session, err := spawnAgent(tk, stageConfigs["execute"], s.Root, mon, runner, 0, 0)
+	session, err := spawnAgent(tk, stageConfigs["execute"], s.Root, layout, mon, runner, 0, 0)
 	if err != nil {
 		t.Fatalf("spawnAgent: %v", err)
 	}
@@ -313,6 +317,7 @@ func TestRerunStageAgentForceReplacesActiveSession(t *testing.T) {
 	mon.OnStatusChange = func(ticketID string) {
 		syncAgentFrontmatter(s.Root, ticketID)
 	}
+	layout := worktreeLayout(s.Config)
 
 	stageConfigs := map[string]stage.Config{
 		"execute": {
@@ -324,7 +329,7 @@ func TestRerunStageAgentForceReplacesActiveSession(t *testing.T) {
 		},
 	}
 
-	firstSession, err := spawnAgent(tk, stageConfigs["execute"], s.Root, mon, runner, 0, 0)
+	firstSession, err := spawnAgent(tk, stageConfigs["execute"], s.Root, layout, mon, runner, 0, 0)
 	if err != nil {
 		t.Fatalf("spawnAgent: %v", err)
 	}

@@ -36,12 +36,13 @@ func newGitRepo(t *testing.T) string {
 
 func TestCreate_NewBranch(t *testing.T) {
 	root := newGitRepo(t)
+	layout := DefaultLayout()
 
-	got, err := Create(root, "TIC-001", "")
+	got, err := Create(root, layout, "TIC-001", "")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	want := filepath.Join(root, Dir, "TIC-001")
+	want := layout.WorktreePath(root, "TIC-001")
 	if got != want {
 		t.Fatalf("Create() = %q, want %q", got, want)
 	}
@@ -49,19 +50,20 @@ func TestCreate_NewBranch(t *testing.T) {
 	if err != nil || !info.IsDir() {
 		t.Fatalf("worktree dir missing: %v", err)
 	}
-	if out := runGit(t, root, "branch", "--list", BranchPrefix+"TIC-001"); out == "" {
+	if out := runGit(t, root, "branch", "--list", layout.Branch("TIC-001")); out == "" {
 		t.Fatal("expected worktree branch to exist")
 	}
 }
 
 func TestCreate_Idempotent(t *testing.T) {
 	root := newGitRepo(t)
+	layout := DefaultLayout()
 
-	first, err := Create(root, "TIC-001", "")
+	first, err := Create(root, layout, "TIC-001", "")
 	if err != nil {
 		t.Fatalf("Create first: %v", err)
 	}
-	second, err := Create(root, "TIC-001", "")
+	second, err := Create(root, layout, "TIC-001", "")
 	if err != nil {
 		t.Fatalf("Create second: %v", err)
 	}
@@ -72,9 +74,10 @@ func TestCreate_Idempotent(t *testing.T) {
 
 func TestCreate_BranchAlreadyExists(t *testing.T) {
 	root := newGitRepo(t)
-	runGit(t, root, "branch", BranchPrefix+"TIC-002")
+	layout := DefaultLayout()
+	runGit(t, root, "branch", layout.Branch("TIC-002"))
 
-	got, err := Create(root, "TIC-002", "")
+	got, err := Create(root, layout, "TIC-002", "")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -85,6 +88,7 @@ func TestCreate_BranchAlreadyExists(t *testing.T) {
 
 func TestCreate_BaseBranch(t *testing.T) {
 	root := newGitRepo(t)
+	layout := DefaultLayout()
 	runGit(t, root, "checkout", "-b", "feature")
 	if err := os.WriteFile(filepath.Join(root, "feature.txt"), []byte("feature\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -94,7 +98,7 @@ func TestCreate_BaseBranch(t *testing.T) {
 	featureCommit := runGit(t, root, "rev-parse", "feature")
 	runGit(t, root, "checkout", "main")
 
-	wtPath, err := Create(root, "TIC-003", "feature")
+	wtPath, err := Create(root, layout, "TIC-003", "feature")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -105,8 +109,9 @@ func TestCreate_BaseBranch(t *testing.T) {
 
 func TestList_Empty(t *testing.T) {
 	root := newGitRepo(t)
+	layout := DefaultLayout()
 
-	got, err := List(root)
+	got, err := List(root, layout)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -117,16 +122,17 @@ func TestList_Empty(t *testing.T) {
 
 func TestList_AfterCreate(t *testing.T) {
 	root := newGitRepo(t)
-	wt1, err := Create(root, "TIC-001", "")
+	layout := DefaultLayout()
+	wt1, err := Create(root, layout, "TIC-001", "")
 	if err != nil {
 		t.Fatalf("Create TIC-001: %v", err)
 	}
-	wt2, err := Create(root, "TIC-002", "")
+	wt2, err := Create(root, layout, "TIC-002", "")
 	if err != nil {
 		t.Fatalf("Create TIC-002: %v", err)
 	}
 
-	got, err := List(root)
+	got, err := List(root, layout)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -138,22 +144,23 @@ func TestList_AfterCreate(t *testing.T) {
 	for _, info := range got {
 		seen[info.Path] = info.Branch
 	}
-	if seen[wt1] != BranchPrefix+"TIC-001" {
+	if seen[wt1] != layout.Branch("TIC-001") {
 		t.Fatalf("branch for %q = %q", wt1, seen[wt1])
 	}
-	if seen[wt2] != BranchPrefix+"TIC-002" {
+	if seen[wt2] != layout.Branch("TIC-002") {
 		t.Fatalf("branch for %q = %q", wt2, seen[wt2])
 	}
 }
 
 func TestRemove(t *testing.T) {
 	root := newGitRepo(t)
-	wtPath, err := Create(root, "TIC-001", "")
+	layout := DefaultLayout()
+	wtPath, err := Create(root, layout, "TIC-001", "")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
-	if err := Remove(root, "TIC-001"); err != nil {
+	if err := Remove(root, layout, "TIC-001"); err != nil {
 		t.Fatalf("Remove: %v", err)
 	}
 	if _, err := os.Stat(wtPath); !os.IsNotExist(err) {
@@ -166,56 +173,103 @@ func TestRemove(t *testing.T) {
 
 func TestDeleteBranch_NoOpWhenMissing(t *testing.T) {
 	root := newGitRepo(t)
-	if err := DeleteBranch(root, "TIC-404"); err != nil {
+	if err := DeleteBranch(root, DefaultLayout(), "TIC-404"); err != nil {
 		t.Fatalf("DeleteBranch: %v", err)
 	}
 }
 
 func TestDeleteBranch_Success(t *testing.T) {
 	root := newGitRepo(t)
-	if _, err := Create(root, "TIC-001", ""); err != nil {
+	layout := DefaultLayout()
+	if _, err := Create(root, layout, "TIC-001", ""); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if err := Remove(root, "TIC-001"); err != nil {
+	if err := Remove(root, layout, "TIC-001"); err != nil {
 		t.Fatalf("Remove: %v", err)
 	}
-	if err := DeleteBranch(root, "TIC-001"); err != nil {
+	if err := DeleteBranch(root, layout, "TIC-001"); err != nil {
 		t.Fatalf("DeleteBranch: %v", err)
 	}
-	if out := runGit(t, root, "branch", "--list", BranchPrefix+"TIC-001"); out != "" {
+	if out := runGit(t, root, "branch", "--list", layout.Branch("TIC-001")); out != "" {
 		t.Fatalf("branch still exists: %q", out)
 	}
 }
 
 func TestEnsureGitignored(t *testing.T) {
 	root := newGitRepo(t)
+	layout := DefaultLayout()
 
-	if err := EnsureGitignored(root); err != nil {
+	if err := EnsureGitignored(root, layout); err != nil {
 		t.Fatalf("EnsureGitignored first: %v", err)
 	}
-	if err := EnsureGitignored(root); err != nil {
+	if err := EnsureGitignored(root, layout); err != nil {
 		t.Fatalf("EnsureGitignored second: %v", err)
 	}
 	data, err := os.ReadFile(filepath.Join(root, ".gitignore"))
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
-	if string(data) != ".worktrees\n" {
-		t.Fatalf("gitignore = %q, want %q", string(data), ".worktrees\n")
+	if string(data) != layout.Dir+"\n" {
+		t.Fatalf("gitignore = %q, want %q", string(data), layout.Dir+"\n")
 	}
 
 	root2 := newGitRepo(t)
 	if err := os.WriteFile(filepath.Join(root2, ".gitignore"), []byte("node_modules"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	if err := EnsureGitignored(root2); err != nil {
+	if err := EnsureGitignored(root2, layout); err != nil {
 		t.Fatalf("EnsureGitignored third: %v", err)
 	}
 	data, err = os.ReadFile(filepath.Join(root2, ".gitignore"))
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
-	if string(data) != "node_modules\n.worktrees\n" {
+	if string(data) != "node_modules\n"+layout.Dir+"\n" {
 		t.Fatalf("gitignore = %q, want newline-separated entry", string(data))
+	}
+}
+
+func TestCustomLayout(t *testing.T) {
+	root := newGitRepo(t)
+	layout := Layout{Dir: ".trees", BranchPrefix: "agent/"}
+
+	wtPath, err := Create(root, layout, "TIC-009", "")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if wtPath != filepath.Join(root, ".trees", "TIC-009") {
+		t.Fatalf("Create() = %q", wtPath)
+	}
+	if out := runGit(t, root, "branch", "--list", "agent/TIC-009"); out == "" {
+		t.Fatal("expected custom branch to exist")
+	}
+
+	infos, err := List(root, layout)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(infos) != 1 || infos[0].Path != wtPath || infos[0].Branch != "agent/TIC-009" {
+		t.Fatalf("List() = %#v", infos)
+	}
+
+	if err := EnsureGitignored(root, layout); err != nil {
+		t.Fatalf("EnsureGitignored: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, ".gitignore"))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(data) != ".trees\n" {
+		t.Fatalf("gitignore = %q, want %q", string(data), ".trees\n")
+	}
+
+	if err := Remove(root, layout, "TIC-009"); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	if err := DeleteBranch(root, layout, "TIC-009"); err != nil {
+		t.Fatalf("DeleteBranch: %v", err)
+	}
+	if out := runGit(t, root, "branch", "--list", "agent/TIC-009"); out != "" {
+		t.Fatalf("branch still exists: %q", out)
 	}
 }

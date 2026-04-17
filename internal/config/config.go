@@ -66,6 +66,11 @@ type WatchConfig struct {
 	IdleBlockAfter *Duration `yaml:"idle_block_after,omitempty"`
 }
 
+type WorktreesConfig struct {
+	Dir          string `yaml:"dir,omitempty"`
+	BranchPrefix string `yaml:"branch_prefix,omitempty"`
+}
+
 type CronAgentConfig struct {
 	Name       string   `yaml:"name"`
 	Schedule   string   `yaml:"schedule"`
@@ -111,6 +116,9 @@ type Config struct {
 	Cleanup *CleanupConfig `yaml:"cleanup,omitempty"`
 	// Watch configures the optional `tickets watch` monitor timing.
 	Watch *WatchConfig `yaml:"watch,omitempty"`
+	// Worktrees configures where per-ticket git worktrees live and how
+	// their branches are prefixed.
+	Worktrees *WorktreesConfig `yaml:"worktrees,omitempty"`
 	// CronAgents configures board-level agents fired by `tickets watch`
 	// on a schedule rather than by ticket filesystem events.
 	CronAgents []CronAgentConfig `yaml:"cron_agents,omitempty"`
@@ -171,6 +179,15 @@ func Load(root string) (Config, error) {
 	}
 	if c.ProjectPrefix == "" {
 		c.ProjectPrefix = "PRJ"
+	}
+	if c.Worktrees == nil {
+		c.Worktrees = &WorktreesConfig{}
+	}
+	if c.Worktrees.Dir == "" {
+		c.Worktrees.Dir = defaultWorktreeDir
+	}
+	if c.Worktrees.BranchPrefix == "" {
+		c.Worktrees.BranchPrefix = defaultWorktreeBranchPrefix
 	}
 	if err := c.Validate(); err != nil {
 		return Config{}, fmt.Errorf("invalid config %s: %w", p, err)
@@ -258,6 +275,12 @@ func (c Config) Validate() error {
 		return fmt.Errorf("unknown archive stage %q", c.ArchiveStage)
 	}
 	if err := validatePriorities(c.Priorities); err != nil {
+		return err
+	}
+	if err := validateWorktreeDir(c.WorktreeDir()); err != nil {
+		return err
+	}
+	if err := validateWorktreeBranchPrefix(c.WorktreeBranchPrefix()); err != nil {
 		return err
 	}
 	return ValidateCronAgents(c.CronAgents)
@@ -357,8 +380,27 @@ func cronParser() cron.Parser {
 	return cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
 }
 
+const (
+	defaultWorktreeDir          = ".worktrees"
+	defaultWorktreeBranchPrefix = "tickets/"
+)
+
 // DefaultStage returns the first stage, used when creating new tickets.
 func (c Config) DefaultStage() string { return c.Stages[0] }
+
+func (c Config) WorktreeDir() string {
+	if c.Worktrees == nil || c.Worktrees.Dir == "" {
+		return defaultWorktreeDir
+	}
+	return c.Worktrees.Dir
+}
+
+func (c Config) WorktreeBranchPrefix() string {
+	if c.Worktrees == nil || c.Worktrees.BranchPrefix == "" {
+		return defaultWorktreeBranchPrefix
+	}
+	return c.Worktrees.BranchPrefix
+}
 
 // HasStage reports whether name is one of the configured stages.
 func (c Config) HasStage(name string) bool {
@@ -406,4 +448,34 @@ func (c Config) LookupPriority(name string) (PriorityConfig, bool) {
 
 func normalizePriorityName(name string) string {
 	return strings.ToLower(strings.TrimSpace(name))
+}
+
+func validateWorktreeDir(dir string) error {
+	if strings.TrimSpace(dir) == "" {
+		return errors.New("worktrees.dir is empty")
+	}
+	if filepath.IsAbs(dir) {
+		return fmt.Errorf("worktrees.dir %q must be relative", dir)
+	}
+	clean := filepath.Clean(dir)
+	if clean == "." || clean == ".." {
+		return fmt.Errorf("worktrees.dir %q is not allowed", dir)
+	}
+	if strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("worktrees.dir %q must not escape the repo root", dir)
+	}
+	return nil
+}
+
+func validateWorktreeBranchPrefix(prefix string) error {
+	if strings.TrimSpace(prefix) == "" {
+		return errors.New("worktrees.branch_prefix is empty")
+	}
+	if strings.ContainsAny(prefix, " \t\r\n") {
+		return fmt.Errorf("worktrees.branch_prefix %q must not contain whitespace", prefix)
+	}
+	if !strings.HasSuffix(prefix, "/") {
+		return fmt.Errorf("worktrees.branch_prefix %q must end with /", prefix)
+	}
+	return nil
 }

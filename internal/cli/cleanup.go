@@ -76,8 +76,9 @@ to avoid racing a live agent spawn.`,
 func collectCleanupActions(s *ticket.Store, opts cleanupOptions) ([]cleanupAction, []string, error) {
 	var actions []cleanupAction
 	var warnings []string
+	layout := worktreeLayout(s.Config)
 
-	branchSet, err := ticketBranchSet(s.Root)
+	branchSet, err := ticketBranchSet(s.Root, layout)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -106,36 +107,36 @@ func collectCleanupActions(s *ticket.Store, opts cleanupOptions) ([]cleanupActio
 			actions = append(actions, cleanupAction{
 				Description: fmt.Sprintf("remove orphan worktree %s", ticketID),
 				Do: func() error {
-					return worktree.Remove(s.Root, ticketID)
+					return worktree.Remove(s.Root, layout, ticketID)
 				},
 			})
-			if _, ok := branchSet[worktree.BranchPrefix+ticketID]; ok {
+			if _, ok := branchSet[layout.Branch(ticketID)]; ok {
 				actions = append(actions, cleanupAction{
-					Description: fmt.Sprintf("delete orphan branch %s%s", worktree.BranchPrefix, ticketID),
+					Description: fmt.Sprintf("delete orphan branch %s", layout.Branch(ticketID)),
 					Do: func() error {
-						return worktree.DeleteBranch(s.Root, ticketID)
+						return worktree.DeleteBranch(s.Root, layout, ticketID)
 					},
 				})
 			}
 		}
 
-		orphanBranches, err := findOrphanBranchIDs(s)
+		orphanBranches, err := findOrphanBranchIDs(s, layout)
 		if err != nil {
 			return nil, nil, err
 		}
 		for _, branch := range orphanBranches {
-			ticketID := strings.TrimPrefix(branch, worktree.BranchPrefix)
+			ticketID := strings.TrimPrefix(branch, layout.BranchPrefix)
 			actions = append(actions, cleanupAction{
 				Description: fmt.Sprintf("delete orphan branch %s", branch),
 				Do: func() error {
-					return worktree.DeleteBranch(s.Root, ticketID)
+					return worktree.DeleteBranch(s.Root, layout, ticketID)
 				},
 			})
 		}
 	}
 
 	if !opts.orphansOnly && s.Config.Cleanup != nil {
-		stageActions, stageWarnings, err := collectConfiguredStageActions(s, s.Config.Cleanup, branchSet)
+		stageActions, stageWarnings, err := collectConfiguredStageActions(s, layout, s.Config.Cleanup, branchSet)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -192,7 +193,7 @@ func findOrphanAgentIDs(s *ticket.Store) ([]string, error) {
 }
 
 func findOrphanWorktreeIDs(s *ticket.Store) ([]string, error) {
-	infos, err := worktree.List(s.Root)
+	infos, err := worktree.List(s.Root, worktreeLayout(s.Config))
 	if err != nil {
 		return nil, err
 	}
@@ -210,12 +211,12 @@ func findOrphanWorktreeIDs(s *ticket.Store) ([]string, error) {
 	return ids, nil
 }
 
-func findOrphanBranchIDs(s *ticket.Store) ([]string, error) {
-	branches, err := ticketBranches(s.Root)
+func findOrphanBranchIDs(s *ticket.Store, layout worktree.Layout) ([]string, error) {
+	branches, err := ticketBranches(s.Root, layout)
 	if err != nil {
 		return nil, err
 	}
-	worktrees, err := worktree.List(s.Root)
+	worktrees, err := worktree.List(s.Root, layout)
 	if err != nil {
 		return nil, err
 	}
@@ -225,7 +226,7 @@ func findOrphanBranchIDs(s *ticket.Store) ([]string, error) {
 	}
 	var orphans []string
 	for _, branch := range branches {
-		id := strings.TrimPrefix(branch, worktree.BranchPrefix)
+		id := strings.TrimPrefix(branch, layout.BranchPrefix)
 		if _, ok := worktreeIDs[id]; ok {
 			continue
 		}
@@ -240,7 +241,7 @@ func findOrphanBranchIDs(s *ticket.Store) ([]string, error) {
 	return orphans, nil
 }
 
-func collectConfiguredStageActions(s *ticket.Store, cfg *config.CleanupConfig, branchSet map[string]struct{}) ([]cleanupAction, []string, error) {
+func collectConfiguredStageActions(s *ticket.Store, layout worktree.Layout, cfg *config.CleanupConfig, branchSet map[string]struct{}) ([]cleanupAction, []string, error) {
 	var actions []cleanupAction
 	var warnings []string
 	for _, stageCfg := range cfg.Stages {
@@ -265,25 +266,25 @@ func collectConfiguredStageActions(s *ticket.Store, cfg *config.CleanupConfig, b
 					},
 				})
 			}
-			if stageCfg.Worktree && worktreeExists(s.Root, tk.ID) {
+			if stageCfg.Worktree && worktreeExists(s.Root, layout, tk.ID) {
 				ticketID := tk.ID
 				stageName := stageCfg.Name
 				actions = append(actions, cleanupAction{
 					Description: fmt.Sprintf("remove worktree for %s in %s", ticketID, stageName),
 					Do: func() error {
-						return worktree.Remove(s.Root, ticketID)
+						return worktree.Remove(s.Root, layout, ticketID)
 					},
 				})
 			}
 			if stageCfg.Branch {
-				branch := worktree.BranchPrefix + tk.ID
+				branch := layout.Branch(tk.ID)
 				if _, ok := branchSet[branch]; ok {
 					ticketID := tk.ID
 					stageName := stageCfg.Name
 					actions = append(actions, cleanupAction{
 						Description: fmt.Sprintf("delete branch %s for %s in %s", branch, ticketID, stageName),
 						Do: func() error {
-							return worktree.DeleteBranch(s.Root, ticketID)
+							return worktree.DeleteBranch(s.Root, layout, ticketID)
 						},
 					})
 				}
@@ -298,13 +299,13 @@ func agentDataExists(root, ticketID string) bool {
 	return err == nil && info.IsDir()
 }
 
-func worktreeExists(root, ticketID string) bool {
-	info, err := os.Stat(filepath.Join(root, worktree.Dir, ticketID))
+func worktreeExists(root string, layout worktree.Layout, ticketID string) bool {
+	info, err := os.Stat(layout.WorktreePath(root, ticketID))
 	return err == nil && info.IsDir()
 }
 
-func ticketBranchSet(root string) (map[string]struct{}, error) {
-	branches, err := ticketBranches(root)
+func ticketBranchSet(root string, layout worktree.Layout) (map[string]struct{}, error) {
+	branches, err := ticketBranches(root, layout)
 	if err != nil {
 		return nil, err
 	}
@@ -315,8 +316,8 @@ func ticketBranchSet(root string) (map[string]struct{}, error) {
 	return out, nil
 }
 
-func ticketBranches(root string) ([]string, error) {
-	cmd := exec.Command("git", "for-each-ref", "--format=%(refname:short)", "refs/heads/"+worktree.BranchPrefix)
+func ticketBranches(root string, layout worktree.Layout) ([]string, error) {
+	cmd := exec.Command("git", "for-each-ref", "--format=%(refname:short)", "refs/heads/"+layout.BranchPrefix)
 	cmd.Dir = root
 	out, err := cmd.CombinedOutput()
 	if err != nil {

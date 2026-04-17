@@ -223,8 +223,9 @@ a directory — but you lose two useful properties:
 
 - **Scoping of agents.** When a stage has `worktree: true`, each
   agent run is spawned inside a fresh `git worktree` under
-  `.worktrees/<ticket-id>` on a dedicated `tickets/<ticket-id>`
-  branch, so concurrent agents can't trample each other and
+  the configured `worktrees.dir` (default `.worktrees/<ticket-id>`)
+  on a dedicated branch under `worktrees.branch_prefix` (default
+  `tickets/<ticket-id>`), so concurrent agents can't trample each other and
   experimental changes stay isolated from `main` until you merge
   them. Without a git repo, agents run directly against the
   directory with no isolation.
@@ -383,10 +384,10 @@ uncomment:
 agent:
   command: claude
   args: ["--dangerously-skip-permissions"]
-  worktree: true              # isolate work in .worktrees/<id> on branch tickets/<id>
+  worktree: true              # isolate work in worktrees.dir/<id> on branch worktrees.branch_prefix<id>
   base_branch: main           # branch to create the worktree from (default: HEAD)
   prompt: |
-    You are working in {{worktree}} on branch tickets/{{id}}.
+    You are working in {{worktree}} on the ticket branch.
     Read the ticket at {{path}} and implement what it describes.
 ```
 
@@ -396,8 +397,10 @@ agent:
   `["--dangerously-skip-permissions"]` to let the agent run without
   approval prompts, or `["--print"]` for non-interactive mode)
 - **worktree** — when true, each run gets its own git worktree under
-  `.worktrees/<ticket-id>` on a `tickets/<ticket-id>` branch, so
-  concurrent agents don't trample one another's changes
+  `worktrees.dir/<ticket-id>` on a
+  `worktrees.branch_prefix<ticket-id>` branch. The defaults are
+  `.worktrees/<ticket-id>` and `tickets/<ticket-id>`, so concurrent
+  agents don't trample one another's changes
 - **base_branch** — the branch the worktree is cut from
 - **prompt** — a template string rendered with ticket metadata and
   passed as the final argument
@@ -421,8 +424,8 @@ without manual `tickets worktree clean`:
 ```yaml
 # .tickets/done/.stage.yml
 cleanup:
-  worktree: true    # remove .worktrees/<id>
-  branch: true      # delete tickets/<id>
+  worktree: true    # remove worktrees.dir/<id> (default .worktrees/<id>)
+  branch: true      # delete worktrees.branch_prefix<id> (default tickets/<id>)
 ```
 
 ### Running the watcher
@@ -586,8 +589,8 @@ The checks are:
   does.
 - **Orphan `.tmp` files** — leftover `<run>.yml.tmp` from an
   interrupted atomic rename; removed.
-- **Orphan worktrees** — `.worktrees/<id>/` directories whose ticket
-  no longer exists; removed.
+- **Orphan worktrees** — directories under `worktrees.dir/` (default
+  `.worktrees/<id>/`) whose ticket no longer exists; removed.
 - **Frontmatter drift** — ticket `agent_status` / `agent_run` /
   `agent_session` that disagrees with the latest run YAML; rewritten.
 
@@ -713,8 +716,8 @@ for non-trivial cycles introduced by manual edits.
 watcher flow does not always touch:
 
 - orphan `.tickets/.agents/<id>/` directories for tickets that no longer exist
-- orphan `.worktrees/<id>/` directories
-- orphan `tickets/<id>` branches
+- orphan worktree directories under `worktrees.dir/` (default `.worktrees/<id>/`)
+- orphan branches under `worktrees.branch_prefix` (default `tickets/<id>`)
 - optionally, agent data/worktrees/branches for tickets that are still
   sitting in configured archive stages such as `done`
 
@@ -738,14 +741,17 @@ tickets cleanup --orphans-only
 tickets cleanup --stages-only
 ```
 
-The command force-deletes `tickets/<id>` branches, so run it
-deliberately and preferably while `tickets watch` is idle.
+The command force-deletes branches under `worktrees.branch_prefix`
+(default `tickets/<id>`), so run it deliberately and preferably while
+`tickets watch` is idle.
 
 ## Worktrees
 
 When a stage agent sets `worktree: true`, each run gets its own git
-worktree under `.worktrees/<ticket-id>` on a `tickets/<ticket-id>`
-branch. Manage them directly:
+worktree under `worktrees.dir/<ticket-id>` on a
+`worktrees.branch_prefix<ticket-id>` branch. The defaults are
+`.worktrees/<ticket-id>` and `tickets/<ticket-id>`. Manage them
+directly:
 
 ```sh
 tickets worktree list               # or: tickets wt ls
@@ -881,6 +887,10 @@ stages:
   - execute
   - review
   - done
+# Optional — where per-ticket git worktrees live.
+# worktrees:
+#   dir: .worktrees
+#   branch_prefix: tickets/
 # Optional — the agent used by `tickets agents run`.
 # default_agent:
 #   command: claude
@@ -898,6 +908,11 @@ stages:
   stages by editing this file; the CLI picks the changes up on the next
   command invocation. The name `projects` is reserved for the project
   store and cannot be used as a stage.
+- **worktrees.dir** — optional relative path under the repo root where
+  per-ticket git worktrees are created. Defaults to `.worktrees`.
+- **worktrees.branch_prefix** — optional branch namespace used for
+  per-ticket worktree branches. Must end with `/`. Defaults to
+  `tickets/`.
 - **complete_stages** — optional subset of `stages`. When a ticket
   enters one of these stages — via `tickets move`, a filesystem
   move picked up by `tickets watch`, or a `tickets doctor` sweep —
