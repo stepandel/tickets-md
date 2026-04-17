@@ -91,6 +91,12 @@ func (s *stageConfigStore) Set(stageName string, cfg stage.Config) {
 	s.configs[stageName] = cfg
 }
 
+func (s *stageConfigStore) Delete(stageName string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.configs, stageName)
+}
+
 func stageConfigStatus(cfg stage.Config) string {
 	switch {
 	case cfg.HasAgent():
@@ -136,20 +142,95 @@ func watchTimingsForConfig(cfg config.Config) watchTimings {
 	return timings
 }
 
-func reloadWatchConfig(root string, cfg *config.Config, mon *agent.Monitor, reloadCron func(config.Config) error) (watchTimings, bool, error) {
+func reloadWatchConfig(root string, cfg *config.Config, mon *agent.Monitor, reloadCron func(config.Config) error) (watchTimings, bool, []string, []string, error) {
 	newCfg, err := config.Load(root)
 	if err != nil {
-		return watchTimings{}, false, err
+		return watchTimings{}, false, nil, nil, err
 	}
 	if err := reloadCron(newCfg); err != nil {
-		return watchTimings{}, false, err
+		return watchTimings{}, false, nil, nil, err
 	}
 
+	prevStages := append([]string(nil), cfg.Stages...)
+	nextStages := append([]string(nil), newCfg.Stages...)
 	timings := watchTimingsForConfig(newCfg)
 	changed := mon.SetTiming(timings.PollInterval, timings.IdleBlockAfter, timings.IdleKillAfter)
+	cfg.Stages = nextStages
+	cfg.CompleteStages = append([]string(nil), newCfg.CompleteStages...)
 	cfg.CronAgents = newCfg.CronAgents
 	cfg.Watch = newCfg.Watch
-	return timings, changed, nil
+	return timings, changed, prevStages, nextStages, nil
+}
+
+func reconcileStageWatchSet(w *fsnotify.Watcher, root string, stageConfigs *stageConfigStore, knownPaths map[string]bool, prev, next []string) (int, int) {
+	prevSet := make(map[string]struct{}, len(prev))
+	for _, stageName := range prev {
+		prevSet[stageName] = struct{}{}
+	}
+	nextSet := make(map[string]struct{}, len(next))
+	for _, stageName := range next {
+		nextSet[stageName] = struct{}{}
+	}
+
+	removed := 0
+	for _, stageName := range prev {
+		if _, ok := nextSet[stageName]; ok {
+			continue
+		}
+		removed++
+		dir := filepath.Join(root, config.ConfigDir, stageName)
+		if err := w.Remove(dir); err != nil {
+			log.Printf("stage %s: removing watch for %s: %v", stageName, dir, err)
+		}
+		stageConfigs.Delete(stageName)
+		for path := range knownPaths {
+			if filepath.Dir(path) == dir {
+				delete(knownPaths, path)
+			}
+		}
+		log.Printf("stage %s: removed from watch set", stageName)
+	}
+
+	added := 0
+	for _, stageName := range next {
+		if _, ok := prevSet[stageName]; ok {
+			continue
+		}
+		added++
+		dir := filepath.Join(root, config.ConfigDir, stageName)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			log.Printf("stage %s: creating directory %s: %v", stageName, dir, err)
+			continue
+		}
+		if err := stage.WriteDefault(dir); err != nil {
+			log.Printf("stage %s: writing default stage config: %v", stageName, err)
+			continue
+		}
+		sc, err := stage.Load(dir)
+		if err != nil {
+			log.Printf("stage %s: loading stage config: %v", stageName, err)
+			continue
+		}
+		if err := w.Add(dir); err != nil {
+			log.Printf("stage %s: watching %s: %v", stageName, dir, err)
+			continue
+		}
+		stageConfigs.Set(stageName, sc)
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			log.Printf("stage %s: scanning %s: %v", stageName, dir, err)
+			continue
+		}
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
+				continue
+			}
+			knownPaths[filepath.Join(dir, entry.Name())] = true
+		}
+		log.Printf("watching %s/ (%s) (added)", stageName, stageConfigStatus(sc))
+	}
+
+	return added, removed
 }
 
 func runWatch(s *ticket.Store) error {
@@ -404,12 +485,16 @@ func runWatch(s *ticket.Store) error {
 			handleCreate(s, stageConfigs, event.Name, mon, runner)
 
 		case <-configReloadCh:
-			timings, changed, err := reloadWatchConfig(s.Root, &s.Config, mon, cronScheduler.Reload)
+			timings, changed, prevStages, nextStages, err := reloadWatchConfig(s.Root, &s.Config, mon, cronScheduler.Reload)
 			if err != nil {
 				log.Printf("config: reload failed: %v", err)
 				continue
 			}
+			added, removed := reconcileStageWatchSet(w, s.Root, stageConfigs, knownPaths, prevStages, nextStages)
 			log.Printf("config: reloaded %d cron agents", cronScheduler.ActiveCount())
+			if added > 0 || removed > 0 {
+				log.Printf("config: stage watch set updated (%d added, %d removed)", added, removed)
+			}
 			if changed {
 				log.Printf("monitor: poll=%s idle-block=%s idle-kill=%s (reloaded)", timings.PollInterval, timings.IdleBlockAfter, timings.IdleKillAfter)
 			}
