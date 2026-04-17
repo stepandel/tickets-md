@@ -57,6 +57,44 @@ Create a .stage.yml in any stage directory to configure an agent:
 	return cmd
 }
 
+type watchTimings struct {
+	PollInterval   time.Duration
+	IdleBlockAfter time.Duration
+}
+
+func watchTimingsForConfig(cfg config.Config) watchTimings {
+	timings := watchTimings{
+		PollInterval:   agent.DefaultPollInterval,
+		IdleBlockAfter: agent.DefaultBlockedIdle,
+	}
+	if cfg.Watch == nil {
+		return timings
+	}
+	if cfg.Watch.PollInterval != nil {
+		timings.PollInterval = cfg.Watch.PollInterval.Duration
+	}
+	if cfg.Watch.IdleBlockAfter != nil {
+		timings.IdleBlockAfter = cfg.Watch.IdleBlockAfter.Duration
+	}
+	return timings
+}
+
+func reloadWatchConfig(root string, cfg *config.Config, mon *agent.Monitor, reloadCron func(config.Config) error) (watchTimings, bool, error) {
+	newCfg, err := config.Load(root)
+	if err != nil {
+		return watchTimings{}, false, err
+	}
+	if err := reloadCron(newCfg); err != nil {
+		return watchTimings{}, false, err
+	}
+
+	timings := watchTimingsForConfig(newCfg)
+	changed := mon.SetTiming(timings.PollInterval, timings.IdleBlockAfter)
+	cfg.CronAgents = newCfg.CronAgents
+	cfg.Watch = newCfg.Watch
+	return timings, changed, nil
+}
+
 func runWatch(s *ticket.Store) error {
 	w, err := fsnotify.NewWatcher()
 	if err != nil {
@@ -82,17 +120,8 @@ func runWatch(s *ticket.Store) error {
 
 	// Start the agent status monitor. The monitor owns the authoritative
 	// run YAMLs; frontmatter is a cache it rewrites via OnStatusChange.
-	pollInterval := agent.DefaultPollInterval
-	idleBlockAfter := agent.DefaultBlockedIdle
-	if s.Config.Watch != nil {
-		if s.Config.Watch.PollInterval != nil {
-			pollInterval = s.Config.Watch.PollInterval.Duration
-		}
-		if s.Config.Watch.IdleBlockAfter != nil {
-			idleBlockAfter = s.Config.Watch.IdleBlockAfter.Duration
-		}
-	}
-	mon := agent.NewMonitor(s.Root, pollInterval, idleBlockAfter, runner.Alive, runner.IdleSeconds)
+	timings := watchTimingsForConfig(s.Config)
+	mon := agent.NewMonitor(s.Root, timings.PollInterval, timings.IdleBlockAfter, runner.Alive, runner.IdleSeconds)
 	mon.OnStatusChange = func(ticketID string) {
 		syncAgentFrontmatter(s.Root, ticketID)
 	}
@@ -180,7 +209,7 @@ func runWatch(s *ticket.Store) error {
 		}
 		log.Printf("watching %s/ (%s)", st, status)
 	}
-	log.Printf("monitor: poll=%s idle-block=%s", pollInterval, idleBlockAfter)
+	log.Printf("monitor: poll=%s idle-block=%s", timings.PollInterval, timings.IdleBlockAfter)
 	if err := w.Add(filepath.Join(s.Root, config.ConfigDir)); err != nil {
 		return fmt.Errorf("watching %s: %w", filepath.Join(s.Root, config.ConfigDir), err)
 	}
@@ -286,17 +315,15 @@ func runWatch(s *ticket.Store) error {
 			handleCreate(s, stageConfigs, event.Name, mon, runner)
 
 		case <-configReloadCh:
-			newCfg, err := config.Load(s.Root)
+			timings, changed, err := reloadWatchConfig(s.Root, &s.Config, mon, cronScheduler.Reload)
 			if err != nil {
 				log.Printf("config: reload failed: %v", err)
 				continue
 			}
-			if err := cronScheduler.Reload(newCfg); err != nil {
-				log.Printf("config: reload failed: %v", err)
-				continue
-			}
-			s.Config.CronAgents = newCfg.CronAgents
 			log.Printf("config: reloaded %d cron agents", cronScheduler.ActiveCount())
+			if changed {
+				log.Printf("monitor: poll=%s idle-block=%s (reloaded)", timings.PollInterval, timings.IdleBlockAfter)
+			}
 
 		case err, ok := <-w.Errors:
 			if !ok {

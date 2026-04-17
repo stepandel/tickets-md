@@ -12,7 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are now configurable via a new optional `watch:` block in
   `.tickets/config.yml` (`poll_interval`, `idle_block_after`).
   Durations parse with Go's `time.ParseDuration`; `idle_block_after`
-  must be ≥ 1s.
+  must be ≥ 1s. A running watcher now hot-reloads those timing edits
+  from `.tickets/config.yml` without requiring a restart.
 
 - Board priority styling is now config-driven via an optional
   `priorities:` map in `.tickets/config.yml`. Each key is a priority

@@ -49,8 +49,8 @@ The intended git policy is mixed:
 
 Board-level cron agents can also be defined in `.tickets/config.yml`
 and are fired by `tickets watch` while it is running. Editing
-`cron_agents:` is hot-reloaded by a running watcher; no restart is
-required:
+`cron_agents:` and `watch:` monitor timings are hot-reloaded by a
+running watcher; no restart is required:
 
 ```yaml
 cron_agents:
@@ -487,7 +487,9 @@ watch:
 ```
 
 Durations use Go's `time.ParseDuration` syntax (`500ms`, `2s`,
-`1m`, …). `idle_block_after` must be ≥ `1s`.
+`1m`, …). `idle_block_after` must be ≥ `1s`. Editing either value
+while `tickets watch` is already running updates the live monitor on
+the next config reload debounce; no watcher restart is required.
 
 ### Monitoring agents
 

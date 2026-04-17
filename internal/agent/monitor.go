@@ -28,16 +28,19 @@ const (
 // reality. It catches crashes, stale runs from a previous watcher
 // process, promotes spawned → running, and detects blocked agents.
 type Monitor struct {
-	root        string
-	interval    time.Duration
-	blockedIdle time.Duration
-	check       SessionChecker
-	idleCheck   IdleChecker
+	root      string
+	check     SessionChecker
+	idleCheck IdleChecker
 
 	// OnStatusChange fires after the monitor successfully writes a run
 	// YAML. The watcher uses it to resync the ticket's frontmatter from
 	// the latest run. Optional; nil means no callback.
 	OnStatusChange func(ticketID string)
+
+	configMu     sync.RWMutex
+	interval     time.Duration
+	blockedIdle  time.Duration
+	configReload chan struct{}
 
 	mu       sync.Mutex
 	watching map[string]struct{} // "<ticket>/<run>" with active wait goroutines
@@ -45,20 +48,52 @@ type Monitor struct {
 
 // NewMonitor creates a monitor that checks session state every interval.
 func NewMonitor(root string, interval, blockedIdle time.Duration, check SessionChecker, idle IdleChecker) *Monitor {
+	interval, blockedIdle = normalizeTiming(interval, blockedIdle)
+	return &Monitor{
+		root:         root,
+		interval:     interval,
+		blockedIdle:  blockedIdle,
+		check:        check,
+		idleCheck:    idle,
+		configReload: make(chan struct{}, 1),
+		watching:     make(map[string]struct{}),
+	}
+}
+
+func normalizeTiming(interval, blockedIdle time.Duration) (time.Duration, time.Duration) {
 	if interval <= 0 {
 		interval = DefaultPollInterval
 	}
 	if blockedIdle <= 0 {
 		blockedIdle = DefaultBlockedIdle
 	}
-	return &Monitor{
-		root:        root,
-		interval:    interval,
-		blockedIdle: blockedIdle,
-		check:       check,
-		idleCheck:   idle,
-		watching:    make(map[string]struct{}),
+	return interval, blockedIdle
+}
+
+func (m *Monitor) Timing() (time.Duration, time.Duration) {
+	m.configMu.RLock()
+	defer m.configMu.RUnlock()
+	return m.interval, m.blockedIdle
+}
+
+func (m *Monitor) SetTiming(interval, blockedIdle time.Duration) bool {
+	interval, blockedIdle = normalizeTiming(interval, blockedIdle)
+
+	m.configMu.Lock()
+	changed := m.interval != interval || m.blockedIdle != blockedIdle
+	if changed {
+		m.interval = interval
+		m.blockedIdle = blockedIdle
 	}
+	m.configMu.Unlock()
+
+	if changed {
+		select {
+		case m.configReload <- struct{}{}:
+		default:
+		}
+	}
+	return changed
 }
 
 func runKey(ticketID, runID string) string {
@@ -145,13 +180,20 @@ func (m *Monitor) Reconcile() ([]AliveStatus, error) {
 // Call Reconcile separately before Run if you need to handle alive
 // sessions on startup.
 func (m *Monitor) Run(ctx context.Context) {
-	ticker := time.NewTicker(m.interval)
+	interval, _ := m.Timing()
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-m.configReload:
+			nextInterval, _ := m.Timing()
+			if nextInterval != interval {
+				ticker.Reset(nextInterval)
+				interval = nextInterval
+			}
 		case <-ticker.C:
 			m.poll()
 		}
@@ -161,7 +203,8 @@ func (m *Monitor) Run(ctx context.Context) {
 const staleAge = 24 * time.Hour
 
 func (m *Monitor) poll() {
-	blockedAfterSeconds := int(m.blockedIdle / time.Second)
+	_, blockedIdle := m.Timing()
+	blockedAfterSeconds := int(blockedIdle / time.Second)
 
 	statuses, err := m.listStatuses()
 	if err != nil {
