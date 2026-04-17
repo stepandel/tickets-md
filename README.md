@@ -58,6 +58,7 @@ cron_agents:
     schedule: "@every 5m"
     command: claude
     args: ["--dangerously-skip-permissions"]
+    interactive: true
     prompt: |
       You are the backlog groomer for {{root}} at {{now}}.
       Review the backlog and clean up duplicates or outdated tickets.
@@ -70,6 +71,14 @@ cleanly. If a non-integrated cron agent is configured without cron-only
 `args:`, `tickets watch` logs an advisory warning when it loads the
 entry because later ticks may be skipped while the prior run is still
 active.
+
+Set `interactive: true` when you want to attach to a scheduled cron's
+live PTY from the Obsidian agents view and steer it manually. In that
+mode the watcher skips Claude's auto-`--print` injection, so the session
+stays interactive until you close it. While that interactive run is
+alive, subsequent ticks for the same cron are skipped; keep any required
+permission-bypass flags such as `--dangerously-skip-permissions` in
+`args:` or the cron may block on its first prompt.
 
 Moving a ticket between stages is just a file rename, so if you choose
 to commit ticket markdown in your own workflow, `git log` can serve as

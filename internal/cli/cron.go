@@ -117,6 +117,10 @@ func (s *watchCronScheduler) registerEntry(ca config.CronAgentConfig) error {
 }
 
 func warnCronNeedsOneShotArgs(ca config.CronAgentConfig) {
+	if ca.Interactive {
+		log.Printf("cron %s: interactive mode — session stays alive until the user closes it; subsequent ticks are skipped while it is active", ca.Name)
+		return
+	}
 	if len(ca.Args) > 0 {
 		return
 	}
@@ -166,7 +170,11 @@ func spawnCronAgent(root string, ca config.CronAgentConfig, mon *agent.Monitor, 
 		return fmt.Errorf("cron %s: worktree=true is not supported yet", ca.Name)
 	}
 	if prev, err := agent.CronLatest(root, ca.Name); err == nil && !prev.Status.IsTerminal() && runner.Alive(prev.Session) {
-		log.Printf("cron %s: skipping tick, previous run %s is still active", ca.Name, prev.RunID)
+		if ca.Interactive {
+			log.Printf("cron %s: skipping tick, previous interactive run %s is still active", ca.Name, prev.RunID)
+		} else {
+			log.Printf("cron %s: skipping tick, previous run %s is still active", ca.Name, prev.RunID)
+		}
 		return nil
 	}
 	_, err := startCronRun(root, ca, mon, runner, 0, 0)
@@ -202,8 +210,10 @@ func startCronRun(root string, ca config.CronAgentConfig, mon *agent.Monitor, ru
 	var sessionUUID string
 	if integ, ok := agent.Lookup(ca.Command); ok {
 		prepare := integ.PrepareArgs
-		if cronInteg, ok := integ.(agent.CronIntegration); ok {
-			prepare = cronInteg.PrepareCronArgs
+		if !ca.Interactive {
+			if cronInteg, ok := integ.(agent.CronIntegration); ok {
+				prepare = cronInteg.PrepareCronArgs
+			}
 		}
 		newArgv, id, err := prepare(argv)
 		if err != nil {

@@ -26,6 +26,7 @@ import { visibleStages } from "./visible-stages";
 import {
 	ACTIVE_AGENT_STATUSES,
 	canReplayTerminal,
+	cronHasLiveSession,
 	hasLiveTerminal,
 	ticketRunLogPath,
 } from "./agent-terminal.js";
@@ -82,6 +83,7 @@ interface CronAgentConfig {
 	command: string;
 	args?: string[];
 	prompt: string;
+	interactive?: boolean;
 	worktree?: boolean;
 	base_branch?: string;
 	enabled?: boolean;
@@ -436,6 +438,22 @@ async function openTerminal(app: import("obsidian").App, ticket: Ticket) {
 		state: {
 			sessionName: ticket.agent_session,
 			ticketId: ticket.id,
+		},
+	});
+	app.workspace.revealLeaf(leaf);
+}
+
+async function openCronTerminal(app: import("obsidian").App, name: string, run: AgentRun) {
+	if (!run.session) {
+		new Notice("Cron run is missing a live session");
+		return;
+	}
+	const leaf = app.workspace.getLeaf(Platform.isMobile ? "tab" : "split");
+	await leaf.setViewState({
+		type: TERMINAL_VIEW_TYPE,
+		state: {
+			sessionName: run.session,
+			ticketId: `cron/${name}`,
 		},
 	});
 	app.workspace.revealLeaf(leaf);
@@ -2235,6 +2253,20 @@ class AgentsView extends ItemView {
 			cls: `tb-agent-row tb-cron-row${cronAgentEnabled(cron.config) ? "" : " tb-cron-disabled"}`,
 		});
 
+		row.addEventListener("click", async () => {
+			if (this.longPressTriggered) {
+				this.longPressTriggered = false;
+				return;
+			}
+			if (cronHasLiveSession(cron.lastRun)) {
+				await openCronTerminal(this.app, cron.config.name, cron.lastRun);
+				return;
+			}
+			if (cron.lastRun?.run_id) {
+				await this.openCronLog(cron.config.name, cron.lastRun);
+			}
+		});
+
 		row.addEventListener("contextmenu", (e) => {
 			e.preventDefault();
 			this.buildCronMenu(cron).showAtMouseEvent(e);
@@ -2272,7 +2304,7 @@ class AgentsView extends ItemView {
 
 		const right = row.createDiv({ cls: "tb-agent-row-right" });
 		right.createEl("span", {
-			text: cron.lastRun?.run_id ?? "\u2014",
+			text: cronHasLiveSession(cron.lastRun) ? (cron.lastRun?.session ?? "\u2014") : (cron.lastRun?.run_id ?? "\u2014"),
 			cls: "tb-agent-session",
 		});
 		if (cron.lastRun?.status) {
@@ -2317,6 +2349,13 @@ class AgentsView extends ItemView {
 				}),
 		);
 		const lastRun = cron.lastRun;
+		if (!Platform.isMobile && cronHasLiveSession(lastRun)) {
+			menu.addItem((item) =>
+				item.setTitle("Open live terminal").setIcon("terminal-square").onClick(async () => {
+					await openCronTerminal(this.app, cron.config.name, lastRun);
+				}),
+			);
+		}
 		if (lastRun?.run_id) {
 			menu.addItem((item) =>
 				item.setTitle("Open last run log").setIcon("file-text").onClick(async () => {

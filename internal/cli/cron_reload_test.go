@@ -262,6 +262,32 @@ func TestSchedulerReloadDoesNotWarnForCronIntegration(t *testing.T) {
 	}
 }
 
+func TestSchedulerReloadInteractiveCronSkipsOneShotWarning(t *testing.T) {
+	s, err := startCronScheduler(t.TempDir(), cronConfig(), nil, nil)
+	if err != nil {
+		t.Fatalf("startCronScheduler: %v", err)
+	}
+
+	logs := captureLogs(t, func() {
+		err = s.Reload(cronConfig(config.CronAgentConfig{
+			Name:        "groomer",
+			Schedule:    "@every 5m",
+			Command:     "/bin/sh",
+			Prompt:      "echo hi",
+			Interactive: true,
+		}))
+	})
+	if err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+	if strings.Contains(logs, "no cron-specific integration and no args") {
+		t.Fatalf("logs = %q, want no one-shot warning", logs)
+	}
+	if !strings.Contains(logs, "interactive mode") {
+		t.Fatalf("logs = %q, want interactive mode hint", logs)
+	}
+}
+
 func captureLogs(t *testing.T, fn func()) string {
 	t.Helper()
 	var buf bytes.Buffer
