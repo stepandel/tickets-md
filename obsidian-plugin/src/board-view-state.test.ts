@@ -9,6 +9,7 @@ test("readBoardViewState restores saved true", () => {
 
 test("readBoardViewState defaults missing state to false", () => {
 	assert.deepEqual(readBoardViewState(undefined), { showArchived: false });
+	assert.deepEqual(readBoardViewState(null), { showArchived: false });
 });
 
 test("readBoardViewState rejects non-boolean showArchived values", () => {
