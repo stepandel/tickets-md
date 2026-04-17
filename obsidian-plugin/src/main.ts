@@ -18,6 +18,7 @@ import {
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { html as diff2html } from "diff2html";
+import { normalizeBoardFilterQuery, ticketMatchesBoardFilter } from "./board-filter";
 import { readBoardViewState } from "./board-view-state";
 import { planDiffCommand, resolveDefaultBranch } from "./diff";
 import { formatForceRerunDescription } from "./force-rerun";
@@ -685,11 +686,14 @@ export default class TicketsBoardPlugin extends Plugin {
 class BoardView extends ItemView {
 	private config: TicketsConfig | null = null;
 	private showArchived = false;
+	private filterQuery = "";
 	private stages: string[] = [];
 	private tickets: Ticket[] = [];
 	private projects: Project[] = [];
 	private agentStages: Set<string> = new Set();
 	private previewLeaf: WorkspaceLeaf | null = null;
+	private boardEl: HTMLElement | null = null;
+	private saveLayoutTimer: number | null = null;
 
 	// Touch drag state
 	private dragTicketPath: string | null = null;
@@ -711,13 +715,18 @@ class BoardView extends ItemView {
 	}
 
 	async setState(state: Record<string, unknown>, result: ViewStateResult) {
-		this.showArchived = readBoardViewState(state).showArchived;
+		const boardState = readBoardViewState(state);
+		this.showArchived = boardState.showArchived;
+		this.filterQuery = boardState.filterQuery;
 		await super.setState(state, result);
 		await this.refresh();
 	}
 
 	getState(): Record<string, unknown> {
-		return { showArchived: this.showArchived };
+		return {
+			showArchived: this.showArchived,
+			filterQuery: this.filterQuery,
+		};
 	}
 
 	async onOpen() {
@@ -796,11 +805,13 @@ class BoardView extends ItemView {
 	private render() {
 		const container = this.contentEl;
 		container.empty();
+		container.addClass("tb-view");
 
 		// Header
 		const header = container.createDiv({ cls: "tb-header" });
+		const headerMain = header.createDiv({ cls: "tb-header-main" });
 		const boardName = this.config?.name || "Tickets Board";
-		const titleEl = header.createEl("h2", { text: boardName, cls: "tb-board-title" });
+		const titleEl = headerMain.createEl("h2", { text: boardName, cls: "tb-board-title" });
 		const openRenameModal = () => {
 			new TextInputModal(
 				this.app,
@@ -820,6 +831,22 @@ class BoardView extends ItemView {
 		} else {
 			titleEl.addEventListener("click", () => openRenameModal());
 		}
+
+		const searchInput = headerMain.createEl("input", {
+			cls: "tb-header-search",
+			attr: {
+				type: "search",
+				"aria-label": "Filter board tickets",
+				placeholder: "Filter tickets",
+			},
+		});
+		searchInput.value = this.filterQuery;
+		searchInput.addEventListener("input", () => {
+			this.filterQuery = searchInput.value;
+			this.renderBoard();
+			this.queueSaveLayout();
+		});
+
 		const headerActions = header.createDiv({ cls: "tb-header-actions" });
 
 		const refreshBtn = headerActions.createEl("button", {
@@ -863,16 +890,28 @@ class BoardView extends ItemView {
 		});
 
 		// Board
-		const board = container.createDiv({ cls: "tb-board" });
-
-		for (const stage of this.stages) {
-			const stageTickets = this.tickets.filter((t) => t.stage === stage);
-			this.renderColumn(board, stage, stageTickets);
-		}
-
+		this.boardEl = container.createDiv({ cls: "tb-board" });
+		this.renderBoard();
 	}
 
-	private renderColumn(board: HTMLElement, stage: string, tickets: Ticket[]) {
+	private renderBoard() {
+		if (!this.boardEl) {
+			return;
+		}
+
+		const filterQuery = normalizeBoardFilterQuery(this.filterQuery);
+		const hasActiveFilter = filterQuery.length > 0;
+		this.boardEl.empty();
+
+		for (const stage of this.stages) {
+			const stageTickets = this.tickets.filter(
+				(ticket) => ticket.stage === stage && ticketMatchesBoardFilter(ticket, filterQuery),
+			);
+			this.renderColumn(this.boardEl, stage, stageTickets, hasActiveFilter);
+		}
+	}
+
+	private renderColumn(board: HTMLElement, stage: string, tickets: Ticket[], hasActiveFilter: boolean) {
 		const column = board.createDiv({ cls: "tb-column" });
 
 		// Column header with right-click context menu
@@ -936,7 +975,7 @@ class BoardView extends ItemView {
 
 		// Empty state
 		if (tickets.length === 0) {
-			cardList.createDiv({ cls: "tb-empty", text: "No tickets" });
+			cardList.createDiv({ cls: "tb-empty", text: hasActiveFilter ? "No matches" : "No tickets" });
 		}
 
 		// Add ticket button
@@ -945,6 +984,16 @@ class BoardView extends ItemView {
 			cls: "tb-add-ticket-btn",
 		});
 		addBtn.addEventListener("click", () => this.createTicket(stage));
+	}
+
+	private queueSaveLayout() {
+		if (this.saveLayoutTimer !== null) {
+			window.clearTimeout(this.saveLayoutTimer);
+		}
+		this.saveLayoutTimer = window.setTimeout(() => {
+			this.saveLayoutTimer = null;
+			this.app.workspace.requestSaveLayout();
+		}, 250);
 	}
 
 	private renderCard(parent: HTMLElement, ticket: Ticket) {
@@ -1731,7 +1780,12 @@ class BoardView extends ItemView {
 		await this.saveConfig(config);
 	}
 
-	async onClose() {}
+	async onClose() {
+		if (this.saveLayoutTimer !== null) {
+			window.clearTimeout(this.saveLayoutTimer);
+			this.saveLayoutTimer = null;
+		}
+	}
 }
 
 // ── Terminal View ──────────────────────────────────────────────────────

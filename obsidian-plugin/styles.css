@@ -1,11 +1,27 @@
 /* ── Board Layout ───────────────────────────────────────────────────── */
 
+.tb-view {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+}
+
 .tb-header {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
+	gap: 12px;
+	flex-wrap: wrap;
 	padding: 8px 12px;
 	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.tb-header-main {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	flex: 1 1 320px;
+	min-width: 0;
 }
 
 .tb-board-title {
@@ -25,6 +41,24 @@
 .tb-header-actions {
 	display: flex;
 	gap: 2px;
+	flex: 0 0 auto;
+}
+
+.tb-header-search {
+	flex: 1 1 220px;
+	min-width: 180px;
+	padding: 7px 10px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	background: var(--background-primary);
+	color: var(--text-normal);
+	font-size: 0.9em;
+}
+
+.tb-header-search:focus {
+	outline: none;
+	border-color: var(--interactive-accent);
+	box-shadow: 0 0 0 1px var(--interactive-accent);
 }
 
 .tb-header-btn {
@@ -44,10 +78,11 @@
 
 .tb-board {
 	display: flex;
+	flex: 1;
+	min-height: 0;
 	gap: 8px;
 	padding: 12px;
 	overflow-x: auto;
-	height: calc(100% - 52px);
 	align-items: flex-start;
 }
 
@@ -521,6 +556,15 @@ body.is-mobile .tb-header-btn {
 	padding: 8px 12px;
 	min-height: 44px;
 	min-width: 44px;
+}
+
+body.is-mobile .tb-header-main {
+	flex-basis: 100%;
+}
+
+body.is-mobile .tb-header-search {
+	min-width: 0;
+	font-size: 16px;
 }
 
 /* Phone: wider columns with scroll snap */
