@@ -1,10 +1,7 @@
 /* ── Board Layout ───────────────────────────────────────────────────── */
 
-<<<<<<< HEAD
-.tb-view {
-=======
+.tb-view,
 .tb-board-view {
->>>>>>> tickets/TIC-135
 	display: flex;
 	flex-direction: column;
 	height: 100%;
@@ -14,13 +11,8 @@
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-<<<<<<< HEAD
-	gap: 12px;
-	flex-wrap: wrap;
-=======
 	flex-wrap: wrap;
 	gap: 8px;
->>>>>>> tickets/TIC-135
 	padding: 8px 12px;
 	border-bottom: 1px solid var(--background-modifier-border);
 }
@@ -83,6 +75,38 @@
 	border-radius: 6px;
 	background: var(--background-primary);
 	color: var(--text-normal);
+}
+
+.tb-watch-pill {
+	display: inline-flex;
+	align-items: center;
+	padding: 2px 8px;
+	border-radius: 999px;
+	font-size: 0.75em;
+	font-weight: 600;
+	border: 1px solid var(--background-modifier-border);
+	white-space: nowrap;
+}
+
+.tb-watch-pill-active {
+	background: color-mix(in srgb, #00b368 16%, var(--background-primary));
+	color: var(--text-normal);
+}
+
+.tb-watch-pill-paused {
+	background: color-mix(in srgb, #ff8c00 18%, var(--background-primary));
+	color: var(--text-normal);
+}
+
+.tb-watch-pill-offline,
+.tb-watch-pill-unknown {
+	background: var(--background-modifier-border);
+	color: var(--text-muted);
+}
+
+.tb-watch-toggle-btn:disabled {
+	cursor: default;
+	opacity: 0.65;
 }
 
 .tb-header-btn {
@@ -582,17 +606,17 @@ body.is-mobile .tb-header-btn {
 	min-width: 44px;
 }
 
-<<<<<<< HEAD
 body.is-mobile .tb-header-main {
 	flex-basis: 100%;
 }
 
 body.is-mobile .tb-header-search {
 	min-width: 0;
-=======
+	font-size: 16px;
+}
+
 body.is-mobile .tb-filter-input {
 	max-width: none;
->>>>>>> tickets/TIC-135
 	font-size: 16px;
 }
 

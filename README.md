@@ -545,6 +545,10 @@ Pause state is tracked in `.tickets/.watch-paused`, so it survives
 restarts and is picked up immediately by any `tickets watch` process
 without reconfiguration.
 
+The Obsidian plugin's Agents view exposes the same pause/resume
+toggle (with a status pill) in its header while `tickets watch` is
+running, so operators can pause without dropping to a shell.
+
 ### Monitoring agents
 
 List currently active agent runs:

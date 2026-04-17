@@ -26,6 +26,13 @@ import { formatForceRerunDescription } from "./force-rerun";
 import { orderedPriorityNames, PriorityConfig, priorityBadgeStyle } from "./priority";
 import { visibleStages } from "./visible-stages";
 import {
+	pauseWatch,
+	readWatchPauseStatus,
+	resumeWatch,
+	summarizeWatchPause,
+	WatchPauseStatus,
+} from "./watch-pause";
+import {
 	ACTIVE_AGENT_STATUSES,
 	canReplayTerminal,
 	cronHasLiveSession,
@@ -2166,6 +2173,10 @@ class AgentsView extends ItemView {
 	private cronAgents: CronAgentRow[] = [];
 	private previewLeaf: WorkspaceLeaf | null = null;
 	private longPressTriggered = false;
+	private watchPauseStatus: WatchPauseStatus | null = null;
+	private watchPauseError: string | null = null;
+	private watchServerPort: number | null = null;
+	private watchPauseBusy = false;
 
 	getViewType(): string {
 		return AGENTS_VIEW_TYPE;
@@ -2181,6 +2192,9 @@ class AgentsView extends ItemView {
 
 	async onOpen() {
 		await this.refresh();
+		this.registerInterval(window.setInterval(() => {
+			void this.refresh();
+		}, 5000));
 
 		this.registerEvent(this.app.vault.on("create", () => this.refresh()));
 		this.registerEvent(this.app.vault.on("delete", () => this.refresh()));
@@ -2201,6 +2215,21 @@ class AgentsView extends ItemView {
 				cls: "tb-error",
 			});
 			return;
+		}
+
+		const serverInfo = await readServerFile(this.app);
+		this.watchServerPort = serverInfo?.port ?? null;
+		if (!serverInfo) {
+			this.watchPauseStatus = null;
+			this.watchPauseError = "offline";
+		} else {
+			try {
+				this.watchPauseStatus = await readWatchPauseStatus(serverInfo.port);
+				this.watchPauseError = null;
+			} catch (error) {
+				this.watchPauseStatus = null;
+				this.watchPauseError = error instanceof Error ? error.message : String(error);
+			}
 		}
 
 		const all = await loadTickets(this.app, config.stages);
@@ -2230,6 +2259,23 @@ class AgentsView extends ItemView {
 		const header = container.createDiv({ cls: "tb-header" });
 		header.createEl("h2", { text: "Agents", cls: "tb-board-title" });
 		const actions = header.createDiv({ cls: "tb-header-actions" });
+		const watchSummary = summarizeWatchPause(this.watchPauseStatus, this.watchPauseError ?? undefined);
+		const watchPill = actions.createEl("span", {
+			text: watchSummary.label,
+			cls: `tb-watch-pill tb-watch-pill-${watchSummary.kind}`,
+		});
+		watchPill.setAttribute("title", watchSummary.detail);
+		const watchButton = actions.createEl("button", {
+			text: this.watchPauseBusy ? "Working..." : watchSummary.actionLabel,
+			cls: "tb-header-btn tb-watch-toggle-btn",
+			attr: {
+				"aria-label": watchSummary.detail,
+			},
+		});
+		watchButton.disabled = watchSummary.actionDisabled || this.watchPauseBusy;
+		watchButton.addEventListener("click", () => {
+			void this.toggleWatchPause();
+		});
 		const totalCount = this.tickets.length + this.cronAgents.length;
 		const count = actions.createEl("span", {
 			text: String(totalCount),
@@ -2266,6 +2312,46 @@ class AgentsView extends ItemView {
 			for (const cron of this.cronAgents) {
 				this.renderCronRow(list, cron);
 			}
+		}
+	}
+
+	private async toggleWatchPause() {
+		if (this.watchPauseBusy || this.watchServerPort == null) {
+			return;
+		}
+		if (this.watchPauseStatus?.paused) {
+			await this.runWatchPauseAction(async () => resumeWatch(this.watchServerPort!));
+			return;
+		}
+		new TextInputModal(
+			this.app,
+			"Pause watcher",
+			"Optional reason",
+			"",
+			async (reason) => {
+				await this.runWatchPauseAction(async () => pauseWatch(this.watchServerPort!, reason), true);
+			},
+			true,
+		).open();
+	}
+
+	private async runWatchPauseAction(action: () => Promise<WatchPauseStatus>, refreshAfter = false) {
+		this.watchPauseBusy = true;
+		this.render();
+		try {
+			this.watchPauseStatus = await action();
+			this.watchPauseError = null;
+			if (refreshAfter) {
+				await this.refresh();
+				return;
+			}
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			this.watchPauseError = message;
+			new Notice(message);
+		} finally {
+			this.watchPauseBusy = false;
+			this.render();
 		}
 	}
 
