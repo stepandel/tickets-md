@@ -93,6 +93,8 @@ under `xvfb-run`; macOS downloads the matching `.dmg` and runs
 
 - A board view (`Open: Tickets Board` command) that mirrors the
   stages defined in `.tickets/config.yml`, drag-and-drop included.
+  If `archive_stage` is configured, that stage is hidden from the
+  board (its tickets remain on disk and visible to the CLI).
 - Inline ticket creation, edits, priority and link controls.
 - Board card project assignment controls: assign, change, or remove
   `project:` from the ticket context menu.
