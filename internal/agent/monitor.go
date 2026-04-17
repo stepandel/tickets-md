@@ -19,6 +19,10 @@ type SessionChecker func(sessionName string) bool
 // implementation is PTYRunner.IdleSeconds.
 type IdleChecker func(sessionName string) int
 
+// SessionKiller terminates a live session by name. The production
+// implementation is PTYRunner.Kill.
+type SessionKiller func(sessionName string) error
+
 const (
 	DefaultPollInterval = 5 * time.Second
 	DefaultBlockedIdle  = 30 * time.Second
@@ -31,59 +35,67 @@ type Monitor struct {
 	root      string
 	check     SessionChecker
 	idleCheck IdleChecker
+	kill      SessionKiller
 
 	// OnStatusChange fires after the monitor successfully writes a run
 	// YAML. The watcher uses it to resync the ticket's frontmatter from
 	// the latest run. Optional; nil means no callback.
 	OnStatusChange func(ticketID string)
 
-	configMu     sync.RWMutex
-	interval     time.Duration
-	blockedIdle  time.Duration
-	configReload chan struct{}
+	configMu      sync.RWMutex
+	interval      time.Duration
+	blockedIdle   time.Duration
+	idleKillAfter time.Duration
+	configReload  chan struct{}
 
 	mu       sync.Mutex
 	watching map[string]struct{} // "<ticket>/<run>" with active wait goroutines
 }
 
 // NewMonitor creates a monitor that checks session state every interval.
-func NewMonitor(root string, interval, blockedIdle time.Duration, check SessionChecker, idle IdleChecker) *Monitor {
-	interval, blockedIdle = normalizeTiming(interval, blockedIdle)
+func NewMonitor(root string, interval, blockedIdle, idleKillAfter time.Duration, check SessionChecker, idle IdleChecker, kill SessionKiller) *Monitor {
+	interval, blockedIdle, idleKillAfter = normalizeTiming(interval, blockedIdle, idleKillAfter)
 	return &Monitor{
-		root:         root,
-		interval:     interval,
-		blockedIdle:  blockedIdle,
-		check:        check,
-		idleCheck:    idle,
-		configReload: make(chan struct{}, 1),
-		watching:     make(map[string]struct{}),
+		root:          root,
+		interval:      interval,
+		blockedIdle:   blockedIdle,
+		idleKillAfter: idleKillAfter,
+		check:         check,
+		idleCheck:     idle,
+		kill:          kill,
+		configReload:  make(chan struct{}, 1),
+		watching:      make(map[string]struct{}),
 	}
 }
 
-func normalizeTiming(interval, blockedIdle time.Duration) (time.Duration, time.Duration) {
+func normalizeTiming(interval, blockedIdle, idleKillAfter time.Duration) (time.Duration, time.Duration, time.Duration) {
 	if interval <= 0 {
 		interval = DefaultPollInterval
 	}
 	if blockedIdle <= 0 {
 		blockedIdle = DefaultBlockedIdle
 	}
-	return interval, blockedIdle
+	if idleKillAfter < 0 {
+		idleKillAfter = 0
+	}
+	return interval, blockedIdle, idleKillAfter
 }
 
-func (m *Monitor) Timing() (time.Duration, time.Duration) {
+func (m *Monitor) Timing() (time.Duration, time.Duration, time.Duration) {
 	m.configMu.RLock()
 	defer m.configMu.RUnlock()
-	return m.interval, m.blockedIdle
+	return m.interval, m.blockedIdle, m.idleKillAfter
 }
 
-func (m *Monitor) SetTiming(interval, blockedIdle time.Duration) bool {
-	interval, blockedIdle = normalizeTiming(interval, blockedIdle)
+func (m *Monitor) SetTiming(interval, blockedIdle, idleKillAfter time.Duration) bool {
+	interval, blockedIdle, idleKillAfter = normalizeTiming(interval, blockedIdle, idleKillAfter)
 
 	m.configMu.Lock()
-	changed := m.interval != interval || m.blockedIdle != blockedIdle
+	changed := m.interval != interval || m.blockedIdle != blockedIdle || m.idleKillAfter != idleKillAfter
 	if changed {
 		m.interval = interval
 		m.blockedIdle = blockedIdle
+		m.idleKillAfter = idleKillAfter
 	}
 	m.configMu.Unlock()
 
@@ -180,7 +192,7 @@ func (m *Monitor) Reconcile() ([]AliveStatus, error) {
 // Call Reconcile separately before Run if you need to handle alive
 // sessions on startup.
 func (m *Monitor) Run(ctx context.Context) {
-	interval, _ := m.Timing()
+	interval, _, _ := m.Timing()
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -189,7 +201,7 @@ func (m *Monitor) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-m.configReload:
-			nextInterval, _ := m.Timing()
+			nextInterval, _, _ := m.Timing()
 			if nextInterval != interval {
 				ticker.Reset(nextInterval)
 				interval = nextInterval
@@ -203,8 +215,9 @@ func (m *Monitor) Run(ctx context.Context) {
 const staleAge = 24 * time.Hour
 
 func (m *Monitor) poll() {
-	_, blockedIdle := m.Timing()
+	_, blockedIdle, idleKillAfter := m.Timing()
 	blockedAfterSeconds := int(blockedIdle / time.Second)
+	idleKillAfterSeconds := int(idleKillAfter / time.Second)
 
 	statuses, err := m.listStatuses()
 	if err != nil {
@@ -239,6 +252,24 @@ func (m *Monitor) poll() {
 
 		if m.check(as.Session) {
 			idle := m.idleCheck(as.Session)
+			if idleKillAfterSeconds > 0 && idle >= idleKillAfterSeconds {
+				if m.kill == nil {
+					log.Printf("monitor: %s/%s exceeded idle kill threshold but no killer is configured", as.TicketID, as.RunID)
+					continue
+				}
+				if err := m.kill(as.Session); err != nil {
+					log.Printf("monitor: failed to kill idle session %s for %s/%s: %v", as.Session, as.TicketID, as.RunID, err)
+					continue
+				}
+				as.Status = StatusFailed
+				as.Error = fmt.Sprintf("session killed after %ds idle", idle)
+				if err := m.writeAndNotify(as); err != nil {
+					log.Printf("monitor: failed to mark %s/%s failed after idle kill: %v", as.TicketID, as.RunID, err)
+				} else {
+					log.Printf("monitor: %s/%s killed after %ds idle", as.TicketID, as.RunID, idle)
+				}
+				continue
+			}
 
 			switch as.Status {
 			case StatusSpawned:

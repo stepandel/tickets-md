@@ -65,6 +65,7 @@ func (d Duration) MarshalYAML() (any, error) {
 type WatchConfig struct {
 	PollInterval   *Duration `yaml:"poll_interval,omitempty"`
 	IdleBlockAfter *Duration `yaml:"idle_block_after,omitempty"`
+	IdleKillAfter  *Duration `yaml:"idle_kill_after,omitempty"`
 }
 
 type WorktreesConfig struct {
@@ -260,6 +261,17 @@ func (c Config) Validate() error {
 			}
 			if c.Watch.IdleBlockAfter.Duration < time.Second {
 				return errors.New("watch.idle_block_after must be >= 1s")
+			}
+		}
+		if c.Watch.IdleKillAfter != nil {
+			if c.Watch.IdleKillAfter.Duration <= 0 {
+				return errors.New("watch.idle_kill_after must be > 0")
+			}
+			if c.Watch.IdleKillAfter.Duration < time.Second {
+				return errors.New("watch.idle_kill_after must be >= 1s")
+			}
+			if c.Watch.IdleBlockAfter != nil && c.Watch.IdleKillAfter.Duration < c.Watch.IdleBlockAfter.Duration {
+				return errors.New("watch.idle_kill_after must be >= watch.idle_block_after")
 			}
 		}
 	}

@@ -29,7 +29,7 @@ func TestPollDoesNotFailTrackedSpawnedRunWhenSessionMissing(t *testing.T) {
 		t.Fatalf("Write: %v", err)
 	}
 
-	mon := NewMonitor(root, 0, 0, func(string) bool { return false }, func(string) int { return -1 })
+	mon := NewMonitor(root, 0, 0, 0, func(string) bool { return false }, func(string) int { return -1 }, func(string) error { return nil })
 	mon.TrackRun(as.TicketID, as.RunID)
 	mon.poll()
 
@@ -91,7 +91,7 @@ func TestPollKeepsCronDirAfterRunsExpire(t *testing.T) {
 		t.Fatalf("WriteFile log: %v", err)
 	}
 
-	mon := NewMonitor(root, 0, 0, func(string) bool { return false }, func(string) int { return -1 })
+	mon := NewMonitor(root, 0, 0, 0, func(string) bool { return false }, func(string) int { return -1 }, func(string) error { return nil })
 	mon.poll()
 
 	if _, err := os.Stat(CronDir(root, name)); err != nil {
@@ -127,7 +127,7 @@ func TestPollKeepsOrphanCronDirForDoctor(t *testing.T) {
 		LogFile:   CronLogPath(root, name, runID),
 	})
 
-	mon := NewMonitor(root, 0, 0, func(string) bool { return false }, func(string) int { return -1 })
+	mon := NewMonitor(root, 0, 0, 0, func(string) bool { return false }, func(string) int { return -1 }, func(string) error { return nil })
 	mon.poll()
 
 	if _, err := os.Stat(CronDir(root, name)); err != nil {
@@ -154,7 +154,7 @@ func TestPollKeepsActiveCronDir(t *testing.T) {
 		LogFile:   CronLogPath(root, name, runID),
 	})
 
-	mon := NewMonitor(root, 0, 0, func(string) bool { return true }, func(string) int { return 0 })
+	mon := NewMonitor(root, 0, 0, 0, func(string) bool { return true }, func(string) int { return 0 }, func(string) error { return nil })
 	mon.poll()
 
 	if _, err := os.Stat(CronDir(root, name)); err != nil {
@@ -189,7 +189,7 @@ func TestPollUsesConfiguredBlockedIdleThreshold(t *testing.T) {
 		t.Fatalf("Write: %v", err)
 	}
 
-	mon := NewMonitor(root, 0, 3*time.Second, func(string) bool { return true }, func(string) int { return 2 })
+	mon := NewMonitor(root, 0, 3*time.Second, 0, func(string) bool { return true }, func(string) int { return 2 }, func(string) error { return nil })
 	mon.poll()
 
 	got, err := ReadRun(root, as.TicketID, as.RunID)
@@ -200,7 +200,7 @@ func TestPollUsesConfiguredBlockedIdleThreshold(t *testing.T) {
 		t.Fatalf("status = %q, want %q", got.Status, StatusRunning)
 	}
 
-	if changed := mon.SetTiming(0, time.Second); !changed {
+	if changed := mon.SetTiming(0, time.Second, 0); !changed {
 		t.Fatal("SetTiming changed = false, want true")
 	}
 	mon.poll()
@@ -211,6 +211,134 @@ func TestPollUsesConfiguredBlockedIdleThreshold(t *testing.T) {
 	}
 	if got.Status != StatusBlocked {
 		t.Fatalf("status = %q, want %q", got.Status, StatusBlocked)
+	}
+}
+
+func TestPollKillsIdleRunningSessionAfterThreshold(t *testing.T) {
+	root := t.TempDir()
+	now := time.Now().UTC().Truncate(time.Second)
+	as := AgentStatus{
+		TicketID:  "TIC-126",
+		RunID:     "001-execute",
+		Seq:       1,
+		Attempt:   1,
+		Stage:     "execute",
+		Agent:     "codex",
+		Session:   "TIC-126-1",
+		Status:    StatusRunning,
+		SpawnedAt: now,
+		UpdatedAt: now,
+		LogFile:   LogPath(root, "TIC-126", "001-execute"),
+	}
+	if err := Write(root, as); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	killed := 0
+	mon := NewMonitor(root, 0, time.Hour, 3*time.Second, func(string) bool { return true }, func(string) int { return 5 }, func(session string) error {
+		killed++
+		if session != "TIC-126-1" {
+			t.Fatalf("kill session = %q, want %q", session, "TIC-126-1")
+		}
+		return nil
+	})
+
+	mon.poll()
+
+	if killed != 1 {
+		t.Fatalf("kill count = %d, want 1", killed)
+	}
+	got, err := ReadRun(root, as.TicketID, as.RunID)
+	if err != nil {
+		t.Fatalf("ReadRun: %v", err)
+	}
+	if got.Status != StatusFailed {
+		t.Fatalf("status = %q, want %q", got.Status, StatusFailed)
+	}
+	if got.Error != "session killed after 5s idle" {
+		t.Fatalf("error = %q, want %q", got.Error, "session killed after 5s idle")
+	}
+}
+
+func TestPollKillsIdleBlockedSessionAfterThreshold(t *testing.T) {
+	root := t.TempDir()
+	now := time.Now().UTC().Truncate(time.Second)
+	as := AgentStatus{
+		TicketID:  "TIC-127",
+		RunID:     "001-execute",
+		Seq:       1,
+		Attempt:   1,
+		Stage:     "execute",
+		Agent:     "codex",
+		Session:   "TIC-127-1",
+		Status:    StatusBlocked,
+		SpawnedAt: now,
+		UpdatedAt: now,
+		LogFile:   LogPath(root, "TIC-127", "001-execute"),
+	}
+	if err := Write(root, as); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	killed := 0
+	mon := NewMonitor(root, 0, 2*time.Second, 3*time.Second, func(string) bool { return true }, func(string) int { return 5 }, func(string) error {
+		killed++
+		return nil
+	})
+
+	mon.poll()
+
+	if killed != 1 {
+		t.Fatalf("kill count = %d, want 1", killed)
+	}
+	got, err := ReadRun(root, as.TicketID, as.RunID)
+	if err != nil {
+		t.Fatalf("ReadRun: %v", err)
+	}
+	if got.Status != StatusFailed {
+		t.Fatalf("status = %q, want %q", got.Status, StatusFailed)
+	}
+	if got.Error != "session killed after 5s idle" {
+		t.Fatalf("error = %q, want %q", got.Error, "session killed after 5s idle")
+	}
+}
+
+func TestPollDoesNotKillWhenIdleKillDisabled(t *testing.T) {
+	root := t.TempDir()
+	now := time.Now().UTC().Truncate(time.Second)
+	as := AgentStatus{
+		TicketID:  "TIC-128",
+		RunID:     "001-execute",
+		Seq:       1,
+		Attempt:   1,
+		Stage:     "execute",
+		Agent:     "codex",
+		Session:   "TIC-128-1",
+		Status:    StatusRunning,
+		SpawnedAt: now,
+		UpdatedAt: now,
+		LogFile:   LogPath(root, "TIC-128", "001-execute"),
+	}
+	if err := Write(root, as); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	mon := NewMonitor(root, 0, time.Hour, 0, func(string) bool { return true }, func(string) int { return 100 }, func(string) error {
+		t.Fatal("kill should not be called when idle kill is disabled")
+		return nil
+	})
+
+	mon.poll()
+
+	got, err := ReadRun(root, as.TicketID, as.RunID)
+	if err != nil {
+		t.Fatalf("ReadRun: %v", err)
+	}
+	if got.Status != StatusRunning {
+		t.Fatalf("status = %q, want %q", got.Status, StatusRunning)
+	}
+	if got.Error != "" {
+		t.Fatalf("error = %q, want empty", got.Error)
 	}
 }
 
@@ -235,19 +363,19 @@ func TestMonitorRunResetsTickerOnTimingReload(t *testing.T) {
 	}
 
 	polls := make(chan time.Time, 4)
-	mon := NewMonitor(root, time.Hour, DefaultBlockedIdle, func(string) bool {
+	mon := NewMonitor(root, time.Hour, DefaultBlockedIdle, 0, func(string) bool {
 		select {
 		case polls <- time.Now():
 		default:
 		}
 		return true
-	}, func(string) int { return 0 })
+	}, func(string) int { return 0 }, func(string) error { return nil })
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go mon.Run(ctx)
 
-	if changed := mon.SetTiming(20*time.Millisecond, DefaultBlockedIdle); !changed {
+	if changed := mon.SetTiming(20*time.Millisecond, DefaultBlockedIdle, 0); !changed {
 		t.Fatal("SetTiming changed = false, want true")
 	}
 
