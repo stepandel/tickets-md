@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   query (case-insensitive, multi-word). The query is persisted per
   board leaf across reopen/reload, and empty stages render a
   "No matching tickets" hint while a filter is active.
+- `tickets crons stop <name>` terminates an active cron agent PTY
+  session through the running watcher, marking the run `failed` with
+  a `terminated by user` error. The Obsidian agents view exposes the
+  same action as a "Stop session" menu entry on cron rows with a
+  live session. Useful for killing an interactive cron run without
+  attaching to the terminal.
 - `tickets watch` now auto-reloads per-stage `.stage.yml` files while
   the watcher is running. Editing, creating, or removing a stage's
   `.stage.yml` is picked up on the next debounce without a restart;

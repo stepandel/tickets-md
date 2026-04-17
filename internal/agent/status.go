@@ -210,11 +210,36 @@ func Write(root string, as AgentStatus) error {
 		return f.Close()
 	}
 
-	tmp := target + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	tmp, err := writeRunTmp(target, data)
+	if err != nil {
 		return err
 	}
 	return os.Rename(tmp, target)
+}
+
+// writeRunTmp writes data to a uniquely-named sibling of target and
+// returns the temp path. Concurrent writers to the same target get
+// distinct tmp files (so they never truncate each other's buffer),
+// and the resulting filename still ends in ".yml.tmp" so
+// doctor's orphan-tmp scan continues to match it.
+func writeRunTmp(target string, data []byte) (string, error) {
+	dir := filepath.Dir(target)
+	prefix := strings.TrimSuffix(filepath.Base(target), ".yml")
+	f, err := os.CreateTemp(dir, prefix+".*.yml.tmp")
+	if err != nil {
+		return "", err
+	}
+	tmp := f.Name()
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return "", err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
+		return "", err
+	}
+	return tmp, nil
 }
 
 // ReadRun loads a specific run record.
@@ -347,8 +372,8 @@ func SetPlanFile(root, ticketID, runID, planFile string) error {
 		return err
 	}
 	target := runPath(root, ticketID, runID)
-	tmp := target + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	tmp, err := writeRunTmp(target, data)
+	if err != nil {
 		return err
 	}
 	return os.Rename(tmp, target)

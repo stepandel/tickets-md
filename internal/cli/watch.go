@@ -426,6 +426,14 @@ func runWatch(s *ticket.Store) error {
 		}
 		return "", fmt.Errorf("cron %q not configured", name)
 	}
+	termSrv.TerminateCronSession = func(name string) (string, error) {
+		for _, ca := range s.Config.CronAgents {
+			if ca.Name == name {
+				return terminateCronSession(s.Root, ca, runner)
+			}
+		}
+		return "", fmt.Errorf("cron %q not configured", name)
+	}
 	termSrv.WatchStatus = func() (terminal.WatchState, error) {
 		return terminalWatchState(s.Root)
 	}

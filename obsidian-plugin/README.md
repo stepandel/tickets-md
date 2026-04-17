@@ -110,7 +110,8 @@ temporarily skipped until macOS CI coverage is restored.
   live terminal, replay a completed run's terminal output, view the
   diff a run produced.
 - Cron agents from `config.yml` in the Agents view, including edit,
-  enable/disable, run now (desktop), and last-log actions.
+  enable/disable, run now (desktop), stop an active session, and
+  last-log actions.
 - Watcher pause/resume toggle in the Agents view header, with a
   status pill that reflects whether `tickets watch` is active,
   paused, offline, or unreachable. Pausing prompts for an optional

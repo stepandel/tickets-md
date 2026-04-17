@@ -3,6 +3,7 @@ package agent
 import (
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -119,5 +120,53 @@ func TestCronHelpersRoundTrip(t *testing.T) {
 	}
 	if len(allCron) != 1 || allCron[0].RunID != runID {
 		t.Fatalf("ListAllCronRuns = %#v", allCron)
+	}
+}
+
+func TestSetPlanFileConcurrentUpdates(t *testing.T) {
+	root := t.TempDir()
+	as := AgentStatus{
+		TicketID:  "TIC-001",
+		RunID:     "001-execute",
+		Seq:       1,
+		Attempt:   1,
+		Stage:     "execute",
+		Agent:     "claude",
+		Session:   "TIC-001-1",
+		Status:    StatusDone,
+		SpawnedAt: time.Now().UTC().Truncate(time.Second),
+		LogFile:   LogPath(root, "TIC-001", "001-execute"),
+	}
+	if err := os.MkdirAll(RunsDir(root, as.TicketID), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := Write(root, as); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 2)
+	for _, plan := range []string{"plan-a.md", "plan-b.md"} {
+		wg.Add(1)
+		go func(plan string) {
+			defer wg.Done()
+			errs <- SetPlanFile(root, as.TicketID, as.RunID, plan)
+		}(plan)
+	}
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("SetPlanFile: %v", err)
+		}
+	}
+
+	got, err := ReadRun(root, as.TicketID, as.RunID)
+	if err != nil {
+		t.Fatalf("ReadRun: %v", err)
+	}
+	if got.PlanFile != "plan-a.md" && got.PlanFile != "plan-b.md" {
+		t.Fatalf("PlanFile = %q, want one of the concurrent writes", got.PlanFile)
 	}
 }

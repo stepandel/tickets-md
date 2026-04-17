@@ -278,6 +278,35 @@ func startCronRun(root string, ca config.CronAgentConfig, mon *agent.Monitor, ru
 	return sessionName, nil
 }
 
+func terminateCronSession(root string, ca config.CronAgentConfig, runner *agent.PTYRunner) (string, error) {
+	as, err := agent.CronLatest(root, ca.Name)
+	if err != nil {
+		return "", terminal.ErrCronSessionNotActive
+	}
+	if as.Status.IsTerminal() || !runner.Alive(as.Session) {
+		return "", terminal.ErrCronSessionNotActive
+	}
+	if err := runner.Kill(as.Session); err != nil {
+		return "", terminal.ErrCronSessionNotActive
+	}
+
+	latest, err := agent.ReadRun(root, agent.CronOwnerID(ca.Name), as.RunID)
+	if err != nil || latest.Status.IsTerminal() {
+		return as.Session, nil
+	}
+	latest.Status = agent.StatusFailed
+	latest.Error = "terminated by user"
+	latest.ExitCode = nil
+	if err := agent.Write(root, latest); err != nil {
+		latest, readErr := agent.ReadRun(root, agent.CronOwnerID(ca.Name), as.RunID)
+		if readErr == nil && latest.Status.IsTerminal() {
+			return as.Session, nil
+		}
+		return "", fmt.Errorf("writing terminated status: %w", err)
+	}
+	return as.Session, nil
+}
+
 func waitForCronSession(name, runID, agentName, sessionName, root string, mon *agent.Monitor, runner *agent.PTYRunner) {
 	ownerID := agent.CronOwnerID(name)
 	defer mon.UntrackRun(ownerID, runID)
