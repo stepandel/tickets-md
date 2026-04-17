@@ -119,7 +119,7 @@ func HarnessDoctor(s *ticket.Store, fix bool, staleAfter time.Duration) ([]Harne
 	issues = append(issues, checkStaleRuns(root, fix, staleAfter)...)
 	issues = append(issues, checkOrphanAgentDirs(root, fix, knownTickets, knownCronAgents)...)
 	issues = append(issues, checkOrphanTmpFiles(root, fix)...)
-	issues = append(issues, checkOrphanWorktrees(root, fix, knownTickets)...)
+	issues = append(issues, checkOrphanWorktrees(root, worktreeLayout(s.Config), fix, knownTickets)...)
 	issues = append(issues, checkFrontmatterDrift(s, fix, knownTickets)...)
 
 	return issues, nil
@@ -289,8 +289,8 @@ func scanOrphanTmpDir(dir, targetPrefix string, fix bool) []HarnessIssue {
 
 // checkOrphanWorktrees finds worktree directories whose ticket id no
 // longer resolves to a ticket in the store.
-func checkOrphanWorktrees(root string, fix bool, known map[string]ticket.Ticket) []HarnessIssue {
-	infos, err := worktree.List(root)
+func checkOrphanWorktrees(root string, layout worktree.Layout, fix bool, known map[string]ticket.Ticket) []HarnessIssue {
+	infos, err := worktree.List(root, layout)
 	if err != nil {
 		return nil
 	}
@@ -306,7 +306,7 @@ func checkOrphanWorktrees(root string, fix bool, known map[string]ticket.Ticket)
 			Message: fmt.Sprintf("worktree at %s has no ticket", info.Path),
 		}
 		if fix {
-			if err := worktree.Remove(root, id); err == nil {
+			if err := worktree.Remove(root, layout, id); err == nil {
 				iss.Fixed = true
 			} else {
 				iss.Message = fmt.Sprintf("%s — fix failed: %v", iss.Message, err)

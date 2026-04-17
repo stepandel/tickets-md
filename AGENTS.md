@@ -26,9 +26,10 @@ caught it and update this file.
   `.tickets/.agents/<ticket-id>/`, board cron runs under
   `.tickets/.agents/.cron/<name>/`. No other package may read or
   write there.
-- `internal/worktree/` — git worktree creation/removal under
-  `.worktrees/<id>`. **Owns everything under `.worktrees/`**; no other
-  package may read or write there.
+- `internal/worktree/` — git worktree creation/removal under the
+  configured worktree dir (default `.worktrees/<id>`). **Owns
+  everything under that configured directory**; no other package may
+  read or write there.
 - `internal/terminal/` — WebSocket server that brokers live PTY
   access to the Obsidian plugin. Depends on `agent`.
 - `internal/obsidian/` — embeds the companion Obsidian plugin's build

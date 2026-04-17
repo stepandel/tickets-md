@@ -36,7 +36,8 @@ func newWorktreeListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			infos, err := worktree.List(s.Root)
+			layout := worktreeLayout(s.Config)
+			infos, err := worktree.List(s.Root, layout)
 			if err != nil {
 				return err
 			}
@@ -65,7 +66,7 @@ func newWorktreeOpenCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			wtDir := filepath.Join(s.Root, worktree.Dir, args[0])
+			wtDir := worktreeLayout(s.Config).WorktreePath(s.Root, args[0])
 			if _, err := os.Stat(wtDir); err != nil {
 				return fmt.Errorf("no worktree for %s (expected %s)", args[0], wtDir)
 			}
@@ -93,14 +94,15 @@ func newWorktreeCleanCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			layout := worktreeLayout(s.Config)
 			if all {
-				return cleanAllWorktrees(s.Root)
+				return cleanAllWorktrees(s.Root, layout)
 			}
 			if len(args) == 0 {
 				return fmt.Errorf("specify ticket IDs or use --all")
 			}
 			for _, id := range args {
-				if err := worktree.Remove(s.Root, id); err != nil {
+				if err := worktree.Remove(s.Root, layout, id); err != nil {
 					fmt.Fprintf(os.Stderr, "%s: %v\n", id, err)
 				} else {
 					fmt.Printf("removed %s\n", id)
@@ -113,8 +115,8 @@ func newWorktreeCleanCmd() *cobra.Command {
 	return cmd
 }
 
-func cleanAllWorktrees(root string) error {
-	infos, err := worktree.List(root)
+func cleanAllWorktrees(root string, layout worktree.Layout) error {
+	infos, err := worktree.List(root, layout)
 	if err != nil {
 		return err
 	}
@@ -124,7 +126,7 @@ func cleanAllWorktrees(root string) error {
 	}
 	for _, info := range infos {
 		id := filepath.Base(info.Path)
-		if err := worktree.Remove(root, id); err != nil {
+		if err := worktree.Remove(root, layout, id); err != nil {
 			fmt.Fprintf(os.Stderr, "%s: %v\n", id, err)
 		} else {
 			fmt.Printf("removed %s\n", id)

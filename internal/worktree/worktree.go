@@ -11,12 +11,10 @@ import (
 	"strings"
 )
 
-const (
-	// Dir is the directory under the project root where worktrees live.
-	Dir = ".worktrees"
-	// BranchPrefix namespaces worktree branches to avoid collisions.
-	BranchPrefix = "tickets/"
-)
+type Layout struct {
+	Dir          string
+	BranchPrefix string
+}
 
 // Info describes an existing worktree.
 type Info struct {
@@ -24,13 +22,42 @@ type Info struct {
 	Branch string // branch name (e.g. tickets/TIC-001)
 }
 
+func DefaultLayout() Layout {
+	return Layout{
+		Dir:          ".worktrees",
+		BranchPrefix: "tickets/",
+	}
+}
+
+func (l Layout) withDefaults() Layout {
+	def := DefaultLayout()
+	if l.Dir == "" {
+		l.Dir = def.Dir
+	}
+	if l.BranchPrefix == "" {
+		l.BranchPrefix = def.BranchPrefix
+	}
+	return l
+}
+
+func (l Layout) WorktreePath(root, ticketID string) string {
+	l = l.withDefaults()
+	return filepath.Join(root, l.Dir, ticketID)
+}
+
+func (l Layout) Branch(ticketID string) string {
+	l = l.withDefaults()
+	return l.BranchPrefix + ticketID
+}
+
 // Create creates a new git worktree for a ticket. It branches from
 // baseBranch (or HEAD if empty) and returns the absolute worktree path.
 //
 //	git worktree add .worktrees/TIC-001 -b tickets/TIC-001 [baseBranch]
-func Create(root, ticketID, baseBranch string) (string, error) {
-	wtDir := filepath.Join(root, Dir, ticketID)
-	branch := BranchPrefix + ticketID
+func Create(root string, layout Layout, ticketID, baseBranch string) (string, error) {
+	layout = layout.withDefaults()
+	wtDir := layout.WorktreePath(root, ticketID)
+	branch := layout.Branch(ticketID)
 
 	// If the worktree already exists, just return its path.
 	if info, err := os.Stat(wtDir); err == nil && info.IsDir() {
@@ -38,7 +65,7 @@ func Create(root, ticketID, baseBranch string) (string, error) {
 	}
 
 	// Ensure parent directory exists.
-	if err := os.MkdirAll(filepath.Join(root, Dir), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, layout.Dir), 0o755); err != nil {
 		return "", err
 	}
 
@@ -69,8 +96,8 @@ func Create(root, ticketID, baseBranch string) (string, error) {
 
 // DeleteBranch deletes the ticket's branch (tickets/<id>). It is a
 // no-op if the branch does not exist.
-func DeleteBranch(root, ticketID string) error {
-	branch := BranchPrefix + ticketID
+func DeleteBranch(root string, layout Layout, ticketID string) error {
+	branch := layout.Branch(ticketID)
 	cmd := exec.Command("git", "branch", "-D", branch)
 	cmd.Dir = root
 	out, err := cmd.CombinedOutput()
@@ -86,8 +113,8 @@ func DeleteBranch(root, ticketID string) error {
 }
 
 // Remove removes a worktree directory and prunes git's record of it.
-func Remove(root, ticketID string) error {
-	wtDir := filepath.Join(root, Dir, ticketID)
+func Remove(root string, layout Layout, ticketID string) error {
+	wtDir := layout.WorktreePath(root, ticketID)
 	cmd := exec.Command("git", "worktree", "remove", "--force", wtDir)
 	cmd.Dir = root
 	out, err := cmd.CombinedOutput()
@@ -98,8 +125,9 @@ func Remove(root, ticketID string) error {
 }
 
 // List returns all worktrees under .worktrees/.
-func List(root string) ([]Info, error) {
-	dir := filepath.Join(root, Dir)
+func List(root string, layout Layout) ([]Info, error) {
+	layout = layout.withDefaults()
+	dir := filepath.Join(root, layout.Dir)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -135,13 +163,14 @@ func branchForWorktree(root, wtPath string) string {
 }
 
 // EnsureGitignored adds .worktrees to .gitignore if not already present.
-func EnsureGitignored(root string) error {
+func EnsureGitignored(root string, layout Layout) error {
+	layout = layout.withDefaults()
 	gitignore := filepath.Join(root, ".gitignore")
 	data, err := os.ReadFile(gitignore)
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	entry := ".worktrees"
+	entry := layout.Dir
 	for _, line := range strings.Split(string(data), "\n") {
 		if strings.TrimSpace(line) == entry {
 			return nil // already present
