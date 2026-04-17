@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -188,25 +189,71 @@ func TestPollUsesConfiguredBlockedIdleThreshold(t *testing.T) {
 		t.Fatalf("Write: %v", err)
 	}
 
-	mon := NewMonitor(root, 0, time.Second, func(string) bool { return true }, func(string) int { return 2 })
+	mon := NewMonitor(root, 0, 3*time.Second, func(string) bool { return true }, func(string) int { return 2 })
 	mon.poll()
 
 	got, err := ReadRun(root, as.TicketID, as.RunID)
 	if err != nil {
 		t.Fatalf("ReadRun: %v", err)
 	}
-	if got.Status != StatusBlocked {
-		t.Fatalf("status = %q, want %q", got.Status, StatusBlocked)
+	if got.Status != StatusRunning {
+		t.Fatalf("status = %q, want %q", got.Status, StatusRunning)
 	}
 
-	mon = NewMonitor(root, 0, 3*time.Second, func(string) bool { return true }, func(string) int { return 2 })
+	if changed := mon.SetTiming(0, time.Second); !changed {
+		t.Fatal("SetTiming changed = false, want true")
+	}
 	mon.poll()
 
 	got, err = ReadRun(root, as.TicketID, as.RunID)
 	if err != nil {
 		t.Fatalf("ReadRun: %v", err)
 	}
-	if got.Status != StatusRunning {
-		t.Fatalf("status = %q, want %q", got.Status, StatusRunning)
+	if got.Status != StatusBlocked {
+		t.Fatalf("status = %q, want %q", got.Status, StatusBlocked)
+	}
+}
+
+func TestMonitorRunResetsTickerOnTimingReload(t *testing.T) {
+	root := t.TempDir()
+	now := time.Now().UTC().Truncate(time.Second)
+	as := AgentStatus{
+		TicketID:  "TIC-115",
+		RunID:     "001-execute",
+		Seq:       1,
+		Attempt:   1,
+		Stage:     "execute",
+		Agent:     "codex",
+		Session:   "TIC-115-1",
+		Status:    StatusRunning,
+		SpawnedAt: now,
+		UpdatedAt: now,
+		LogFile:   LogPath(root, "TIC-115", "001-execute"),
+	}
+	if err := Write(root, as); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	polls := make(chan time.Time, 4)
+	mon := NewMonitor(root, time.Hour, DefaultBlockedIdle, func(string) bool {
+		select {
+		case polls <- time.Now():
+		default:
+		}
+		return true
+	}, func(string) int { return 0 })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go mon.Run(ctx)
+
+	if changed := mon.SetTiming(20*time.Millisecond, DefaultBlockedIdle); !changed {
+		t.Fatal("SetTiming changed = false, want true")
+	}
+
+	select {
+	case <-polls:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("monitor did not poll after timing reload")
 	}
 }
