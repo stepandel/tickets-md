@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `cron_agents[]` gained an optional `interactive: true` flag. When
+  set, the scheduler skips the cron-specific arg prep (so Claude's
+  auto-`--print` is not injected) and the run's PTY stays alive until
+  the user closes it. The Obsidian agents view exposes an "Open live
+  terminal" menu entry and row click-through that attach to the
+  running session via the existing terminal server; while the
+  interactive run is alive, subsequent ticks for the same cron are
+  skipped.
+
 ## [0.1.11] - 2026-04-16
 
 - The `tickets watch` monitor's poll interval (default 5s) and the

@@ -196,7 +196,11 @@ link a run back to its plan file deterministically. The Claude
 integration also implements `PrepareCronArgs`, which auto-injects
 `--print` for cron runs (unless the user already passed `--print`/`-p`)
 so a board-level cron doesn't hang in interactive mode and exits
-cleanly when the prompt is done.
+cleanly when the prompt is done. A cron entry can opt out by setting
+`interactive: true` in `.tickets/config.yml`, in which case the
+scheduler falls back to `PrepareArgs` (no `--print` injection) and the
+live PTY can be attached from the Obsidian agents view; subsequent
+ticks are skipped until that session exits.
 
 **Codex CLI does not have an integration, and that is intentional.**
 Codex auto-generates its own thread ids (not injectable), has no plan
