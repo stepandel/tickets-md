@@ -169,13 +169,28 @@ func spawnCronAgent(root string, ca config.CronAgentConfig, mon *agent.Monitor, 
 		log.Printf("cron %s: skipping tick, previous run %s is still active", ca.Name, prev.RunID)
 		return nil
 	}
-	_, err := startCronRun(root, ca, mon, runner, 0, 0)
+	paused, err := watchPauseActive(root)
+	if err != nil {
+		return fmt.Errorf("checking watch pause: %w", err)
+	}
+	if paused {
+		log.Printf("cron %s: watcher paused, skipping run", ca.Name)
+		return nil
+	}
+	_, err = startCronRun(root, ca, mon, runner, 0, 0)
 	return err
 }
 
 func runCronAgentManual(root string, ca config.CronAgentConfig, mon *agent.Monitor, runner *agent.PTYRunner, rows, cols uint16) (string, error) {
 	if ca.Worktree {
 		return "", fmt.Errorf("cron %s: worktree=true is not supported yet", ca.Name)
+	}
+	paused, err := watchPauseActive(root)
+	if err != nil {
+		return "", fmt.Errorf("checking watch pause: %w", err)
+	}
+	if paused {
+		return "", errWatchPaused
 	}
 	if prev, err := agent.CronLatest(root, ca.Name); err == nil && !prev.Status.IsTerminal() && runner.Alive(prev.Session) {
 		return "", terminal.ErrCronRunActive

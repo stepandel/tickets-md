@@ -54,6 +54,11 @@ Create a .stage.yml in any stage directory to configure an agent:
 			return runWatch(s)
 		},
 	}
+	cmd.AddCommand(
+		newWatchPauseCmd(),
+		newWatchResumeCmd(),
+		newWatchStatusCmd(),
+	)
 	return cmd
 }
 
@@ -210,6 +215,16 @@ func runWatch(s *ticket.Store) error {
 		log.Printf("watching %s/ (%s)", st, status)
 	}
 	log.Printf("monitor: poll=%s idle-block=%s", timings.PollInterval, timings.IdleBlockAfter)
+	if paused, err := watchPauseActive(s.Root); err != nil {
+		log.Printf("watch pause: check failed: %v", err)
+	} else if paused {
+		state, _, err := readWatchPause(s.Root)
+		if err != nil {
+			log.Printf("watch pause active (metadata unreadable: %v)", err)
+		} else {
+			log.Printf("%s", watchPauseSummary(state))
+		}
+	}
 	if err := w.Add(filepath.Join(s.Root, config.ConfigDir)); err != nil {
 		return fmt.Errorf("watching %s: %w", filepath.Join(s.Root, config.ConfigDir), err)
 	}
@@ -370,6 +385,15 @@ func handleCreate(s *ticket.Store, stageConfigs map[string]stage.Config, path st
 		}
 		return
 	}
+	paused, err := watchPauseActive(s.Root)
+	if err != nil {
+		log.Printf("%s → %s: pause check failed: %v", ticketID, stageName, err)
+		return
+	}
+	if paused {
+		log.Printf("%s → %s: watcher paused, skipping agent spawn", ticketID, stageName)
+		return
+	}
 
 	t, err := ticket.LoadFile(path, stageName)
 	if err != nil {
@@ -467,6 +491,14 @@ func buildAgentArgs(t ticket.Ticket, ac *stage.AgentConfig, worktreePath string)
 // path: looks up the ticket's current stage config, verifies an agent is
 // configured, refuses if a run is already active, then calls spawnAgent.
 func rerunStageAgent(ticketID string, force bool, s *ticket.Store, stageConfigs map[string]stage.Config, mon *agent.Monitor, runner *agent.PTYRunner, rows, cols uint16) (string, error) {
+	paused, err := watchPauseActive(s.Root)
+	if err != nil {
+		return "", fmt.Errorf("checking watch pause: %w", err)
+	}
+	if paused {
+		return "", errWatchPaused
+	}
+
 	t, err := s.Get(ticketID)
 	if err != nil {
 		return "", fmt.Errorf("ticket %s: %w", ticketID, err)
