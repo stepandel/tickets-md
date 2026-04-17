@@ -55,3 +55,63 @@ func TestSyncAgentFrontmatterIgnoresCronOwners(t *testing.T) {
 	s := newWatchStore(t)
 	syncAgentFrontmatter(s.Root, agent.CronOwnerID("groomer"))
 }
+
+type fakeCronIntegration struct {
+	name       string
+	stageCalls int
+	cronCalls  int
+}
+
+func (f *fakeCronIntegration) Name() string { return f.name }
+
+func (f *fakeCronIntegration) PrepareArgs(argv []string) ([]string, string, error) {
+	f.stageCalls++
+	return argv, "stage-session", nil
+}
+
+func (f *fakeCronIntegration) PrepareCronArgs(argv []string) ([]string, string, error) {
+	f.cronCalls++
+	return append([]string{"--cron-prepared"}, argv...), "cron-session", nil
+}
+
+func (f *fakeCronIntegration) ExtractPlan(sessionID, cwd string) (string, error) {
+	return "", nil
+}
+
+func TestStartCronRunPrefersCronIntegrationHook(t *testing.T) {
+	root := t.TempDir()
+	fake := &fakeCronIntegration{name: "fake-cron-test-agent"}
+	agent.Register(fake)
+
+	if err := os.MkdirAll(agent.CronRunsDir(root, "fake-cron"), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	runner := agent.NewPTYRunner()
+	mon := agent.NewMonitor(root, runner.Alive, runner.IdleSeconds)
+
+	// spawnCronAgent will error when exec fails for the fake command name,
+	// but the integration hook runs and persists SessionUUID before spawn.
+	_ = spawnCronAgent(root, config.CronAgentConfig{
+		Name:     "fake-cron",
+		Schedule: "@every 5m",
+		Command:  fake.name,
+		Args:     []string{"--flag"},
+		Prompt:   "ignored",
+	}, mon, runner)
+
+	if fake.cronCalls != 1 {
+		t.Fatalf("cronCalls = %d, want 1", fake.cronCalls)
+	}
+	if fake.stageCalls != 0 {
+		t.Fatalf("stageCalls = %d, want 0", fake.stageCalls)
+	}
+
+	as, err := agent.CronLatest(root, "fake-cron")
+	if err != nil {
+		t.Fatalf("CronLatest: %v", err)
+	}
+	if as.SessionUUID != "cron-session" {
+		t.Fatalf("SessionUUID = %q, want %q", as.SessionUUID, "cron-session")
+	}
+}

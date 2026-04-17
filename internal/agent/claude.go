@@ -28,18 +28,15 @@ func (claudeIntegration) PrepareArgs(argv []string) ([]string, string, error) {
 }
 
 func (claudeIntegration) PrepareCronArgs(argv []string) ([]string, string, error) {
-	argv, id, err := (claudeIntegration{}).PrepareArgs(argv)
+	id, err := newClaudeSessionID()
 	if err != nil {
-		return argv, id, err
+		return argv, "", err
 	}
-	if hasClaudePrintFlag(argv) {
-		return argv, id, nil
+	prefix := []string{"--session-id", id}
+	if !hasClaudePrintFlag(argv) {
+		prefix = append(prefix, "--print")
 	}
-	withPrint := make([]string, 0, len(argv)+1)
-	withPrint = append(withPrint, argv[:2]...)
-	withPrint = append(withPrint, "--print")
-	withPrint = append(withPrint, argv[2:]...)
-	return withPrint, id, nil
+	return append(prefix, argv...), id, nil
 }
 
 func (claudeIntegration) ExtractPlan(sessionID, cwd string) (string, error) {
