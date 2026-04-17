@@ -97,6 +97,9 @@ temporarily skipped until macOS CI coverage is restored.
   board by default; use the board menu to reveal it when needed, and
   that choice is remembered per board leaf across reopen/reload.
   Archived tickets remain on disk and visible to the CLI either way.
+  The board header has a filter input that narrows visible cards to
+  tickets whose id or title matches the query (case-insensitive). The
+  query is persisted per board leaf across reopen/reload.
 - Inline ticket creation, edits, priority and link controls.
 - Board card project assignment controls: assign, change, or remove
   `project:` from the ticket context menu.

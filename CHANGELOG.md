@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stages are created with a default `.stage.yml` and start being
   watched; removed stages stop being watched. The change is applied
   on the next config-reload debounce, so no restart is required.
+- The Obsidian board view now has a filter input in its header that
+  narrows visible cards to tickets whose id or title matches the
+  query (case-insensitive, multi-word). The query is persisted per
+  board leaf across reopen/reload, and empty stages render a
+  "No matching tickets" hint while a filter is active.
 - `tickets watch` now auto-reloads per-stage `.stage.yml` files while
   the watcher is running. Editing, creating, or removing a stage's
   `.stage.yml` is picked up on the next debounce without a restart;

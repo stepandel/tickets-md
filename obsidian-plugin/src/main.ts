@@ -20,6 +20,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { html as diff2html } from "diff2html";
 import { normalizeBoardFilterQuery, ticketMatchesBoardFilter } from "./board-filter";
 import { readBoardViewState } from "./board-view-state";
+import { matchesFilter } from "./board-filter";
 import { planDiffCommand, resolveDefaultBranch } from "./diff";
 import { formatForceRerunDescription } from "./force-rerun";
 import { orderedPriorityNames, PriorityConfig, priorityBadgeStyle } from "./priority";
@@ -693,7 +694,10 @@ class BoardView extends ItemView {
 	private agentStages: Set<string> = new Set();
 	private previewLeaf: WorkspaceLeaf | null = null;
 	private boardEl: HTMLElement | null = null;
+<<<<<<< HEAD
 	private saveLayoutTimer: number | null = null;
+=======
+>>>>>>> tickets/TIC-135
 
 	// Touch drag state
 	private dragTicketPath: string | null = null;
@@ -717,16 +721,24 @@ class BoardView extends ItemView {
 	async setState(state: Record<string, unknown>, result: ViewStateResult) {
 		const boardState = readBoardViewState(state);
 		this.showArchived = boardState.showArchived;
+<<<<<<< HEAD
 		this.filterQuery = boardState.filterQuery;
+=======
+		this.filterQuery = boardState.query;
+>>>>>>> tickets/TIC-135
 		await super.setState(state, result);
 		await this.refresh();
 	}
 
 	getState(): Record<string, unknown> {
+<<<<<<< HEAD
 		return {
 			showArchived: this.showArchived,
 			filterQuery: this.filterQuery,
 		};
+=======
+		return { showArchived: this.showArchived, query: this.filterQuery };
+>>>>>>> tickets/TIC-135
 	}
 
 	async onOpen() {
@@ -805,9 +817,12 @@ class BoardView extends ItemView {
 	private render() {
 		const container = this.contentEl;
 		container.empty();
+<<<<<<< HEAD
 		container.addClass("tb-view");
+=======
+		container.addClass("tb-board-view");
+>>>>>>> tickets/TIC-135
 
-		// Header
 		const header = container.createDiv({ cls: "tb-header" });
 		const headerMain = header.createDiv({ cls: "tb-header-main" });
 		const boardName = this.config?.name || "Tickets Board";
@@ -848,6 +863,20 @@ class BoardView extends ItemView {
 		});
 
 		const headerActions = header.createDiv({ cls: "tb-header-actions" });
+		const filterInput = headerActions.createEl("input", {
+			cls: "tb-filter-input",
+			type: "search",
+			attr: {
+				"aria-label": "Filter tickets",
+				placeholder: "Filter tickets",
+			},
+		});
+		filterInput.value = this.filterQuery;
+		filterInput.addEventListener("input", () => {
+			this.filterQuery = filterInput.value;
+			this.renderBoard();
+			this.app.workspace.requestSaveLayout();
+		});
 
 		const refreshBtn = headerActions.createEl("button", {
 			cls: "tb-header-btn",
@@ -889,12 +918,16 @@ class BoardView extends ItemView {
 			menu.showAtMouseEvent(e);
 		});
 
+<<<<<<< HEAD
 		// Board
+=======
+>>>>>>> tickets/TIC-135
 		this.boardEl = container.createDiv({ cls: "tb-board" });
 		this.renderBoard();
 	}
 
 	private renderBoard() {
+<<<<<<< HEAD
 		if (!this.boardEl) {
 			return;
 		}
@@ -912,6 +945,20 @@ class BoardView extends ItemView {
 	}
 
 	private renderColumn(board: HTMLElement, stage: string, tickets: Ticket[], hasActiveFilter: boolean) {
+=======
+		const board = this.boardEl;
+		if (!board) {
+			return;
+		}
+		board.empty();
+		for (const stage of this.stages) {
+			const stageTickets = this.tickets.filter((t) => t.stage === stage && matchesFilter(t, this.filterQuery));
+			this.renderColumn(board, stage, stageTickets, this.filterQuery.trim().length > 0);
+		}
+	}
+
+	private renderColumn(board: HTMLElement, stage: string, tickets: Ticket[], filtered: boolean) {
+>>>>>>> tickets/TIC-135
 		const column = board.createDiv({ cls: "tb-column" });
 
 		// Column header with right-click context menu
@@ -975,7 +1022,11 @@ class BoardView extends ItemView {
 
 		// Empty state
 		if (tickets.length === 0) {
+<<<<<<< HEAD
 			cardList.createDiv({ cls: "tb-empty", text: hasActiveFilter ? "No matches" : "No tickets" });
+=======
+			cardList.createDiv({ cls: "tb-empty", text: filtered ? "No matching tickets" : "No tickets" });
+>>>>>>> tickets/TIC-135
 		}
 
 		// Add ticket button
