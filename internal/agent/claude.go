@@ -27,6 +27,21 @@ func (claudeIntegration) PrepareArgs(argv []string) ([]string, string, error) {
 	return append([]string{"--session-id", id}, argv...), id, nil
 }
 
+func (claudeIntegration) PrepareCronArgs(argv []string) ([]string, string, error) {
+	argv, id, err := (claudeIntegration{}).PrepareArgs(argv)
+	if err != nil {
+		return argv, id, err
+	}
+	if hasClaudePrintFlag(argv) {
+		return argv, id, nil
+	}
+	withPrint := make([]string, 0, len(argv)+1)
+	withPrint = append(withPrint, argv[:2]...)
+	withPrint = append(withPrint, "--print")
+	withPrint = append(withPrint, argv[2:]...)
+	return withPrint, id, nil
+}
+
 func (claudeIntegration) ExtractPlan(sessionID, cwd string) (string, error) {
 	if sessionID == "" {
 		return "", nil
@@ -134,4 +149,13 @@ func extractPlanFromClaudeTranscript(transcriptPath string) (string, error) {
 		return "", err
 	}
 	return latest, nil
+}
+
+func hasClaudePrintFlag(argv []string) bool {
+	for _, arg := range argv {
+		if arg == "--print" || arg == "-p" {
+			return true
+		}
+	}
+	return false
 }
