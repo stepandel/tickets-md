@@ -8,24 +8,14 @@ import { fileURLToPath } from "node:url";
 
 import { chromium } from "@playwright/test";
 
+import { isolatedObsidianEnv } from "../obsidian-config.mjs";
+
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "..", "..", "..");
 const ticketsBin = process.env.TICKETS_BIN || "tickets";
 const obsidianBin = process.env.OBSIDIAN_BIN;
 
-function obsidianConfigDir() {
-	switch (process.platform) {
-		case "darwin":
-			return path.join(os.homedir(), "Library", "Application Support", "obsidian");
-		case "win32":
-			return path.join(process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming"), "obsidian");
-		default:
-			return path.join(process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), ".config"), "obsidian");
-	}
-}
-
-async function registerVault(vaultPath) {
-	const configDir = obsidianConfigDir();
+async function registerVault(vaultPath, configDir) {
 	await fs.mkdir(configDir, { recursive: true });
 	const configPath = path.join(configDir, "obsidian.json");
 	let existing = { vaults: {} };
@@ -96,6 +86,7 @@ export async function launchObsidianWithVault({ fixtureVault }) {
 
 	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "tickets-obsidian-e2e-"));
 	const vaultPath = path.join(tempRoot, "vault");
+	const { env: obsidianEnv, configDir } = isolatedObsidianEnv(path.join(tempRoot, "obsidian-home"));
 	await fs.cp(fixtureVault, vaultPath, { recursive: true });
 
 	let obsidianProcess;
@@ -112,9 +103,10 @@ export async function launchObsidianWithVault({ fixtureVault }) {
 		// line interface" setting, which is off by default and can't be
 		// toggled from outside Obsidian. Without it, Obsidian launches
 		// straight into the vault picker and no plugin ever loads. Writing
-		// an entry into the user-level obsidian.json with `open: true`
-		// tells Obsidian to open this vault on startup regardless.
-		await registerVault(vaultPath);
+		// an entry into an isolated obsidian.json with `open: true` tells
+		// Obsidian to open this vault on startup without touching the
+		// user-global config.
+		await registerVault(vaultPath, configDir);
 
 		// Obsidian ships with the Electron `enableNodeCliInspectArguments`
 		// fuse disabled, which strips `--inspect=0` before Node can honor
@@ -131,8 +123,10 @@ export async function launchObsidianWithVault({ fixtureVault }) {
 		}
 		obsidianProcess = spawn(obsidianBin, args, {
 			stdio: ["ignore", "pipe", "pipe"],
-			// Surface any AppImage APPDIR env the CI workflow exported.
-			env: { ...process.env },
+			// Isolated env keeps config/cache/logs out of the user-global
+			// Obsidian home while preserving vars like APPDIR that the CI
+			// workflow needs.
+			env: obsidianEnv,
 		});
 
 		const cdpEndpoint = `http://127.0.0.1:${debugPort}`;
