@@ -141,11 +141,12 @@ when Obsidian is unavailable so the skip can be recorded instead of
 quietly passing.
 
 CI always runs `make qa-cli`, and also runs `make qa-plugin` on
-`ubuntu-latest` and `macos-latest`. Linux runs under `xvfb-run`
-against the Obsidian AppImage pinned in `.github/workflows/ci.yml`
-via `OBSIDIAN_VERSION`; macOS uses the matching pinned `.dmg`
-installer from the same workflow env var. Bump that workflow env var
-when the CI Obsidian pin needs to change.
+`ubuntu-latest`. Linux runs under `xvfb-run` against the Obsidian
+AppImage pinned in `.github/workflows/ci.yml` via
+`OBSIDIAN_VERSION`. The workflow still provisions the matching macOS
+`.dmg` from that same env var, but the macOS `qa-plugin` step is
+currently skipped until TIC-127 restores stable coverage. Bump that
+workflow env var when the CI Obsidian pin needs to change.
 
 For a full rebuild of the installed binary:
 
