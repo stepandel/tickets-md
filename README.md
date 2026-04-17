@@ -492,12 +492,17 @@ configurable in `.tickets/config.yml`:
 watch:
   poll_interval: 10s      # how often the monitor reconciles state
   idle_block_after: 60s   # pane silence before a run flips to blocked
+  idle_kill_after: 10m    # optional: SIGTERM the PTY after prolonged silence
 ```
 
 Durations use Go's `time.ParseDuration` syntax (`500ms`, `2s`,
-`1m`, …). `idle_block_after` must be ≥ `1s`. Editing either value
-while `tickets watch` is already running updates the live monitor on
-the next config reload debounce; no watcher restart is required.
+`1m`, …). `idle_block_after` and `idle_kill_after` must be ≥ `1s`,
+and when both are set `idle_kill_after` must be at least as long as
+`idle_block_after`. `idle_kill_after` is opt-in; it measures the same
+PTY output silence as `idle_block_after`, sends SIGTERM to the idle
+session, and marks the run `failed`. Editing these values while
+`tickets watch` is already running updates the live monitor on the
+next config reload debounce; no watcher restart is required.
 
 Edits to any stage's `.stage.yml` while the watcher is running are
 also picked up without a restart — the watcher reloads the affected

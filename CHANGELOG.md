@@ -12,6 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `.stage.yml` is picked up on the next debounce without a restart;
   if the reloaded file fails to parse, the previous config is kept
   and the watcher keeps running.
+- `tickets watch` now supports an optional `watch.idle_kill_after`
+  threshold in `.tickets/config.yml`. When set, the monitor SIGTERMs
+  the PTY once its output has been silent for at least that long and
+  marks the run `failed` with a `session killed after Ns idle`
+  error. Durations use Go's `time.ParseDuration` syntax, must be
+  ≥ 1s, and must be at least as long as `idle_block_after` when both
+  are set. The setting is hot-reloaded alongside the other `watch:`
+  timings.
 
 ## [0.1.11] - 2026-04-16
 

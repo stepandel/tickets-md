@@ -53,7 +53,7 @@ func TestLoad_InvalidConfig(t *testing.T) {
 
 func TestLoad_Success(t *testing.T) {
 	root := t.TempDir()
-	writeConfig(t, root, "name: Board\nprefix: BUG\nproject_prefix: PRJ\nstages:\n  - triage\n  - doing\nwatch:\n  poll_interval: 7s\n  idle_block_after: 45s\nworktrees:\n  dir: .trees\n  branch_prefix: agent/\ndefault_agent:\n  command: claude\n  args:\n    - --json\ncron_agents:\n  - name: groomer\n    schedule: \"@every 5m\"\n    command: codex\n    prompt: \"tidy\"\n")
+	writeConfig(t, root, "name: Board\nprefix: BUG\nproject_prefix: PRJ\nstages:\n  - triage\n  - doing\nwatch:\n  poll_interval: 7s\n  idle_block_after: 45s\n  idle_kill_after: 10m\nworktrees:\n  dir: .trees\n  branch_prefix: agent/\ndefault_agent:\n  command: claude\n  args:\n    - --json\ncron_agents:\n  - name: groomer\n    schedule: \"@every 5m\"\n    command: codex\n    prompt: \"tidy\"\n")
 
 	got, err := Load(root)
 	if err != nil {
@@ -76,6 +76,9 @@ func TestLoad_Success(t *testing.T) {
 	}
 	if got.Watch.IdleBlockAfter == nil || got.Watch.IdleBlockAfter.Duration != 45*time.Second {
 		t.Fatalf("unexpected watch.idle_block_after: %#v", got.Watch)
+	}
+	if got.Watch.IdleKillAfter == nil || got.Watch.IdleKillAfter.Duration != 10*time.Minute {
+		t.Fatalf("unexpected watch.idle_kill_after: %#v", got.Watch)
 	}
 	if got.WorktreeDir() != ".trees" || got.WorktreeBranchPrefix() != "agent/" {
 		t.Fatalf("unexpected worktrees config: %#v", got.Worktrees)
@@ -196,6 +199,7 @@ func TestSaveLoadWatchConfig(t *testing.T) {
 		Watch: &WatchConfig{
 			PollInterval:   &Duration{Duration: 5 * time.Second},
 			IdleBlockAfter: &Duration{Duration: 30 * time.Second},
+			IdleKillAfter:  &Duration{Duration: 10 * time.Minute},
 		},
 	}
 
@@ -206,14 +210,17 @@ func TestSaveLoadWatchConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if got.Watch == nil || got.Watch.PollInterval == nil || got.Watch.IdleBlockAfter == nil {
-		t.Fatalf("Watch = %#v, want both durations", got.Watch)
+	if got.Watch == nil || got.Watch.PollInterval == nil || got.Watch.IdleBlockAfter == nil || got.Watch.IdleKillAfter == nil {
+		t.Fatalf("Watch = %#v, want all durations", got.Watch)
 	}
 	if got.Watch.PollInterval.Duration != want.Watch.PollInterval.Duration {
 		t.Fatalf("poll interval = %s, want %s", got.Watch.PollInterval.Duration, want.Watch.PollInterval.Duration)
 	}
 	if got.Watch.IdleBlockAfter.Duration != want.Watch.IdleBlockAfter.Duration {
 		t.Fatalf("idle block after = %s, want %s", got.Watch.IdleBlockAfter.Duration, want.Watch.IdleBlockAfter.Duration)
+	}
+	if got.Watch.IdleKillAfter.Duration != want.Watch.IdleKillAfter.Duration {
+		t.Fatalf("idle kill after = %s, want %s", got.Watch.IdleKillAfter.Duration, want.Watch.IdleKillAfter.Duration)
 	}
 }
 
@@ -381,6 +388,27 @@ func TestValidate(t *testing.T) {
 			Stages:        []string{"backlog", "done"},
 			Watch:         &WatchConfig{IdleBlockAfter: &Duration{Duration: 500 * time.Millisecond}},
 		}, wantErr: `watch.idle_block_after must be >= 1s`},
+		{name: "watch idle kill after must be positive", cfg: Config{
+			Prefix:        "TIC",
+			ProjectPrefix: "PRJ",
+			Stages:        []string{"backlog", "done"},
+			Watch:         &WatchConfig{IdleKillAfter: &Duration{}},
+		}, wantErr: `watch.idle_kill_after must be > 0`},
+		{name: "watch idle kill after must be at least one second", cfg: Config{
+			Prefix:        "TIC",
+			ProjectPrefix: "PRJ",
+			Stages:        []string{"backlog", "done"},
+			Watch:         &WatchConfig{IdleKillAfter: &Duration{Duration: 500 * time.Millisecond}},
+		}, wantErr: `watch.idle_kill_after must be >= 1s`},
+		{name: "watch idle kill after must not be shorter than block after", cfg: Config{
+			Prefix:        "TIC",
+			ProjectPrefix: "PRJ",
+			Stages:        []string{"backlog", "done"},
+			Watch: &WatchConfig{
+				IdleBlockAfter: &Duration{Duration: 30 * time.Second},
+				IdleKillAfter:  &Duration{Duration: 29 * time.Second},
+			},
+		}, wantErr: `watch.idle_kill_after must be >= watch.idle_block_after`},
 		{name: "unknown archive stage", cfg: Config{
 			Prefix:        "TIC",
 			ProjectPrefix: "PRJ",
