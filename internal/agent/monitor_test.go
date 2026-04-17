@@ -28,7 +28,7 @@ func TestPollDoesNotFailTrackedSpawnedRunWhenSessionMissing(t *testing.T) {
 		t.Fatalf("Write: %v", err)
 	}
 
-	mon := NewMonitor(root, func(string) bool { return false }, func(string) int { return -1 })
+	mon := NewMonitor(root, 0, 0, func(string) bool { return false }, func(string) int { return -1 })
 	mon.TrackRun(as.TicketID, as.RunID)
 	mon.poll()
 
@@ -90,7 +90,7 @@ func TestPollKeepsCronDirAfterRunsExpire(t *testing.T) {
 		t.Fatalf("WriteFile log: %v", err)
 	}
 
-	mon := NewMonitor(root, func(string) bool { return false }, func(string) int { return -1 })
+	mon := NewMonitor(root, 0, 0, func(string) bool { return false }, func(string) int { return -1 })
 	mon.poll()
 
 	if _, err := os.Stat(CronDir(root, name)); err != nil {
@@ -126,7 +126,7 @@ func TestPollKeepsOrphanCronDirForDoctor(t *testing.T) {
 		LogFile:   CronLogPath(root, name, runID),
 	})
 
-	mon := NewMonitor(root, func(string) bool { return false }, func(string) int { return -1 })
+	mon := NewMonitor(root, 0, 0, func(string) bool { return false }, func(string) int { return -1 })
 	mon.poll()
 
 	if _, err := os.Stat(CronDir(root, name)); err != nil {
@@ -153,7 +153,7 @@ func TestPollKeepsActiveCronDir(t *testing.T) {
 		LogFile:   CronLogPath(root, name, runID),
 	})
 
-	mon := NewMonitor(root, func(string) bool { return true }, func(string) int { return 0 })
+	mon := NewMonitor(root, 0, 0, func(string) bool { return true }, func(string) int { return 0 })
 	mon.poll()
 
 	if _, err := os.Stat(CronDir(root, name)); err != nil {
@@ -162,6 +162,49 @@ func TestPollKeepsActiveCronDir(t *testing.T) {
 	got, err := CronReadRun(root, name, runID)
 	if err != nil {
 		t.Fatalf("CronReadRun: %v", err)
+	}
+	if got.Status != StatusRunning {
+		t.Fatalf("status = %q, want %q", got.Status, StatusRunning)
+	}
+}
+
+func TestPollUsesConfiguredBlockedIdleThreshold(t *testing.T) {
+	root := t.TempDir()
+	now := time.Now().UTC().Truncate(time.Second)
+	as := AgentStatus{
+		TicketID:  "TIC-112",
+		RunID:     "001-execute",
+		Seq:       1,
+		Attempt:   1,
+		Stage:     "execute",
+		Agent:     "codex",
+		Session:   "TIC-112-1",
+		Status:    StatusRunning,
+		SpawnedAt: now,
+		UpdatedAt: now,
+		LogFile:   LogPath(root, "TIC-112", "001-execute"),
+	}
+	if err := Write(root, as); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	mon := NewMonitor(root, 0, time.Second, func(string) bool { return true }, func(string) int { return 2 })
+	mon.poll()
+
+	got, err := ReadRun(root, as.TicketID, as.RunID)
+	if err != nil {
+		t.Fatalf("ReadRun: %v", err)
+	}
+	if got.Status != StatusBlocked {
+		t.Fatalf("status = %q, want %q", got.Status, StatusBlocked)
+	}
+
+	mon = NewMonitor(root, 0, 3*time.Second, func(string) bool { return true }, func(string) int { return 2 })
+	mon.poll()
+
+	got, err = ReadRun(root, as.TicketID, as.RunID)
+	if err != nil {
+		t.Fatalf("ReadRun: %v", err)
 	}
 	if got.Status != StatusRunning {
 		t.Fatalf("status = %q, want %q", got.Status, StatusRunning)

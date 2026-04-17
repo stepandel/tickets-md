@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func writeConfig(t *testing.T, root, body string) {
@@ -48,7 +49,7 @@ func TestLoad_InvalidConfig(t *testing.T) {
 
 func TestLoad_Success(t *testing.T) {
 	root := t.TempDir()
-	writeConfig(t, root, "name: Board\nprefix: BUG\nproject_prefix: PRJ\nstages:\n  - triage\n  - doing\ndefault_agent:\n  command: claude\n  args:\n    - --json\ncron_agents:\n  - name: groomer\n    schedule: \"@every 5m\"\n    command: codex\n    prompt: \"tidy\"\n")
+	writeConfig(t, root, "name: Board\nprefix: BUG\nproject_prefix: PRJ\nstages:\n  - triage\n  - doing\nwatch:\n  poll_interval: 7s\n  idle_block_after: 45s\ndefault_agent:\n  command: claude\n  args:\n    - --json\ncron_agents:\n  - name: groomer\n    schedule: \"@every 5m\"\n    command: codex\n    prompt: \"tidy\"\n")
 
 	got, err := Load(root)
 	if err != nil {
@@ -65,6 +66,12 @@ func TestLoad_Success(t *testing.T) {
 	}
 	if len(got.CompleteStages) != 0 {
 		t.Fatalf("unexpected complete stages: %#v", got.CompleteStages)
+	}
+	if got.Watch == nil || got.Watch.PollInterval == nil || got.Watch.PollInterval.Duration != 7*time.Second {
+		t.Fatalf("unexpected watch.poll_interval: %#v", got.Watch)
+	}
+	if got.Watch.IdleBlockAfter == nil || got.Watch.IdleBlockAfter.Duration != 45*time.Second {
+		t.Fatalf("unexpected watch.idle_block_after: %#v", got.Watch)
 	}
 	if got.DefaultAgent == nil || got.DefaultAgent.Command != "claude" || len(got.DefaultAgent.Args) != 1 || got.DefaultAgent.Args[0] != "--json" {
 		t.Fatalf("unexpected default agent: %#v", got.DefaultAgent)
@@ -137,6 +144,36 @@ func TestSaveLoadCleanupConfig(t *testing.T) {
 	stage := got.Cleanup.Stages[0]
 	if stage.Name != "done" || !stage.AgentData || !stage.Worktree || !stage.Branch {
 		t.Fatalf("cleanup stage = %#v", stage)
+	}
+}
+
+func TestSaveLoadWatchConfig(t *testing.T) {
+	root := t.TempDir()
+	want := Config{
+		Prefix:        "TIC",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "done"},
+		Watch: &WatchConfig{
+			PollInterval:   &Duration{Duration: 5 * time.Second},
+			IdleBlockAfter: &Duration{Duration: 30 * time.Second},
+		},
+	}
+
+	if err := Save(root, want); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.Watch == nil || got.Watch.PollInterval == nil || got.Watch.IdleBlockAfter == nil {
+		t.Fatalf("Watch = %#v, want both durations", got.Watch)
+	}
+	if got.Watch.PollInterval.Duration != want.Watch.PollInterval.Duration {
+		t.Fatalf("poll interval = %s, want %s", got.Watch.PollInterval.Duration, want.Watch.PollInterval.Duration)
+	}
+	if got.Watch.IdleBlockAfter.Duration != want.Watch.IdleBlockAfter.Duration {
+		t.Fatalf("idle block after = %s, want %s", got.Watch.IdleBlockAfter.Duration, want.Watch.IdleBlockAfter.Duration)
 	}
 }
 
@@ -262,6 +299,24 @@ func TestValidate(t *testing.T) {
 			Stages:         []string{"backlog", "done"},
 			CompleteStages: []string{"done", "done"},
 		}, wantErr: `duplicate complete stage "done"`},
+		{name: "watch poll interval must be positive", cfg: Config{
+			Prefix:        "TIC",
+			ProjectPrefix: "PRJ",
+			Stages:        []string{"backlog", "done"},
+			Watch:         &WatchConfig{PollInterval: &Duration{}},
+		}, wantErr: `watch.poll_interval must be > 0`},
+		{name: "watch idle block after must be positive", cfg: Config{
+			Prefix:        "TIC",
+			ProjectPrefix: "PRJ",
+			Stages:        []string{"backlog", "done"},
+			Watch:         &WatchConfig{IdleBlockAfter: &Duration{}},
+		}, wantErr: `watch.idle_block_after must be > 0`},
+		{name: "watch idle block after must be at least one second", cfg: Config{
+			Prefix:        "TIC",
+			ProjectPrefix: "PRJ",
+			Stages:        []string{"backlog", "done"},
+			Watch:         &WatchConfig{IdleBlockAfter: &Duration{Duration: 500 * time.Millisecond}},
+		}, wantErr: `watch.idle_block_after must be >= 1s`},
 		{name: "unknown archive stage", cfg: Config{
 			Prefix:        "TIC",
 			ProjectPrefix: "PRJ",

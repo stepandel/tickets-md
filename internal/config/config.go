@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	cron "github.com/robfig/cron/v3"
 	"gopkg.in/yaml.v3"
@@ -37,6 +38,32 @@ type CleanupStage struct {
 	AgentData bool   `yaml:"agent_data,omitempty"`
 	Worktree  bool   `yaml:"worktree,omitempty"`
 	Branch    bool   `yaml:"branch,omitempty"`
+}
+
+type Duration struct {
+	time.Duration
+}
+
+func (d *Duration) UnmarshalYAML(node *yaml.Node) error {
+	var value string
+	if err := node.Decode(&value); err != nil {
+		return err
+	}
+	parsed, err := time.ParseDuration(value)
+	if err != nil {
+		return fmt.Errorf("parse duration %q: %w", value, err)
+	}
+	d.Duration = parsed
+	return nil
+}
+
+func (d Duration) MarshalYAML() (any, error) {
+	return d.String(), nil
+}
+
+type WatchConfig struct {
+	PollInterval   *Duration `yaml:"poll_interval,omitempty"`
+	IdleBlockAfter *Duration `yaml:"idle_block_after,omitempty"`
 }
 
 type CronAgentConfig struct {
@@ -77,6 +104,8 @@ type Config struct {
 	DefaultAgent *DefaultAgentConfig `yaml:"default_agent,omitempty"`
 	// Cleanup configures the optional `tickets cleanup` stage sweep.
 	Cleanup *CleanupConfig `yaml:"cleanup,omitempty"`
+	// Watch configures the optional `tickets watch` monitor timing.
+	Watch *WatchConfig `yaml:"watch,omitempty"`
 	// CronAgents configures board-level agents fired by `tickets watch`
 	// on a schedule rather than by ticket filesystem events.
 	CronAgents []CronAgentConfig `yaml:"cron_agents,omitempty"`
@@ -181,6 +210,19 @@ func (c Config) Validate() error {
 				return fmt.Errorf("unknown cleanup stage %q", st.Name)
 			}
 			cleanupSeen[st.Name] = struct{}{}
+		}
+	}
+	if c.Watch != nil {
+		if c.Watch.PollInterval != nil && c.Watch.PollInterval.Duration <= 0 {
+			return errors.New("watch.poll_interval must be > 0")
+		}
+		if c.Watch.IdleBlockAfter != nil {
+			if c.Watch.IdleBlockAfter.Duration <= 0 {
+				return errors.New("watch.idle_block_after must be > 0")
+			}
+			if c.Watch.IdleBlockAfter.Duration < time.Second {
+				return errors.New("watch.idle_block_after must be >= 1s")
+			}
 		}
 	}
 	completeSeen := make(map[string]struct{}, len(c.CompleteStages))

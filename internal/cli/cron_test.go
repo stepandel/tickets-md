@@ -19,7 +19,7 @@ func TestSpawnCronAgentImmediateExitMarksRunDone(t *testing.T) {
 	}
 
 	runner := agent.NewPTYRunner()
-	mon := agent.NewMonitor(root, runner.Alive, runner.IdleSeconds)
+	mon := agent.NewMonitor(root, 0, 0, runner.Alive, runner.IdleSeconds)
 
 	err := spawnCronAgent(root, config.CronAgentConfig{
 		Name:     "groomer",
@@ -88,7 +88,7 @@ func TestStartCronRunPrefersCronIntegrationHook(t *testing.T) {
 	}
 
 	runner := agent.NewPTYRunner()
-	mon := agent.NewMonitor(root, runner.Alive, runner.IdleSeconds)
+	mon := agent.NewMonitor(root, 0, 0, runner.Alive, runner.IdleSeconds)
 
 	// spawnCronAgent will error when exec fails for the fake command name,
 	// but the integration hook runs and persists SessionUUID before spawn.

@@ -57,7 +57,7 @@ func TestSpawnAgentStartFailureMarksRunErrored(t *testing.T) {
 	}
 
 	runner := agent.NewPTYRunner()
-	mon := agent.NewMonitor(s.Root, runner.Alive, runner.IdleSeconds)
+	mon := agent.NewMonitor(s.Root, 0, 0, runner.Alive, runner.IdleSeconds)
 	mon.OnStatusChange = func(ticketID string) {
 		syncAgentFrontmatter(s.Root, ticketID)
 	}
@@ -106,7 +106,7 @@ func TestSpawnAgentImmediateExitMarksRunFailed(t *testing.T) {
 	}
 
 	runner := agent.NewPTYRunner()
-	mon := agent.NewMonitor(s.Root, runner.Alive, runner.IdleSeconds)
+	mon := agent.NewMonitor(s.Root, 0, 0, runner.Alive, runner.IdleSeconds)
 	mon.OnStatusChange = func(ticketID string) {
 		syncAgentFrontmatter(s.Root, ticketID)
 	}
@@ -156,7 +156,7 @@ func TestSpawnAgentImmediateExitMarksRunDone(t *testing.T) {
 	}
 
 	runner := agent.NewPTYRunner()
-	mon := agent.NewMonitor(s.Root, runner.Alive, runner.IdleSeconds)
+	mon := agent.NewMonitor(s.Root, 0, 0, runner.Alive, runner.IdleSeconds)
 	mon.OnStatusChange = func(ticketID string) {
 		syncAgentFrontmatter(s.Root, ticketID)
 	}
@@ -248,7 +248,7 @@ func TestRerunStageAgentRefusesActiveSessionWithoutForce(t *testing.T) {
 
 	runner := agent.NewPTYRunner()
 	t.Cleanup(runner.Shutdown)
-	mon := agent.NewMonitor(s.Root, runner.Alive, runner.IdleSeconds)
+	mon := agent.NewMonitor(s.Root, 0, 0, runner.Alive, runner.IdleSeconds)
 	mon.OnStatusChange = func(ticketID string) {
 		syncAgentFrontmatter(s.Root, ticketID)
 	}
@@ -309,7 +309,7 @@ func TestRerunStageAgentForceReplacesActiveSession(t *testing.T) {
 
 	runner := agent.NewPTYRunner()
 	t.Cleanup(runner.Shutdown)
-	mon := agent.NewMonitor(s.Root, runner.Alive, runner.IdleSeconds)
+	mon := agent.NewMonitor(s.Root, 0, 0, runner.Alive, runner.IdleSeconds)
 	mon.OnStatusChange = func(ticketID string) {
 		syncAgentFrontmatter(s.Root, ticketID)
 	}

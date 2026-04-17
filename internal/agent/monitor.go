@@ -19,18 +19,20 @@ type SessionChecker func(sessionName string) bool
 // implementation is PTYRunner.IdleSeconds.
 type IdleChecker func(sessionName string) int
 
-// blockedThreshold is how long a session must be idle (no output)
-// before the monitor considers it blocked (likely waiting for input).
-const blockedThreshold = 30 // seconds
+const (
+	DefaultPollInterval = 5 * time.Second
+	DefaultBlockedIdle  = 30 * time.Second
+)
 
 // Monitor periodically reconciles agent run files against session
 // reality. It catches crashes, stale runs from a previous watcher
 // process, promotes spawned → running, and detects blocked agents.
 type Monitor struct {
-	root      string
-	interval  time.Duration
-	check     SessionChecker
-	idleCheck IdleChecker
+	root        string
+	interval    time.Duration
+	blockedIdle time.Duration
+	check       SessionChecker
+	idleCheck   IdleChecker
 
 	// OnStatusChange fires after the monitor successfully writes a run
 	// YAML. The watcher uses it to resync the ticket's frontmatter from
@@ -42,13 +44,20 @@ type Monitor struct {
 }
 
 // NewMonitor creates a monitor that checks session state every interval.
-func NewMonitor(root string, check SessionChecker, idle IdleChecker) *Monitor {
+func NewMonitor(root string, interval, blockedIdle time.Duration, check SessionChecker, idle IdleChecker) *Monitor {
+	if interval <= 0 {
+		interval = DefaultPollInterval
+	}
+	if blockedIdle <= 0 {
+		blockedIdle = DefaultBlockedIdle
+	}
 	return &Monitor{
-		root:      root,
-		interval:  5 * time.Second,
-		check:     check,
-		idleCheck: idle,
-		watching:  make(map[string]struct{}),
+		root:        root,
+		interval:    interval,
+		blockedIdle: blockedIdle,
+		check:       check,
+		idleCheck:   idle,
+		watching:    make(map[string]struct{}),
 	}
 }
 
@@ -152,6 +161,8 @@ func (m *Monitor) Run(ctx context.Context) {
 const staleAge = 24 * time.Hour
 
 func (m *Monitor) poll() {
+	blockedAfterSeconds := int(m.blockedIdle / time.Second)
+
 	statuses, err := m.listStatuses()
 	if err != nil {
 		log.Printf("monitor: failed to list statuses: %v", err)
@@ -193,7 +204,7 @@ func (m *Monitor) poll() {
 					log.Printf("monitor: failed to promote %s/%s to running: %v", as.TicketID, as.RunID, err)
 				}
 			case StatusRunning:
-				if idle >= blockedThreshold {
+				if idle >= blockedAfterSeconds {
 					as.Status = StatusBlocked
 					as.Error = fmt.Sprintf("pane idle for %ds, likely waiting for input", idle)
 					if err := m.writeAndNotify(as); err != nil {
@@ -203,7 +214,7 @@ func (m *Monitor) poll() {
 					}
 				}
 			case StatusBlocked:
-				if idle < blockedThreshold {
+				if idle < blockedAfterSeconds {
 					as.Status = StatusRunning
 					as.Error = ""
 					if err := m.writeAndNotify(as); err != nil {

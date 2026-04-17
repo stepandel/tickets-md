@@ -82,7 +82,17 @@ func runWatch(s *ticket.Store) error {
 
 	// Start the agent status monitor. The monitor owns the authoritative
 	// run YAMLs; frontmatter is a cache it rewrites via OnStatusChange.
-	mon := agent.NewMonitor(s.Root, runner.Alive, runner.IdleSeconds)
+	pollInterval := agent.DefaultPollInterval
+	idleBlockAfter := agent.DefaultBlockedIdle
+	if s.Config.Watch != nil {
+		if s.Config.Watch.PollInterval != nil {
+			pollInterval = s.Config.Watch.PollInterval.Duration
+		}
+		if s.Config.Watch.IdleBlockAfter != nil {
+			idleBlockAfter = s.Config.Watch.IdleBlockAfter.Duration
+		}
+	}
+	mon := agent.NewMonitor(s.Root, pollInterval, idleBlockAfter, runner.Alive, runner.IdleSeconds)
 	mon.OnStatusChange = func(ticketID string) {
 		syncAgentFrontmatter(s.Root, ticketID)
 	}
@@ -170,6 +180,7 @@ func runWatch(s *ticket.Store) error {
 		}
 		log.Printf("watching %s/ (%s)", st, status)
 	}
+	log.Printf("monitor: poll=%s idle-block=%s", pollInterval, idleBlockAfter)
 	if err := w.Add(filepath.Join(s.Root, config.ConfigDir)); err != nil {
 		return fmt.Errorf("watching %s: %w", filepath.Join(s.Root, config.ConfigDir), err)
 	}
