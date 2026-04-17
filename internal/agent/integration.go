@@ -23,6 +23,19 @@ type Integration interface {
 	ExtractPlan(sessionID, cwd string) (string, error)
 }
 
+// CronIntegration is an optional extension for agents whose cron
+// runs need different startup flags than interactive ticket-stage
+// runs.
+type CronIntegration interface {
+	Integration
+
+	// PrepareCronArgs runs before a board-level cron agent is spawned.
+	// It may return a modified argv and a session id to persist in the
+	// run YAML. Implementations should preserve any behavior needed for
+	// plan extraction after exit.
+	PrepareCronArgs(argv []string) (newArgv []string, sessionID string, err error)
+}
+
 var integrations = map[string]Integration{}
 
 // Register adds an Integration to the package-level registry. Call

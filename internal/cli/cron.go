@@ -188,7 +188,11 @@ func startCronRun(root string, ca config.CronAgentConfig, mon *agent.Monitor, ru
 	argv := buildCronAgentArgs(ca, root)
 	var sessionUUID string
 	if integ, ok := agent.Lookup(ca.Command); ok {
-		newArgv, id, err := integ.PrepareArgs(argv)
+		prepare := integ.PrepareArgs
+		if cronInteg, ok := integ.(agent.CronIntegration); ok {
+			prepare = cronInteg.PrepareCronArgs
+		}
+		newArgv, id, err := prepare(argv)
 		if err != nil {
 			log.Printf("cron %s/%s: %s integration: %v", ca.Name, runID, ca.Command, err)
 		} else {
