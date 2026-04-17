@@ -132,6 +132,10 @@ jobs:
 
           test -x "$extracted"
           echo "OBSIDIAN_BIN=$extracted" >> "$GITHUB_ENV"
+          # Obsidian's AppRun references $APPDIR without a fallback. When the
+          # AppImage is extracted (no FUSE on CI) and AppRun is invoked directly,
+          # APPDIR is unset and the launcher resolves to /obsidian and exits 127.
+          echo "APPDIR=$cache_dir/squashfs-root" >> "$GITHUB_ENV"
 
       - name: Provision Obsidian (macOS)
         if: runner.os == 'macOS'
