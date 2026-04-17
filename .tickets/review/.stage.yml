@@ -14,16 +14,23 @@ agent:
     - bugs, missing validation, error handling gaps, or edge cases
     - regressions in readability, maintainability, or unnecessary complexity
     - missing or insufficient test coverage for changed behavior
+    - type-check, lint, and build errors as they exist in this repo: `make check` (`go build ./...`, `go vet ./...`, `go test ./...`) and, when `obsidian-plugin/` changed, `make plugin-test` (TypeScript type-check + Jest coverage for the plugin)
 
-    Review is read-only. Do not edit product code, do not commit, and do not run `make check` or other build/test commands — that is QA's job.
+    Fix every issue you find directly on tickets/{{id}}:
+    - make the minimal correct change
+    - add or update tests when behavior changes
+    - run the relevant verification and rerun it until green
+    - commit fixes on tickets/{{id}} with clear commit messages
 
-    Finally, update {{path}} by adding or replacing a single "## Review" section that records an actionable handoff for QA:
+    Do not defer must-fix work to QA. QA validates the feature end to end after review; review owns review findings and repo-level verification for the diff it inspected.
+
+    Finally, update {{path}} by adding or replacing a single "## Review" section that records:
     - what you inspected
-    - **Must-fix** issues, each with file path, line number where useful, what is wrong, and a suggested fix direction
-    - **Nice-to-have** issues, each with file path, line number where useful, what is wrong, and a suggested fix direction
-    - anything intentionally not reviewed
+    - what you found and fixed, with file paths
+    - any issues you chose not to fix, with justification
+    - residual risks or anything intentionally not reviewed
 
-    If you found no issues, say so explicitly and still note what you inspected.
+    If you found no issues, say so explicitly and still note what you inspected and verified.
 
-    Once you've completed the above, move the ticket to /qa.
+    Once you've completed the above, move the ticket to /qa with `go run ./cmd/tickets -C ../.. move {{id}} qa` from {{worktree}}. Do not use raw `mv`.
     Ticket markdown under .tickets remains gitignored and will not be visible in {{worktree}}, but tracked stage config files such as .tickets/*/.stage.yml are available there.
