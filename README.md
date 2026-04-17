@@ -49,8 +49,9 @@ The intended git policy is mixed:
 
 Board-level cron agents can also be defined in `.tickets/config.yml`
 and are fired by `tickets watch` while it is running. Edits to
-`cron_agents:`, `watch:` monitor timings, and per-stage `.stage.yml`
-files are hot-reloaded by a running watcher; no restart is required:
+`stages:`, `cron_agents:`, `watch:` monitor timings, and per-stage
+`.stage.yml` files are hot-reloaded by a running watcher; no restart
+is required:
 
 ```yaml
 cron_agents:
@@ -979,10 +980,10 @@ stages:
 - **stages** — ordered list of stage folder names. The first entry is
   the default stage for newly created tickets. Reorder, rename, or add
   stages by editing this file; the CLI picks the changes up on the next
-  command invocation, and a running `tickets watch` reconciles added
-  and removed stages on its next config-reload debounce. The name
-  `projects` is reserved for the project store and cannot be used as
-  a stage.
+  command invocation, and a running `tickets watch` reconciles its
+  watch set on the next debounce (scaffolding added stages, dropping
+  removed ones). The name `projects` is reserved for the project store
+  and cannot be used as a stage.
 - **worktrees.dir** — optional relative path under the repo root where
   per-ticket git worktrees are created. Defaults to `.worktrees`.
 - **worktrees.branch_prefix** — optional branch namespace used for
