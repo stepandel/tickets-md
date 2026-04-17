@@ -70,7 +70,10 @@ async function waitForCdpEndpoint(endpoint, timeoutMs, obsidianProcess, processO
 			throw new Error(`Obsidian exited with code ${obsidianProcess.exitCode} before CDP was ready.${details}`);
 		}
 		try {
-			const res = await fetch(`${endpoint}/json/version`);
+			const attemptTimeoutMs = Math.max(1_000, Math.min(2_000, deadline - Date.now()));
+			const res = await fetch(`${endpoint}/json/version`, {
+				signal: AbortSignal.timeout(attemptTimeoutMs),
+			});
 			if (res.ok) {
 				return await res.json();
 			}
