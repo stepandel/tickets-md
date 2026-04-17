@@ -522,6 +522,11 @@ stage config on the next debounce and logs the new status. If the
 reloaded file fails to parse, the previous config is kept so the
 watcher stays running.
 
+Adding or removing entries in `stages:` while the watcher is running
+is likewise reconciled on the next debounce: new stage directories
+are created (with a default `.stage.yml`) and start being watched,
+and removed stages stop being watched. No restart is required.
+
 ### Pausing the watcher
 
 Use `tickets watch pause` to temporarily stop the watcher from
@@ -974,8 +979,10 @@ stages:
 - **stages** — ordered list of stage folder names. The first entry is
   the default stage for newly created tickets. Reorder, rename, or add
   stages by editing this file; the CLI picks the changes up on the next
-  command invocation. The name `projects` is reserved for the project
-  store and cannot be used as a stage.
+  command invocation, and a running `tickets watch` reconciles added
+  and removed stages on its next config-reload debounce. The name
+  `projects` is reserved for the project store and cannot be used as
+  a stage.
 - **worktrees.dir** — optional relative path under the repo root where
   per-ticket git worktrees are created. Defaults to `.worktrees`.
 - **worktrees.branch_prefix** — optional branch namespace used for

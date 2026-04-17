@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `tickets watch` now reconciles the set of watched stage directories
+  when `stages:` is edited in `.tickets/config.yml`. Newly added
+  stages are created with a default `.stage.yml` and start being
+  watched; removed stages stop being watched. The change is applied
+  on the next config-reload debounce, so no restart is required.
 - `tickets watch` now auto-reloads per-stage `.stage.yml` files while
   the watcher is running. Editing, creating, or removing a stage's
   `.stage.yml` is picked up on the next debounce without a restart;
