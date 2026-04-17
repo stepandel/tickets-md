@@ -37,9 +37,15 @@ type Server struct {
 	// through the watcher's live PTY runner. Nil means the watcher did
 	// not register a callback, so /run-cron-agent is rejected.
 	RunCronAgent func(name string, rows, cols uint16) (string, error)
+
+	// TerminateCronSession, if set, stops an active cron PTY session.
+	// Nil means the watcher did not register a callback, so
+	// /terminate-cron-session is rejected.
+	TerminateCronSession func(name string) (string, error)
 }
 
 var ErrCronRunActive = errors.New("cron run already active")
+var ErrCronSessionNotActive = errors.New("cron session not active")
 
 // New creates a terminal server backed by the given PTYRunner.
 // root is the project root, used to spawn on-demand agent sessions.
@@ -62,6 +68,7 @@ func (s *Server) Start() (int, error) {
 	mux.HandleFunc("/spawn", s.handleSpawn)
 	mux.HandleFunc("/rerun-stage-agent", s.handleRerunStageAgent)
 	mux.HandleFunc("/run-cron-agent", s.handleRunCronAgent)
+	mux.HandleFunc("/terminate-cron-session", s.handleTerminateCronSession)
 
 	s.srv = &http.Server{Handler: withCORS(mux)}
 	go s.srv.Serve(ln)
@@ -379,6 +386,41 @@ func (s *Server) handleRunCronAgent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("ran cron agent %s (session %s)", req.Name, session)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(spawnResponse{Session: session})
+}
+
+func (s *Server) handleTerminateCronSession(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.TerminateCronSession == nil {
+		http.Error(w, "cron termination not available (watcher did not register a callback)", http.StatusServiceUnavailable)
+		return
+	}
+
+	var req runCronRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Name == "" {
+		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
+
+	session, err := s.TerminateCronSession(req.Name)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, ErrCronSessionNotActive) {
+			status = http.StatusNotFound
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+
+	log.Printf("terminated cron agent %s (session %s)", req.Name, session)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(spawnResponse{Session: session})
 }

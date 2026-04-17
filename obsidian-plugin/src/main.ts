@@ -530,6 +530,30 @@ async function runCronAgent(app: import("obsidian").App, name: string) {
 	await openSpawningTerminal(app, name, "/run-cron-agent", `run cron ${name}`, { name });
 }
 
+async function stopCronAgent(app: import("obsidian").App, name: string) {
+	const serverInfo = await readServerFile(app);
+	if (!serverInfo) {
+		new Notice("terminal server not running — start `tickets watch`");
+		return;
+	}
+	try {
+		const resp = await fetch(`http://127.0.0.1:${serverInfo.port}/terminate-cron-session`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ name }),
+		});
+		if (!resp.ok) {
+			const text = (await resp.text()).trim();
+			new Notice(`stop cron ${name}: ${text || resp.statusText}`);
+			return;
+		}
+		new Notice(`Stopped cron session for ${name}`);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		new Notice(`stop cron ${name}: ${message}`);
+	}
+}
+
 // ── Plugin ─────────────────────────────────────────────────────────────
 
 export default class TicketsBoardPlugin extends Plugin {
@@ -2379,6 +2403,12 @@ class AgentsView extends ItemView {
 		);
 		const lastRun = cron.lastRun;
 		if (!Platform.isMobile && cronHasLiveSession(lastRun)) {
+			menu.addItem((item) =>
+				item.setTitle("Stop session").setIcon("square").onClick(async () => {
+					await stopCronAgent(this.app, cron.config.name);
+					await this.refresh();
+				}),
+			);
 			menu.addItem((item) =>
 				item.setTitle("Open live terminal").setIcon("terminal-square").onClick(async () => {
 					await openCronTerminal(this.app, cron.config.name, lastRun);

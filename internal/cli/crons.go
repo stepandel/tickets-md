@@ -22,6 +22,7 @@ func newCronsCmd() *cobra.Command {
 	}
 	cmd.AddCommand(newCronsListCmd())
 	cmd.AddCommand(newCronsRunCmd())
+	cmd.AddCommand(newCronsStopCmd())
 	cmd.AddCommand(newCronsLogCmd())
 	cmd.AddCommand(newCronsEnableCmd())
 	cmd.AddCommand(newCronsDisableCmd())
@@ -135,6 +136,36 @@ func newCronsRunCmd() *cobra.Command {
 			}
 
 			fmt.Printf("fired cron %s (session %s)\n", name, session)
+			return nil
+		},
+	}
+}
+
+func newCronsStopCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "stop <name>",
+		Short: "Terminate an active cron agent session",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := openStore()
+			if err != nil {
+				return err
+			}
+			name := args[0]
+			if _, err := findCronAgent(&s.Config, name); err != nil {
+				return err
+			}
+
+			session, err := postTerminalServer(s.Root, "/terminate-cron-session", map[string]string{"name": name})
+			if err != nil {
+				var serverErr *terminalServerError
+				if errors.As(err, &serverErr) && serverErr.StatusCode == http.StatusNotFound {
+					return fmt.Errorf("no active session for cron %q", name)
+				}
+				return err
+			}
+
+			fmt.Printf("terminated cron %s (session %s)\n", name, session)
 			return nil
 		},
 	}

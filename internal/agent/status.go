@@ -194,6 +194,7 @@ func Write(root string, as AgentStatus) error {
 	}
 
 	target := runPath(root, as.TicketID, as.RunID)
+	tmpDir := filepath.Dir(target)
 
 	// New files (spawned or first-write followups) use O_EXCL to
 	// surface races where two callers picked the same run id.
@@ -210,8 +211,18 @@ func Write(root string, as AgentStatus) error {
 		return f.Close()
 	}
 
-	tmp := target + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	f, err := os.CreateTemp(tmpDir, filepath.Base(target)+".*.tmp")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
 		return err
 	}
 	return os.Rename(tmp, target)
@@ -347,8 +358,19 @@ func SetPlanFile(root, ticketID, runID, planFile string) error {
 		return err
 	}
 	target := runPath(root, ticketID, runID)
-	tmp := target + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	dir := filepath.Dir(target)
+	f, err := os.CreateTemp(dir, filepath.Base(target)+".*.tmp")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
 		return err
 	}
 	return os.Rename(tmp, target)

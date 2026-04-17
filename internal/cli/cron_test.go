@@ -7,6 +7,7 @@ import (
 
 	"github.com/stepandel/tickets-md/internal/agent"
 	"github.com/stepandel/tickets-md/internal/config"
+	"github.com/stepandel/tickets-md/internal/terminal"
 )
 
 func TestSpawnCronAgentImmediateExitMarksRunDone(t *testing.T) {
@@ -217,5 +218,80 @@ func TestStartCronRunNonInteractiveStillUsesPrepareCronArgs(t *testing.T) {
 	}
 	if fake.stageCalls != 0 {
 		t.Fatalf("stageCalls = %d, want 0", fake.stageCalls)
+	}
+}
+
+func waitForCronStatus(t *testing.T, root, name string, want agent.Status) agent.AgentStatus {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		as, err := agent.CronLatest(root, name)
+		if err == nil && as.Status == want {
+			return as
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	as, err := agent.CronLatest(root, name)
+	if err != nil {
+		t.Fatalf("CronLatest(%s): %v", name, err)
+	}
+	t.Fatalf("latest status = %q, want %q", as.Status, want)
+	return agent.AgentStatus{}
+}
+
+func TestTerminateCronSessionMarksRunFailed(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(agent.CronRunsDir(root, "groomer"), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	runner := agent.NewPTYRunner()
+	mon := agent.NewMonitor(root, 0, 0, 0, runner.Alive, runner.IdleSeconds, runner.Kill)
+
+	session, err := startCronRun(root, config.CronAgentConfig{
+		Name:        "groomer",
+		Schedule:    "@every 5m",
+		Command:     "/bin/sh",
+		Args:        []string{"-c", "trap 'sleep 1; exit 0' TERM; while :; do sleep 1; done"},
+		Prompt:      "ignored",
+		Interactive: true,
+	}, mon, runner, 0, 0)
+	if err != nil {
+		t.Fatalf("startCronRun: %v", err)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		as, err := agent.CronLatest(root, "groomer")
+		if err == nil && as.Session == session && runner.Alive(session) {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !runner.Alive(session) {
+		t.Fatalf("session %q never became active", session)
+	}
+
+	killedSession, err := terminateCronSession(root, config.CronAgentConfig{Name: "groomer"}, runner)
+	if err != nil {
+		t.Fatalf("terminateCronSession: %v", err)
+	}
+	if killedSession != session {
+		t.Fatalf("session = %q, want %q", killedSession, session)
+	}
+
+	as := waitForCronStatus(t, root, "groomer", agent.StatusFailed)
+	if as.Error != "terminated by user" && as.Error != "agent exited with code -1" {
+		t.Fatalf("error = %q, want terminated-by-user or concurrent exit code", as.Error)
+	}
+}
+
+func TestTerminateCronSessionNoActiveRun(t *testing.T) {
+	root := t.TempDir()
+	runner := agent.NewPTYRunner()
+
+	_, err := terminateCronSession(root, config.CronAgentConfig{Name: "groomer"}, runner)
+	if err != terminal.ErrCronSessionNotActive {
+		t.Fatalf("err = %v, want %v", err, terminal.ErrCronSessionNotActive)
 	}
 }

@@ -344,6 +344,14 @@ func runWatch(s *ticket.Store) error {
 		}
 		return "", fmt.Errorf("cron %q not configured", name)
 	}
+	termSrv.TerminateCronSession = func(name string) (string, error) {
+		for _, ca := range s.Config.CronAgents {
+			if ca.Name == name {
+				return terminateCronSession(s.Root, ca, runner)
+			}
+		}
+		return "", fmt.Errorf("cron %q not configured", name)
+	}
 
 	log.Println("ready — move tickets between stages to trigger agents (ctrl+c to stop)")
 

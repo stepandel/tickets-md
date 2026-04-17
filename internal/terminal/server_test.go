@@ -97,6 +97,7 @@ func newTestHandler(t *testing.T, runner *fakeRunner, root string) http.Handler 
 	mux.HandleFunc("/spawn", srv.handleSpawn)
 	mux.HandleFunc("/rerun-stage-agent", srv.handleRerunStageAgent)
 	mux.HandleFunc("/run-cron-agent", srv.handleRunCronAgent)
+	mux.HandleFunc("/terminate-cron-session", srv.handleTerminateCronSession)
 	return withCORS(mux)
 }
 
@@ -415,6 +416,103 @@ func TestRunCron_MissingName(t *testing.T) {
 	}
 	if !strings.Contains(body, "name is required") {
 		t.Fatalf("body = %q", body)
+	}
+}
+
+func TestTerminateCron_NoCallback(t *testing.T) {
+	h := newTestHandler(t, &fakeRunner{}, t.TempDir())
+	req := httptest.NewRequest(http.MethodPost, "/terminate-cron-session", strings.NewReader(`{"name":"groomer"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", rr.Code)
+	}
+}
+
+func TestTerminateCron_BadJSON(t *testing.T) {
+	root := t.TempDir()
+	srv := New(&fakeRunner{}, root)
+	srv.TerminateCronSession = func(name string) (string, error) { return "", nil }
+	mux := http.NewServeMux()
+	mux.HandleFunc("/terminate-cron-session", srv.handleTerminateCronSession)
+	h := withCORS(mux)
+	req := httptest.NewRequest(http.MethodPost, "/terminate-cron-session", strings.NewReader("{"))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	body := responseBody(t, rr)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+	if !strings.Contains(body, "bad request") {
+		t.Fatalf("body = %q", body)
+	}
+}
+
+func TestTerminateCron_MissingName(t *testing.T) {
+	root := t.TempDir()
+	srv := New(&fakeRunner{}, root)
+	srv.TerminateCronSession = func(name string) (string, error) { return "", nil }
+	mux := http.NewServeMux()
+	mux.HandleFunc("/terminate-cron-session", srv.handleTerminateCronSession)
+	h := withCORS(mux)
+	req := httptest.NewRequest(http.MethodPost, "/terminate-cron-session", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	body := responseBody(t, rr)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+	if !strings.Contains(body, "name is required") {
+		t.Fatalf("body = %q", body)
+	}
+}
+
+func TestTerminateCron_NotActive(t *testing.T) {
+	root := t.TempDir()
+	srv := New(&fakeRunner{}, root)
+	srv.TerminateCronSession = func(name string) (string, error) {
+		return "", ErrCronSessionNotActive
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/terminate-cron-session", srv.handleTerminateCronSession)
+	h := withCORS(mux)
+	req := httptest.NewRequest(http.MethodPost, "/terminate-cron-session", strings.NewReader(`{"name":"groomer"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rr.Code)
+	}
+}
+
+func TestTerminateCron_Success(t *testing.T) {
+	root := t.TempDir()
+	srv := New(&fakeRunner{}, root)
+	srv.TerminateCronSession = func(name string) (string, error) {
+		return ".cron-groomer-1", nil
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/terminate-cron-session", srv.handleTerminateCronSession)
+	h := withCORS(mux)
+	req := httptest.NewRequest(http.MethodPost, "/terminate-cron-session", strings.NewReader(`{"name":"groomer"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	var got spawnResponse
+	if err := json.NewDecoder(rr.Result().Body).Decode(&got); err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if got.Session != ".cron-groomer-1" {
+		t.Fatalf("session = %q, want .cron-groomer-1", got.Session)
 	}
 }
 
