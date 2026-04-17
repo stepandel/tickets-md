@@ -367,6 +367,49 @@ func TestHarnessDoctorOrphanTmpFile(t *testing.T) {
 	}
 }
 
+func TestHarnessDoctorOrphanTmpFileFromCreateTemp(t *testing.T) {
+	s := newHarnessStore(t)
+	tk, _ := s.Create("Alpha")
+
+	runID := agent.FormatRunID(1, "execute")
+	writeRunRaw(t, s.Root, agent.AgentStatus{
+		TicketID:  tk.ID,
+		RunID:     runID,
+		Seq:       1,
+		Stage:     "execute",
+		Agent:     "claude",
+		Session:   tk.ID + "-1",
+		Status:    agent.StatusDone,
+		SpawnedAt: time.Now().UTC().Truncate(time.Second),
+		UpdatedAt: time.Now().UTC().Truncate(time.Second),
+	})
+	tmp := filepath.Join(agent.TicketDir(s.Root, tk.ID), "002-execute.1234567890.yml.tmp")
+	if err := os.WriteFile(tmp, []byte("partial"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	issues, err := HarnessDoctor(s, true, 0)
+	if err != nil {
+		t.Fatalf("HarnessDoctor: %v", err)
+	}
+	var found *HarnessIssue
+	for i := range issues {
+		if issues[i].Kind == OrphanTmp {
+			found = &issues[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("expected OrphanTmp, got %v", issues)
+	}
+	if !found.Fixed {
+		t.Errorf("orphan tmp should be fixed: %v", found)
+	}
+	if _, err := os.Stat(tmp); !os.IsNotExist(err) {
+		t.Errorf("expected %s removed, stat err = %v", tmp, err)
+	}
+}
+
 func TestAutoHealFixesSafeIssuesOnly(t *testing.T) {
 	s := newHarnessStore(t)
 	tk, _ := s.Create("Alpha")
