@@ -27,7 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the directory where worktrees live (default `.worktrees`) and
   `worktrees.branch_prefix` sets the branch namespace (default
   `tickets/`, must end with `/`). Omit the block to keep the
-  existing defaults.
+  existing defaults. The Obsidian plugin's diff view reads the same
+  block, so the worktree path it inspects and the branch range it
+  diffs against follow the configured layout instead of the
+  hardcoded `.worktrees/<id>` and `tickets/<id>` defaults.
 
 - Board-level cron runs of the `claude` agent now auto-inject
   `--print` (unless the user already passed `--print`/`-p` in the
