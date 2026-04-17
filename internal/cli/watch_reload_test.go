@@ -3,11 +3,13 @@ package cli
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/stepandel/tickets-md/internal/agent"
 	"github.com/stepandel/tickets-md/internal/config"
+	"github.com/stepandel/tickets-md/internal/stage"
 	"github.com/stepandel/tickets-md/internal/ticket"
 )
 
@@ -126,5 +128,101 @@ func TestReloadWatchConfigCronReloadFailurePreservesMonitorTiming(t *testing.T) 
 	}
 	if s.Config.Watch != nil {
 		t.Fatalf("Watch = %#v, want unchanged nil", s.Config.Watch)
+	}
+}
+
+func TestReloadStageConfigUpdatesCachedStage(t *testing.T) {
+	s := newReloadWatchStore(t, config.Config{
+		Prefix:        "TIC",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "execute", "done"},
+	})
+	stageDir := filepath.Join(s.Root, ".tickets", "execute")
+	stageConfigs := newStageConfigStore()
+	stageConfigs.Set("execute", stage.Config{})
+
+	data := []byte("agent:\n  command: /bin/sh\n  args: [\"-c\", \"exit 0\"]\n  prompt: go\n")
+	if err := os.WriteFile(filepath.Join(stageDir, ".stage.yml"), data, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg, err := reloadStageConfig(stageConfigs, "execute", stageDir)
+	if err != nil {
+		t.Fatalf("reloadStageConfig: %v", err)
+	}
+	if !cfg.HasAgent() || cfg.Agent.Command != "/bin/sh" {
+		t.Fatalf("cfg = %#v, want /bin/sh agent", cfg)
+	}
+
+	got, ok := stageConfigs.Get("execute")
+	if !ok {
+		t.Fatal("stage config missing after reload")
+	}
+	if !got.HasAgent() || got.Agent.Command != "/bin/sh" {
+		t.Fatalf("cached config = %#v, want /bin/sh agent", got)
+	}
+}
+
+func TestReloadStageConfigInvalidYAMLPreservesCachedStage(t *testing.T) {
+	stageConfigs := newStageConfigStore()
+	want := stage.Config{
+		Agent: &stage.AgentConfig{
+			Command: "claude",
+			Prompt:  "keep me",
+		},
+	}
+	stageConfigs.Set("execute", want)
+
+	stageDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(stageDir, ".stage.yml"), []byte("agent: ["), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if _, err := reloadStageConfig(stageConfigs, "execute", stageDir); err == nil {
+		t.Fatal("reloadStageConfig err = nil, want parse error")
+	}
+
+	got, ok := stageConfigs.Get("execute")
+	if !ok {
+		t.Fatal("stage config missing after failed reload")
+	}
+	if got != want {
+		t.Fatalf("cached config = %#v, want %#v", got, want)
+	}
+}
+
+func TestReloadStageConfigDeletionResetsToZeroConfig(t *testing.T) {
+	stageConfigs := newStageConfigStore()
+	stageDir := t.TempDir()
+	stageConfigs.Set("execute", stage.Config{
+		Cleanup: &stage.CleanupConfig{Worktree: true},
+	})
+
+	data := []byte("cleanup:\n  worktree: true\n  branch: true\n")
+	configPath := filepath.Join(stageDir, ".stage.yml")
+	if err := os.WriteFile(configPath, data, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if _, err := reloadStageConfig(stageConfigs, "execute", stageDir); err != nil {
+		t.Fatalf("initial reloadStageConfig: %v", err)
+	}
+	if err := os.Remove(configPath); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+
+	cfg, err := reloadStageConfig(stageConfigs, "execute", stageDir)
+	if err != nil {
+		t.Fatalf("reloadStageConfig after delete: %v", err)
+	}
+	if cfg.HasAgent() || cfg.HasCleanup() {
+		t.Fatalf("cfg = %#v, want zero config", cfg)
+	}
+
+	got, ok := stageConfigs.Get("execute")
+	if !ok {
+		t.Fatal("stage config missing after delete reload")
+	}
+	if got.HasAgent() || got.HasCleanup() {
+		t.Fatalf("cached config = %#v, want zero config", got)
 	}
 }

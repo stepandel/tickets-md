@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -60,6 +61,52 @@ Create a .stage.yml in any stage directory to configure an agent:
 type watchTimings struct {
 	PollInterval   time.Duration
 	IdleBlockAfter time.Duration
+}
+
+type stageConfigStore struct {
+	mu      sync.RWMutex
+	configs map[string]stage.Config
+}
+
+func newStageConfigStore() *stageConfigStore {
+	return &stageConfigStore{configs: make(map[string]stage.Config)}
+}
+
+func (s *stageConfigStore) Get(stageName string) (stage.Config, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	cfg, ok := s.configs[stageName]
+	return cfg, ok
+}
+
+func (s *stageConfigStore) Set(stageName string, cfg stage.Config) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.configs[stageName] = cfg
+}
+
+func stageConfigStatus(cfg stage.Config) string {
+	switch {
+	case cfg.HasAgent():
+		return fmt.Sprintf("agent: %s", cfg.Agent.Command)
+	case cfg.HasCleanup():
+		return "cleanup only"
+	default:
+		return "no agent"
+	}
+}
+
+func isStageConfigPath(path string) bool {
+	return filepath.Base(path) == ".stage.yml"
+}
+
+func reloadStageConfig(stageConfigs *stageConfigStore, stageName, stageDir string) (stage.Config, error) {
+	cfg, err := stage.Load(stageDir)
+	if err != nil {
+		return stage.Config{}, err
+	}
+	stageConfigs.Set(stageName, cfg)
+	return cfg, nil
 }
 
 func watchTimingsForConfig(cfg config.Config) watchTimings {
@@ -179,7 +226,7 @@ func runWatch(s *ticket.Store) error {
 	// It's what lets us distinguish a real cross-directory move (which
 	// empties the source path) from an agent's atomic in-place rewrite
 	// (rename(tmp, foo.md), which leaves the path alive at a new inode).
-	stageConfigs := make(map[string]stage.Config)
+	stageConfigs := newStageConfigStore()
 	knownPaths := make(map[string]bool)
 	for _, st := range s.Config.Stages {
 		dir := filepath.Join(s.Root, config.ConfigDir, st)
@@ -187,7 +234,7 @@ func runWatch(s *ticket.Store) error {
 		if err != nil {
 			return fmt.Errorf("loading stage config for %s: %w", st, err)
 		}
-		stageConfigs[st] = sc
+		stageConfigs.Set(st, sc)
 		if err := w.Add(dir); err != nil {
 			return fmt.Errorf("watching %s: %w", dir, err)
 		}
@@ -203,11 +250,7 @@ func runWatch(s *ticket.Store) error {
 			knownPaths[filepath.Join(dir, e.Name())] = true
 		}
 
-		status := "no agent"
-		if sc.HasAgent() {
-			status = fmt.Sprintf("agent: %s", sc.Agent.Command)
-		}
-		log.Printf("watching %s/ (%s)", st, status)
+		log.Printf("watching %s/ (%s)", st, stageConfigStatus(sc))
 	}
 	log.Printf("monitor: poll=%s idle-block=%s", timings.PollInterval, timings.IdleBlockAfter)
 	if err := w.Add(filepath.Join(s.Root, config.ConfigDir)); err != nil {
@@ -221,6 +264,9 @@ func runWatch(s *ticket.Store) error {
 	configPath := config.Path(s.Root)
 	var configReloadTimer *time.Timer
 	var configReloadCh <-chan time.Time
+	var stageReloadTimer *time.Timer
+	var stageReloadCh <-chan time.Time
+	pendingStageReloads := make(map[string]string)
 	scheduleConfigReload := func() {
 		if configReloadTimer == nil {
 			configReloadTimer = time.NewTimer(250 * time.Millisecond)
@@ -235,13 +281,35 @@ func runWatch(s *ticket.Store) error {
 		}
 		configReloadTimer.Reset(250 * time.Millisecond)
 	}
-	defer func() {
-		if configReloadTimer == nil {
+	scheduleStageReload := func(stageName, stageDir string) {
+		pendingStageReloads[stageName] = stageDir
+		if stageReloadTimer == nil {
+			stageReloadTimer = time.NewTimer(250 * time.Millisecond)
+			stageReloadCh = stageReloadTimer.C
 			return
 		}
-		if !configReloadTimer.Stop() {
+		if !stageReloadTimer.Stop() {
+			select {
+			case <-stageReloadTimer.C:
+			default:
+			}
+		}
+		stageReloadTimer.Reset(250 * time.Millisecond)
+	}
+	defer func() {
+		if configReloadTimer == nil {
+		} else if !configReloadTimer.Stop() {
 			select {
 			case <-configReloadTimer.C:
+			default:
+			}
+		}
+		if stageReloadTimer == nil {
+			return
+		}
+		if !stageReloadTimer.Stop() {
+			select {
+			case <-stageReloadTimer.C:
 			default:
 			}
 		}
@@ -289,6 +357,12 @@ func runWatch(s *ticket.Store) error {
 				scheduleConfigReload()
 				continue
 			}
+			if isStageConfigPath(event.Name) {
+				if event.Has(fsnotify.Create) || event.Has(fsnotify.Write) || event.Has(fsnotify.Remove) || event.Has(fsnotify.Rename) {
+					scheduleStageReload(filepath.Base(filepath.Dir(event.Name)), filepath.Dir(event.Name))
+				}
+				continue
+			}
 
 			if event.Has(fsnotify.Rename) || event.Has(fsnotify.Remove) {
 				// If the file still exists at this path, it was an
@@ -325,6 +399,18 @@ func runWatch(s *ticket.Store) error {
 				log.Printf("monitor: poll=%s idle-block=%s (reloaded)", timings.PollInterval, timings.IdleBlockAfter)
 			}
 
+		case <-stageReloadCh:
+			pending := pendingStageReloads
+			pendingStageReloads = make(map[string]string)
+			for stageName, stageDir := range pending {
+				sc, err := reloadStageConfig(stageConfigs, stageName, stageDir)
+				if err != nil {
+					log.Printf("%s/.stage.yml: reload failed: %v (keeping previous config)", stageName, err)
+					continue
+				}
+				log.Printf("%s/.stage.yml: reloaded (%s)", stageName, stageConfigStatus(sc))
+			}
+
 		case err, ok := <-w.Errors:
 			if !ok {
 				return nil
@@ -334,7 +420,7 @@ func runWatch(s *ticket.Store) error {
 	}
 }
 
-func handleCreate(s *ticket.Store, stageConfigs map[string]stage.Config, path string, mon *agent.Monitor, runner *agent.PTYRunner) {
+func handleCreate(s *ticket.Store, stageConfigs *stageConfigStore, path string, mon *agent.Monitor, runner *agent.PTYRunner) {
 	dir := filepath.Dir(path)
 	stageName := filepath.Base(dir)
 
@@ -353,7 +439,7 @@ func handleCreate(s *ticket.Store, stageConfigs map[string]stage.Config, path st
 		}
 	}
 
-	sc, ok := stageConfigs[stageName]
+	sc, ok := stageConfigs.Get(stageName)
 	if !ok {
 		log.Printf("%s → %s (no stage config)", ticketID, stageName)
 		return
@@ -466,12 +552,12 @@ func buildAgentArgs(t ticket.Ticket, ac *stage.AgentConfig, worktreePath string)
 // triggered by the Obsidian plugin. It mirrors the watcher's handleCreate
 // path: looks up the ticket's current stage config, verifies an agent is
 // configured, refuses if a run is already active, then calls spawnAgent.
-func rerunStageAgent(ticketID string, force bool, s *ticket.Store, stageConfigs map[string]stage.Config, mon *agent.Monitor, runner *agent.PTYRunner, rows, cols uint16) (string, error) {
+func rerunStageAgent(ticketID string, force bool, s *ticket.Store, stageConfigs *stageConfigStore, mon *agent.Monitor, runner *agent.PTYRunner, rows, cols uint16) (string, error) {
 	t, err := s.Get(ticketID)
 	if err != nil {
 		return "", fmt.Errorf("ticket %s: %w", ticketID, err)
 	}
-	sc, ok := stageConfigs[t.Stage]
+	sc, ok := stageConfigs.Get(t.Stage)
 	if !ok || !sc.HasAgent() {
 		return "", fmt.Errorf("stage %q has no agent configured", t.Stage)
 	}
