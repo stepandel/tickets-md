@@ -37,6 +37,7 @@ export function planDiffCommand(input: {
 	worktreePath: string;
 	worktreeExists: boolean;
 	defaultBranch: string;
+	branchPrefix: string;
 }): DiffPlan {
 	if (input.worktreeExists) {
 		return {
@@ -55,6 +56,6 @@ export function planDiffCommand(input: {
 	return {
 		kind: "branch",
 		cwd: input.basePath,
-		diff: ["diff", `${input.defaultBranch}...tickets/${input.ticketId}`],
+		diff: ["diff", `${input.defaultBranch}...${input.branchPrefix}${input.ticketId}`],
 	};
 }
