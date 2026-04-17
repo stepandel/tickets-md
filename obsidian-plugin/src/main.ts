@@ -18,6 +18,7 @@ import {
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { html as diff2html } from "diff2html";
+import { readBoardViewState } from "./board-view-state";
 import { planDiffCommand, resolveDefaultBranch } from "./diff";
 import { formatForceRerunDescription } from "./force-rerun";
 import { visibleStages } from "./visible-stages";
@@ -637,6 +638,16 @@ class BoardView extends ItemView {
 		return "kanban";
 	}
 
+	async setState(state: Record<string, unknown>, result: ViewStateResult) {
+		this.showArchived = readBoardViewState(state).showArchived;
+		await super.setState(state, result);
+		await this.refresh();
+	}
+
+	getState(): Record<string, unknown> {
+		return { showArchived: this.showArchived };
+	}
+
 	async onOpen() {
 		await this.refresh();
 
@@ -772,6 +783,7 @@ class BoardView extends ItemView {
 						.onClick(async () => {
 							this.showArchived = !this.showArchived;
 							await this.refresh();
+							this.app.workspace.requestSaveLayout();
 						}),
 				);
 			}

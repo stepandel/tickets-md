@@ -20,7 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Obsidian board now mirrors the CLI's archive visibility: when
   `archive_stage` is configured, the stage is hidden by default and a
   "Show archived stage" / "Hide archived stage" toggle is available
-  from the board's empty-area context menu.
+  from the board menu. The choice is persisted per board leaf across
+  reopen/reload.
 
 - `tickets board` and the Obsidian plugin can now force a stage-agent
   re-run while a previous run is still active. In the TUI, `F` opens a
