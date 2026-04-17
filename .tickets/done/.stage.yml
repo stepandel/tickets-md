@@ -1,6 +1,6 @@
 agent:
-  command: claude
-  args: ["--dangerously-skip-permissions"]
+  command: codex
+  args: ["--full-auto"]
   prompt: |
     Ticket {{id}} ({{title}}) is done. Merge branch tickets/{{id}} into main, then remove the worktree at .worktrees/{{id}} and delete the branch.
 
