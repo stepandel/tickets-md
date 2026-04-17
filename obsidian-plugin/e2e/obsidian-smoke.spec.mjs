@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
@@ -33,6 +34,14 @@ test("opens the board and creates a ticket from the fixture vault", async () => 
 			{ cwd: repoRoot, stdio: "inherit" },
 		);
 
+		// Obsidian's `--vault <path>` CLI flag is gated on the "Command
+		// line interface" setting, which is off by default and can't be
+		// toggled from outside Obsidian. Without it, Obsidian launches
+		// straight into the vault picker and no plugin ever loads. Writing
+		// an entry into the user-level obsidian.json with `open: true`
+		// tells Obsidian to open this vault on startup regardless.
+		await registerVault(vaultPath);
+
 		// Obsidian ships with the Electron `enableNodeCliInspectArguments`
 		// fuse disabled, which strips `--inspect=0` before Node can honor
 		// it. That means Playwright's `_electron.launch` — which greps for
@@ -42,11 +51,7 @@ test("opens the board and creates a ticket from the fixture vault", async () => 
 		// port`) does come up though, so we spawn Obsidian ourselves on a
 		// fixed port and attach over CDP instead.
 		const debugPort = await pickFreePort();
-		const args = [
-			`--remote-debugging-port=${debugPort}`,
-			"--vault",
-			vaultPath,
-		];
+		const args = [`--remote-debugging-port=${debugPort}`];
 		if (process.platform === "linux") {
 			args.unshift("--no-sandbox");
 		}
@@ -124,6 +129,42 @@ test("opens the board and creates a ticket from the fixture vault", async () => 
 		await fs.rm(tempRoot, { recursive: true, force: true });
 	}
 });
+
+function obsidianConfigDir() {
+	switch (process.platform) {
+		case "darwin":
+			return path.join(os.homedir(), "Library", "Application Support", "obsidian");
+		case "win32":
+			return path.join(process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming"), "obsidian");
+		default:
+			return path.join(process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), ".config"), "obsidian");
+	}
+}
+
+async function registerVault(vaultPath) {
+	const configDir = obsidianConfigDir();
+	await fs.mkdir(configDir, { recursive: true });
+	const configPath = path.join(configDir, "obsidian.json");
+	let existing = { vaults: {} };
+	try {
+		existing = JSON.parse(await fs.readFile(configPath, "utf8"));
+		if (typeof existing !== "object" || existing === null) existing = { vaults: {} };
+		if (typeof existing.vaults !== "object" || existing.vaults === null) existing.vaults = {};
+		// Unset any other vaults' `open` flag so ours is the one that boots.
+		for (const entry of Object.values(existing.vaults)) {
+			if (entry && typeof entry === "object") delete entry.open;
+		}
+	} catch {
+		existing = { vaults: {} };
+	}
+	const vaultId = randomBytes(8).toString("hex");
+	existing.vaults[vaultId] = {
+		path: vaultPath,
+		ts: Date.now(),
+		open: true,
+	};
+	await fs.writeFile(configPath, JSON.stringify(existing, null, 2));
+}
 
 async function pickFreePort() {
 	return new Promise((resolve, reject) => {
