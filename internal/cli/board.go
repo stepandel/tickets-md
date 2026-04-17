@@ -19,6 +19,7 @@ import (
 
 func newBoardCmd() *cobra.Command {
 	var project string
+	var archived bool
 	cmd := &cobra.Command{
 		Use:     "board",
 		Aliases: []string{"tui"},
@@ -28,15 +29,16 @@ func newBoardCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return runBoard(s, project)
+			return runBoard(s, project, archived)
 		},
 	}
 	cmd.Flags().StringVar(&project, "project", "", "only show tickets assigned to this project; use - for unassigned")
+	cmd.Flags().BoolVar(&archived, "archived", false, "include the configured archive stage in the default board view")
 	return cmd
 }
 
-func runBoard(s *ticket.Store, project string) error {
-	m, err := newBoardModel(s, project)
+func runBoard(s *ticket.Store, project string, showArchived bool) error {
+	m, err := newBoardModel(s, project, showArchived)
 	if err != nil {
 		return err
 	}
@@ -99,15 +101,16 @@ type boardModel struct {
 	overlayCtx  any    // optional context data (e.g. link kind)
 }
 
-func newBoardModel(s *ticket.Store, project string) (*boardModel, error) {
+func newBoardModel(s *ticket.Store, project string, showArchived bool) (*boardModel, error) {
+	stages := visibleStages(s.Config, showArchived)
 	m := &boardModel{
 		store:         s,
 		project:       project,
-		stages:        s.Config.Stages,
+		stages:        stages,
 		gap:           1,
 		agentStatuses: make(map[string]agent.AgentStatus),
-		scrollOff:     make([]int, len(s.Config.Stages)),
-		visibleCards:  make([]int, len(s.Config.Stages)),
+		scrollOff:     make([]int, len(stages)),
+		visibleCards:  make([]int, len(stages)),
 	}
 	if err := m.reload(); err != nil {
 		return nil, err

@@ -70,6 +70,9 @@ type Config struct {
 	// CompleteStages configures which stages count as complete for
 	// automatic unblocking of dependent tickets on Move.
 	CompleteStages []string `yaml:"complete_stages,omitempty"`
+	// ArchiveStage is an optional configured stage hidden from default
+	// list and board views.
+	ArchiveStage string `yaml:"archive_stage,omitempty"`
 	// DefaultAgent is the agent command used by `tickets agents run`.
 	DefaultAgent *DefaultAgentConfig `yaml:"default_agent,omitempty"`
 	// Cleanup configures the optional `tickets cleanup` stage sweep.
@@ -190,6 +193,9 @@ func (c Config) Validate() error {
 		}
 		completeSeen[st] = struct{}{}
 	}
+	if c.ArchiveStage != "" && !c.HasStage(c.ArchiveStage) {
+		return fmt.Errorf("unknown archive stage %q", c.ArchiveStage)
+	}
 	return ValidateCronAgents(c.CronAgents)
 }
 
@@ -280,6 +286,14 @@ func (c Config) HasStage(name string) bool {
 		}
 	}
 	return false
+}
+
+func (c Config) HasArchiveStage() bool {
+	return c.ArchiveStage != ""
+}
+
+func (c Config) IsArchiveStage(name string) bool {
+	return c.ArchiveStage != "" && c.ArchiveStage == name
 }
 
 func (c Config) IsCompleteStage(name string) bool {

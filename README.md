@@ -267,7 +267,8 @@ setup steps.
 | `tickets init`                          | Create `.tickets/config.yml` + stage folders       |
 | `tickets new <title...> [--priority P] [--project ID] [--parent ID] [--blocked-by ID...] [--blocks ID...] [--related ID...] [--body MD]` | Create a ticket in the default stage |
 | `tickets projects <subcommand>`         | Create, list, show, update, assign, and delete projects |
-| `tickets list [--stage X] [--project P]`| List tickets, grouped by stage (alias: `ls`)       |
+| `tickets list [--stage X] [--project P] [--archived]`| List tickets, grouped by stage (alias: `ls`)       |
+| `tickets archive <id> [--from <stage>] [--older-than D] [--dry-run]` | Move a ticket, or older tickets from a stage, into the configured archive stage |
 | `tickets show <id>`                     | Print a ticket's contents                          |
 | `tickets move <id> <stage>`             | Move a ticket to another stage (alias: `mv`)       |
 | `tickets edit <id>`                     | Open the ticket file in your editor                |
@@ -277,7 +278,7 @@ setup steps.
 | `tickets unlink <a> <b> [--blocks\|--parent]`     | Remove a link                                      |
 | `tickets cleanup [--dry-run]`           | Remove orphaned or archived-stage agent artifacts  |
 | `tickets doctor [--dry-run]`            | Scan for drift across tickets, runs, worktrees     |
-| `tickets board [--project P]`           | Interactive kanban board TUI (alias: `tui`)        |
+| `tickets board [--project P] [--archived]` | Interactive kanban board TUI (alias: `tui`)     |
 | `tickets watch`                         | Watch for ticket movements and spawn agents        |
 | `tickets agents [-a] [--history]`       | List agent runs                                    |
 | `tickets agents log <id> [run]`         | Print the captured output for a run                |
@@ -324,6 +325,43 @@ default for new tickets. Submit a blank line when done.
 
 Pass `--stages new,doing,done` (or pipe stdin from a script) to skip
 the wizard.
+
+## Archive
+
+If older finished tickets are piling up, add a normal configured stage
+and mark it as the archive stage in `.tickets/config.yml`:
+
+```yaml
+stages:
+  - backlog
+  - prep
+  - execute
+  - review
+  - done
+  - archive
+archive_stage: archive
+```
+
+Archived tickets stay as ordinary markdown files under
+`.tickets/<stage>/`, so `tickets show`, `tickets move`, agent history,
+and `tickets doctor` still work exactly the same way. What changes is
+default visibility: `tickets list` and `tickets board` hide the
+configured archive stage unless you pass `--archived`, while
+`tickets list --stage archive` still shows it directly.
+
+Use `tickets archive` as the convenience wrapper around `tickets move`:
+
+```sh
+tickets archive TIC-042
+tickets archive --from done --older-than 720h --dry-run
+tickets archive --from done --older-than 720h
+```
+
+Bulk archive mode uses each ticket's `updated_at` timestamp, so a
+ticket moved into `done` recently will not be archived just because it
+was created long ago. Tickets with a live non-terminal agent run are
+skipped. If you also list the archive stage in `complete_stages`, moves
+into archive still count as completion transitions.
 
 ## Agents
 

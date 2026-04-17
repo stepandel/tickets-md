@@ -161,6 +161,27 @@ func TestSaveLoadCompleteStages(t *testing.T) {
 	}
 }
 
+func TestSaveLoadArchiveStage(t *testing.T) {
+	root := t.TempDir()
+	want := Config{
+		Prefix:        "TIC",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "done", "archive"},
+		ArchiveStage:  "archive",
+	}
+
+	if err := Save(root, want); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.ArchiveStage != want.ArchiveStage {
+		t.Fatalf("ArchiveStage = %q, want %q", got.ArchiveStage, want.ArchiveStage)
+	}
+}
+
 func TestSaveLoadCronAgents(t *testing.T) {
 	root := t.TempDir()
 	disabled := false
@@ -241,6 +262,12 @@ func TestValidate(t *testing.T) {
 			Stages:         []string{"backlog", "done"},
 			CompleteStages: []string{"done", "done"},
 		}, wantErr: `duplicate complete stage "done"`},
+		{name: "unknown archive stage", cfg: Config{
+			Prefix:        "TIC",
+			ProjectPrefix: "PRJ",
+			Stages:        []string{"backlog", "done"},
+			ArchiveStage:  "archive",
+		}, wantErr: `unknown archive stage "archive"`},
 		{name: "duplicate cron agent", cfg: Config{
 			Prefix:        "TIC",
 			ProjectPrefix: "PRJ",
@@ -395,6 +422,12 @@ func TestConfig_Helpers(t *testing.T) {
 	if cfg.IsCompleteStage("done") {
 		t.Fatal("IsCompleteStage(done) = true, want false by default")
 	}
+	if cfg.HasArchiveStage() {
+		t.Fatal("HasArchiveStage() = true, want false by default")
+	}
+	if cfg.IsArchiveStage("done") {
+		t.Fatal("IsArchiveStage(done) = true, want false by default")
+	}
 	if cfg.HasDefaultAgent() {
 		t.Fatal("HasDefaultAgent() = true, want false")
 	}
@@ -423,5 +456,16 @@ func TestConfig_Helpers(t *testing.T) {
 	}
 	if cfg.IsCompleteStage("prep") {
 		t.Fatal("IsCompleteStage(prep) = true, want false")
+	}
+
+	cfg.ArchiveStage = "done"
+	if !cfg.HasArchiveStage() {
+		t.Fatal("HasArchiveStage() = false, want true")
+	}
+	if !cfg.IsArchiveStage("done") {
+		t.Fatal("IsArchiveStage(done) = false, want true")
+	}
+	if cfg.IsArchiveStage("prep") {
+		t.Fatal("IsArchiveStage(prep) = true, want false")
 	}
 }

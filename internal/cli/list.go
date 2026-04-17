@@ -12,6 +12,7 @@ import (
 
 func newListCmd() *cobra.Command {
 	var stage, project string
+	var archived bool
 	cmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
@@ -36,7 +37,7 @@ func newListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			for i, st := range s.Config.Stages {
+			for i, st := range visibleStages(s.Config, archived) {
 				if i > 0 {
 					fmt.Println()
 				}
@@ -47,6 +48,7 @@ func newListCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&stage, "stage", "s", "", "only list tickets in this stage")
 	cmd.Flags().StringVar(&project, "project", "", "only list tickets assigned to this project; use - for unassigned")
+	cmd.Flags().BoolVar(&archived, "archived", false, "include the configured archive stage in the default grouped view")
 	return cmd
 }
 
