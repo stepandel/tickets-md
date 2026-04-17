@@ -69,6 +69,11 @@ async function waitForCdpEndpoint(endpoint, timeoutMs, obsidianProcess, processO
 			const details = output ? `\n\nObsidian output:\n${output}` : "";
 			throw new Error(`Obsidian exited with code ${obsidianProcess.exitCode} before CDP was ready.${details}`);
 		}
+		const output = processOutput.join("");
+		const wsEndpoint = extractWebSocketDebuggerUrl(output);
+		if (wsEndpoint) {
+			return { webSocketDebuggerUrl: wsEndpoint };
+		}
 		try {
 			const attemptTimeoutMs = Math.max(1_000, Math.min(2_000, deadline - Date.now()));
 			const res = await fetch(`${endpoint}/json/version`, {
@@ -88,6 +93,10 @@ async function waitForCdpEndpoint(endpoint, timeoutMs, obsidianProcess, processO
 	throw new Error(
 		`Obsidian CDP endpoint ${endpoint} not reachable within ${timeoutMs}ms: ${lastError?.message ?? "unknown error"}${details}`,
 	);
+}
+
+function extractWebSocketDebuggerUrl(output) {
+	return output.match(/DevTools listening on\s+(ws:\/\/\S+)/)?.[1] ?? null;
 }
 
 async function connectOverCdp(wsEndpoint, timeoutMs) {
