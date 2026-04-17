@@ -51,6 +51,45 @@ func TestSpawnCronAgentImmediateExitMarksRunDone(t *testing.T) {
 	t.Fatalf("latest status = %q, want %q", as.Status, agent.StatusDone)
 }
 
+func TestSpawnCronAgentNonClaudeArgsReachDone(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(agent.CronRunsDir(root, "codex-groomer"), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	runner := agent.NewPTYRunner()
+	mon := agent.NewMonitor(root, runner.Alive, runner.IdleSeconds)
+
+	err := spawnCronAgent(root, config.CronAgentConfig{
+		Name:     "codex-groomer",
+		Schedule: "@every 5m",
+		Command:  "/bin/sh",
+		Args:     []string{"-c", "printf '%s\n' \"$1\"; exit 0", "cron-wrapper"},
+		Prompt:   "review the backlog",
+	}, mon, runner)
+	if err != nil {
+		t.Fatalf("spawnCronAgent: %v", err)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		as, err := agent.CronLatest(root, "codex-groomer")
+		if err == nil && as.Status == agent.StatusDone {
+			if as.ExitCode != nil && *as.ExitCode != 0 {
+				t.Fatalf("exit code = %v, want nil or 0", as.ExitCode)
+			}
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	as, err := agent.CronLatest(root, "codex-groomer")
+	if err != nil {
+		t.Fatalf("CronLatest: %v", err)
+	}
+	t.Fatalf("latest status = %q, want %q", as.Status, agent.StatusDone)
+}
+
 func TestSyncAgentFrontmatterIgnoresCronOwners(t *testing.T) {
 	s := newWatchStore(t)
 	syncAgentFrontmatter(s.Root, agent.CronOwnerID("groomer"))

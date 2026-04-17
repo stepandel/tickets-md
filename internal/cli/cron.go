@@ -102,6 +102,7 @@ func (s *watchCronScheduler) registerEntry(ca config.CronAgentConfig) error {
 		s.engine.Start()
 	}
 	cfg := ca
+	warnCronNeedsOneShotArgs(cfg)
 	id, err := s.engine.AddFunc(cfg.Schedule, func() {
 		if err := spawnCronAgent(s.root, cfg, s.mon, s.runner); err != nil {
 			log.Printf("cron %s: %v", cfg.Name, err)
@@ -113,6 +114,18 @@ func (s *watchCronScheduler) registerEntry(ca config.CronAgentConfig) error {
 	s.entries[cfg.Name] = cronEntry{id: id, cfg: cfg}
 	log.Printf("cron %s: scheduled %s", cfg.Name, cfg.Schedule)
 	return nil
+}
+
+func warnCronNeedsOneShotArgs(ca config.CronAgentConfig) {
+	if len(ca.Args) > 0 {
+		return
+	}
+	if integ, ok := agent.Lookup(ca.Command); ok {
+		if _, ok := integ.(agent.CronIntegration); ok {
+			return
+		}
+	}
+	log.Printf("cron %s: command %q has no cron-specific integration and no args; configure one-shot/exit flags in cron args if it should exit after each tick", ca.Name, ca.Command)
 }
 
 func (s *watchCronScheduler) unregisterEntry(name string) {

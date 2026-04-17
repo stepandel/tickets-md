@@ -1,6 +1,9 @@
 package cli
 
 import (
+	"bytes"
+	"log"
+	"strings"
 	"testing"
 
 	cron "github.com/robfig/cron/v3"
@@ -13,6 +16,7 @@ func cronAgent(name, schedule string) config.CronAgentConfig {
 		Name:     name,
 		Schedule: schedule,
 		Command:  "/bin/sh",
+		Args:     []string{"-c", "exit 0"},
 		Prompt:   "echo hi",
 	}
 }
@@ -189,4 +193,86 @@ func TestSchedulerReloadValidationFailurePreservesState(t *testing.T) {
 	if got := len(s.engine.Entries()); got != 1 {
 		t.Fatalf("Entries len = %d, want 1", got)
 	}
+}
+
+func TestSchedulerReloadWarnsForCronWithoutArgsOrIntegration(t *testing.T) {
+	s, err := startCronScheduler(t.TempDir(), cronConfig(), nil, nil)
+	if err != nil {
+		t.Fatalf("startCronScheduler: %v", err)
+	}
+
+	logs := captureLogs(t, func() {
+		err = s.Reload(cronConfig(config.CronAgentConfig{
+			Name:     "groomer",
+			Schedule: "@every 5m",
+			Command:  "/bin/sh",
+			Prompt:   "echo hi",
+		}))
+	})
+	if err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+	if !strings.Contains(logs, "no cron-specific integration and no args") {
+		t.Fatalf("logs = %q, want warning substring", logs)
+	}
+}
+
+func TestSchedulerReloadDoesNotWarnWhenCronArgsPresent(t *testing.T) {
+	s, err := startCronScheduler(t.TempDir(), cronConfig(), nil, nil)
+	if err != nil {
+		t.Fatalf("startCronScheduler: %v", err)
+	}
+
+	logs := captureLogs(t, func() {
+		err = s.Reload(cronConfig(config.CronAgentConfig{
+			Name:     "groomer",
+			Schedule: "@every 5m",
+			Command:  "/bin/sh",
+			Args:     []string{"-c", "exit 0"},
+			Prompt:   "echo hi",
+		}))
+	})
+	if err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+	if strings.Contains(logs, "no cron-specific integration and no args") {
+		t.Fatalf("logs = %q, want no warning", logs)
+	}
+}
+
+func TestSchedulerReloadDoesNotWarnForCronIntegration(t *testing.T) {
+	s, err := startCronScheduler(t.TempDir(), cronConfig(), nil, nil)
+	if err != nil {
+		t.Fatalf("startCronScheduler: %v", err)
+	}
+
+	logs := captureLogs(t, func() {
+		err = s.Reload(cronConfig(config.CronAgentConfig{
+			Name:     "groomer",
+			Schedule: "@every 5m",
+			Command:  "claude",
+			Prompt:   "echo hi",
+		}))
+	})
+	if err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+	if strings.Contains(logs, "no cron-specific integration and no args") {
+		t.Fatalf("logs = %q, want no warning", logs)
+	}
+}
+
+func captureLogs(t *testing.T, fn func()) string {
+	t.Helper()
+	var buf bytes.Buffer
+	prevWriter := log.Writer()
+	prevFlags := log.Flags()
+	log.SetOutput(&buf)
+	log.SetFlags(0)
+	defer func() {
+		log.SetOutput(prevWriter)
+		log.SetFlags(prevFlags)
+	}()
+	fn()
+	return buf.String()
 }

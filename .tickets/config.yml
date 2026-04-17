@@ -16,6 +16,9 @@ complete_stages:
   - done
   - cancelled
 cron_agents:
+  # Non-Claude cron agents must put their one-shot/non-interactive flags
+  # in args:, otherwise tickets watch will warn that the command may not
+  # exit cleanly after each scheduled run.
   - name: backlog-groomer
     schedule: "@every 1m"
     command: claude
