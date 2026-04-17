@@ -634,8 +634,9 @@ tickets set TIC-001 priority -          # clear the field
 ```
 
 Any string is accepted (`low`, `high`, `P0`, …). Board styling uses
-built-in defaults for `critical`, `high`, `medium`, and `low` unless
-you override it in `.tickets/config.yml`:
+built-in defaults for `critical`, `urgent`, `high`, `medium`/`med`,
+and `low` (matched case-insensitively) unless you override them in
+`.tickets/config.yml`:
 
 ```yaml
 priorities:

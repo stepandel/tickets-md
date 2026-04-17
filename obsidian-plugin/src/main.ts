@@ -21,6 +21,7 @@ import { html as diff2html } from "diff2html";
 import { readBoardViewState } from "./board-view-state";
 import { planDiffCommand, resolveDefaultBranch } from "./diff";
 import { formatForceRerunDescription } from "./force-rerun";
+import { PriorityConfig, priorityBadgeStyle } from "./priority";
 import { visibleStages } from "./visible-stages";
 import {
 	ACTIVE_AGENT_STATUSES,
@@ -39,6 +40,7 @@ interface TicketsConfig {
 	archive_stage?: string;
 	default_agent?: { command: string; args?: string[] };
 	cron_agents?: CronAgentConfig[];
+	priorities?: Record<string, PriorityConfig>;
 	worktrees?: {
 		dir?: string;
 		branch_prefix?: string;
@@ -151,6 +153,17 @@ async function writeConfig(app: import("obsidian").App, config: TicketsConfig): 
 	const file = app.vault.getAbstractFileByPath(CONFIG_PATH);
 	if (!(file instanceof TFile)) return;
 	await app.vault.modify(file, stringifyYaml(config));
+}
+
+function applyPriorityBadgeStyle(
+	el: HTMLElement,
+	priorities: Record<string, PriorityConfig> | undefined,
+	name?: string,
+): void {
+	const style = priorityBadgeStyle(priorities, name);
+	el.style.backgroundColor = style.backgroundColor;
+	el.style.color = style.color;
+	el.style.fontWeight = style.fontWeight;
 }
 
 function worktreeDir(config: TicketsConfig | null): string {
@@ -1011,10 +1024,11 @@ class BoardView extends ItemView {
 		}
 
 		if (ticket.priority) {
-			cardHeader.createEl("span", {
+			const priorityEl = cardHeader.createEl("span", {
 				text: ticket.priority,
-				cls: `tb-priority tb-priority-${ticket.priority}`,
+				cls: "tb-priority",
 			});
+			applyPriorityBadgeStyle(priorityEl, this.config?.priorities, ticket.priority);
 		}
 
 		// Title
@@ -2621,10 +2635,11 @@ class ProjectsView extends ItemView {
 			meta.createEl("span", { text: ticket.id, cls: "tb-ticket-id" });
 			meta.createEl("span", { text: ticket.stage, cls: "tb-stage-name" });
 			if (ticket.priority) {
-				meta.createEl("span", {
+				const priorityEl = meta.createEl("span", {
 					text: ticket.priority,
-					cls: `tb-priority tb-priority-${ticket.priority.toLowerCase()}`,
+					cls: "tb-priority",
 				});
+				applyPriorityBadgeStyle(priorityEl, this.config?.priorities, ticket.priority);
 			}
 			if (ticket.agent_status && AGENT_BADGES[ticket.agent_status]) {
 				const badge = AGENT_BADGES[ticket.agent_status];
