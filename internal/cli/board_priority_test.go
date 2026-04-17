@@ -2,12 +2,19 @@ package cli
 
 import (
 	"image/color"
+	"reflect"
 	"testing"
 
 	"charm.land/lipgloss/v2"
 
+	"github.com/stepandel/tickets-md/internal/agent"
 	"github.com/stepandel/tickets-md/internal/config"
+	"github.com/stepandel/tickets-md/internal/ticket"
 )
+
+func intPtr(v int) *int {
+	return &v
+}
 
 func TestPriorityStyle(t *testing.T) {
 	tests := []struct {
@@ -65,5 +72,80 @@ func TestPriorityStyle(t *testing.T) {
 				t.Fatalf("GetBold() = %v, want %v", got, tt.wantBold)
 			}
 		})
+	}
+}
+
+func TestStartSetPriorityUsesConfiguredOrder(t *testing.T) {
+	s := newCleanupStoreWithConfig(t, config.Config{
+		Prefix:        "TIC",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "done"},
+		Priorities: map[string]config.PriorityConfig{
+			"Medium":  {Color: "#333333", Order: intPtr(10)},
+			"P0":      {Color: "#111111", Bold: true, Order: intPtr(0)},
+			"z-last":  {Color: "#999999"},
+			"A first": {Color: "#aaaaaa"},
+		},
+	})
+	m := &boardModel{
+		store:         s,
+		stages:        s.Config.Stages,
+		columns:       [][]ticket.Ticket{{{ID: "TIC-001", Priority: "p0"}}},
+		agentStatuses: map[string]agent.AgentStatus{},
+		scrollOff:     []int{0},
+		visibleCards:  []int{1},
+	}
+
+	m.startSetPriority()
+
+	if m.overlayKind != "priority" {
+		t.Fatalf("overlayKind = %q, want priority", m.overlayKind)
+	}
+	picker, ok := m.overlay.(*pickerOverlay)
+	if !ok {
+		t.Fatalf("overlay = %T, want *pickerOverlay", m.overlay)
+	}
+
+	var gotLabels []string
+	var gotKeys []string
+	for _, item := range picker.items {
+		gotLabels = append(gotLabels, item.label)
+		gotKeys = append(gotKeys, item.key)
+	}
+
+	wantLabels := []string{"P0", "Medium", "A first", "z-last", "none"}
+	if !reflect.DeepEqual(gotLabels, wantLabels) {
+		t.Fatalf("picker labels = %#v, want %#v", gotLabels, wantLabels)
+	}
+	wantKeys := []string{"(current)", "", "", "", ""}
+	if !reflect.DeepEqual(gotKeys, wantKeys) {
+		t.Fatalf("picker keys = %#v, want %#v", gotKeys, wantKeys)
+	}
+}
+
+func TestStartSetPriorityDefaultsWhenPrioritiesAbsent(t *testing.T) {
+	s := newCleanupStore(t)
+	m := &boardModel{
+		store:         s,
+		stages:        s.Config.Stages,
+		columns:       [][]ticket.Ticket{{{ID: "TIC-002"}}},
+		agentStatuses: map[string]agent.AgentStatus{},
+		scrollOff:     []int{0},
+		visibleCards:  []int{1},
+	}
+
+	m.startSetPriority()
+
+	picker, ok := m.overlay.(*pickerOverlay)
+	if !ok {
+		t.Fatalf("overlay = %T, want *pickerOverlay", m.overlay)
+	}
+	var got []string
+	for _, item := range picker.items {
+		got = append(got, item.label)
+	}
+	want := []string{"critical", "high", "medium", "low", "none"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("picker labels = %#v, want %#v", got, want)
 	}
 }

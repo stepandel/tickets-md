@@ -642,11 +642,22 @@ priorities:
   P0:
     color: "#ff4d4f"
     bold: true
+    order: 0
   P1:
     color: "#fa8c16"
+    order: 1
 ```
 
-Omit `priorities:` to keep the current default styling.
+`order` is optional and only affects the CLI board's `p` priority
+picker. When `priorities:` is omitted, that picker keeps the built-in
+`critical`, `high`, `medium`, `low`, `none` order. When `priorities:`
+is present, ordered entries come first by ascending `order`, unordered
+entries follow sorted case-insensitively by name, and `none` is still
+appended last. `priorities: {}` is an explicit opt-out that leaves the
+picker with only `none`.
+
+Omit `priorities:` to keep the current default styling and picker
+ordering.
 
 ## Create-Time Metadata
 

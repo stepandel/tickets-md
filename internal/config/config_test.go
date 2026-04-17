@@ -10,6 +10,10 @@ import (
 	"time"
 )
 
+func intPtr(v int) *int {
+	return &v
+}
+
 func writeConfig(t *testing.T, root, body string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Join(root, ConfigDir), 0o755); err != nil {
@@ -300,8 +304,8 @@ func TestSaveLoadPriorities(t *testing.T) {
 		ProjectPrefix: "PRJ",
 		Stages:        []string{"backlog", "done"},
 		Priorities: map[string]PriorityConfig{
-			"P0":   {Color: "#ff0000", Bold: true},
-			"size": {Color: "12"},
+			"P0":   {Color: "#ff0000", Bold: true, Order: intPtr(0)},
+			"size": {Color: "12", Order: intPtr(4)},
 		},
 	}
 
@@ -400,6 +404,15 @@ func TestValidate(t *testing.T) {
 				" high ": {Color: "#0f0"},
 			},
 		}, wantErr: `duplicate priority`},
+		{name: "duplicate priority order", cfg: Config{
+			Prefix:        "TIC",
+			ProjectPrefix: "PRJ",
+			Stages:        []string{"backlog", "done"},
+			Priorities: map[string]PriorityConfig{
+				"P0": {Color: "#f00", Order: intPtr(1)},
+				"P1": {Color: "#0f0", Order: intPtr(1)},
+			},
+		}, wantErr: `order 1 conflicts`},
 		{name: "invalid worktree dir absolute", cfg: Config{
 			Prefix:        "TIC",
 			ProjectPrefix: "PRJ",
@@ -549,6 +562,57 @@ func TestLookupPriority(t *testing.T) {
 			t.Fatal("LookupPriority() unexpectedly found built-in priority when config override is present")
 		}
 	})
+}
+
+func TestOrderedPriorityNames(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  Config
+		want []string
+	}{
+		{
+			name: "defaults when priorities absent",
+			cfg:  Config{},
+			want: []string{"critical", "high", "medium", "low"},
+		},
+		{
+			name: "ordered before unordered custom priorities",
+			cfg: Config{
+				Priorities: map[string]PriorityConfig{
+					"Medium":  {Color: "#333", Order: intPtr(10)},
+					"P0":      {Color: "#111", Order: intPtr(0)},
+					"z-last":  {Color: "#999"},
+					"A first": {Color: "#aaa"},
+				},
+			},
+			want: []string{"P0", "Medium", "A first", "z-last"},
+		},
+		{
+			name: "empty priorities map stays empty",
+			cfg: Config{
+				Priorities: map[string]PriorityConfig{},
+			},
+			want: []string{},
+		},
+		{
+			name: "order zero is explicit",
+			cfg: Config{
+				Priorities: map[string]PriorityConfig{
+					"P2": {Color: "#222"},
+					"P0": {Color: "#000", Order: intPtr(0)},
+				},
+			},
+			want: []string{"P0", "P2"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.cfg.OrderedPriorityNames(); !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("OrderedPriorityNames() = %#v, want %#v", got, tt.want)
+			}
+		})
+	}
 }
 
 func TestValidateCronName(t *testing.T) {

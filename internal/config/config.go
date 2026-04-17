@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -89,6 +90,7 @@ func (c CronAgentConfig) IsEnabled() bool {
 type PriorityConfig struct {
 	Color string `yaml:"color"`
 	Bold  bool   `yaml:"bold,omitempty"`
+	Order *int   `yaml:"order,omitempty"`
 }
 
 // Config describes a ticket store layout. The store always lives
@@ -288,6 +290,7 @@ func (c Config) Validate() error {
 
 func validatePriorities(priorities map[string]PriorityConfig) error {
 	seen := make(map[string]string, len(priorities))
+	orderSeen := make(map[int]string, len(priorities))
 	for name, priority := range priorities {
 		normalized := normalizePriorityName(name)
 		if normalized == "" {
@@ -299,6 +302,12 @@ func validatePriorities(priorities map[string]PriorityConfig) error {
 		seen[normalized] = name
 		if strings.TrimSpace(priority.Color) == "" {
 			return fmt.Errorf("priority %q color is empty", name)
+		}
+		if priority.Order != nil {
+			if prev, dup := orderSeen[*priority.Order]; dup {
+				return fmt.Errorf("priority %q order %d conflicts with %q", name, *priority.Order, prev)
+			}
+			orderSeen[*priority.Order] = name
 		}
 	}
 	return nil
@@ -444,6 +453,49 @@ func (c Config) LookupPriority(name string) (PriorityConfig, bool) {
 	}
 	priority, ok := DefaultPriorities()[normalized]
 	return priority, ok
+}
+
+func (c Config) OrderedPriorityNames() []string {
+	if c.Priorities == nil {
+		return []string{"critical", "high", "medium", "low"}
+	}
+
+	type entry struct {
+		name       string
+		normalized string
+		order      *int
+	}
+
+	entries := make([]entry, 0, len(c.Priorities))
+	for name, priority := range c.Priorities {
+		entries = append(entries, entry{
+			name:       name,
+			normalized: normalizePriorityName(name),
+			order:      priority.Order,
+		})
+	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		left := entries[i]
+		right := entries[j]
+		switch {
+		case left.order != nil && right.order != nil:
+			if *left.order != *right.order {
+				return *left.order < *right.order
+			}
+		case left.order != nil:
+			return true
+		case right.order != nil:
+			return false
+		}
+		return left.normalized < right.normalized
+	})
+
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		names = append(names, entry.name)
+	}
+	return names
 }
 
 func normalizePriorityName(name string) string {
