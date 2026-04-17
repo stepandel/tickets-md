@@ -62,6 +62,7 @@ test("planDiffCommand uses merge-base and fallback diff in a worktree with origi
 		worktreePath: "/repo/.worktrees/TIC-123",
 		worktreeExists: true,
 		defaultBranch: "origin/main",
+		branchPrefix: "tickets/",
 	});
 
 	assert.equal(plan.kind, "worktree");
@@ -81,6 +82,7 @@ test("planDiffCommand preserves local main fallback in worktree mode", () => {
 		worktreePath: "/repo/.worktrees/TIC-123",
 		worktreeExists: true,
 		defaultBranch: "main",
+		branchPrefix: "tickets/",
 	});
 
 	assert.equal(plan.kind, "worktree");
@@ -98,6 +100,7 @@ test("planDiffCommand uses tickets/<id> branch diff when no worktree exists", ()
 		worktreePath: "/repo/.worktrees/TIC-123",
 		worktreeExists: false,
 		defaultBranch: "origin/main",
+		branchPrefix: "tickets/",
 	});
 
 	assert.equal(plan.kind, "branch");
@@ -115,6 +118,7 @@ test("planDiffCommand uses local main fallback when no worktree exists", () => {
 		worktreePath: "/repo/.worktrees/TIC-123",
 		worktreeExists: false,
 		defaultBranch: "main",
+		branchPrefix: "tickets/",
 	});
 
 	assert.equal(plan.kind, "branch");
@@ -131,6 +135,7 @@ test("planDiffCommand always emits a three-dot worktree diff range", () => {
 		worktreePath: "/repo/.worktrees/TIC-123",
 		worktreeExists: true,
 		defaultBranch: "origin/main",
+		branchPrefix: "tickets/",
 	});
 
 	assert.equal(plan.kind, "worktree");
@@ -138,4 +143,38 @@ test("planDiffCommand always emits a three-dot worktree diff range", () => {
 		throw new Error("expected worktree diff plan");
 	}
 	assert.equal(plan.primary.diff("base-sha")[1], "base-sha...HEAD");
+});
+
+test("planDiffCommand uses the configured branch prefix when no worktree exists", () => {
+	const plan = planDiffCommand({
+		ticketId: "TIC-123",
+		basePath: "/repo/.tickets",
+		worktreePath: "/repo/.branches/TIC-123",
+		worktreeExists: false,
+		defaultBranch: "origin/main",
+		branchPrefix: "agent/",
+	});
+
+	assert.equal(plan.kind, "branch");
+	if (plan.kind !== "branch") {
+		throw new Error("expected branch diff plan");
+	}
+	assert.deepEqual(plan.diff, ["diff", "origin/main...agent/TIC-123"]);
+});
+
+test("planDiffCommand preserves the caller-provided worktree path", () => {
+	const plan = planDiffCommand({
+		ticketId: "TIC-123",
+		basePath: "/repo/.tickets",
+		worktreePath: "/repo/.branches/TIC-123",
+		worktreeExists: true,
+		defaultBranch: "origin/main",
+		branchPrefix: "agent/",
+	});
+
+	assert.equal(plan.kind, "worktree");
+	if (plan.kind !== "worktree") {
+		throw new Error("expected worktree diff plan");
+	}
+	assert.equal(plan.cwd, "/repo/.branches/TIC-123");
 });

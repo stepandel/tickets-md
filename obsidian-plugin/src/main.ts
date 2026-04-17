@@ -39,6 +39,10 @@ interface TicketsConfig {
 	archive_stage?: string;
 	default_agent?: { command: string; args?: string[] };
 	cron_agents?: CronAgentConfig[];
+	worktrees?: {
+		dir?: string;
+		branch_prefix?: string;
+	};
 }
 
 interface Ticket {
@@ -147,6 +151,14 @@ async function writeConfig(app: import("obsidian").App, config: TicketsConfig): 
 	const file = app.vault.getAbstractFileByPath(CONFIG_PATH);
 	if (!(file instanceof TFile)) return;
 	await app.vault.modify(file, stringifyYaml(config));
+}
+
+function worktreeDir(config: TicketsConfig | null): string {
+	return config?.worktrees?.dir || ".worktrees";
+}
+
+function worktreeBranchPrefix(config: TicketsConfig | null): string {
+	return config?.worktrees?.branch_prefix || "tickets/";
 }
 
 function nowTimestamp(): string {
@@ -1910,7 +1922,7 @@ class DiffView extends ItemView {
 		return { ticketId: this.ticketId };
 	}
 
-	private renderDiff() {
+	private async renderDiff() {
 		this.contentEl.empty();
 
 		if (Platform.isMobile) {
@@ -1925,12 +1937,13 @@ class DiffView extends ItemView {
 
 		const basePath = (this.app.vault.adapter as any).getBasePath();
 		const repoRoot = basePath.replace(/\/\.tickets$/, "");
-		const worktreePath = `${repoRoot}/.worktrees/${this.ticketId}`;
 		let output: string;
 
 		try {
 			const { execFileSync } = require("child_process");
 			const fs = require("fs");
+			const config = await loadConfig(this.app);
+			const worktreePath = `${repoRoot}/${worktreeDir(config)}/${this.ticketId}`;
 			const run = (args: string[], cwd: string) =>
 				execFileSync("git", args, { cwd, encoding: "utf-8" as const, maxBuffer: 10 * 1024 * 1024 });
 			const defaultBranch = resolveDefaultBranch(run, basePath);
@@ -1940,6 +1953,7 @@ class DiffView extends ItemView {
 				worktreePath,
 				worktreeExists: fs.existsSync(worktreePath),
 				defaultBranch,
+				branchPrefix: worktreeBranchPrefix(config),
 			});
 
 			if (plan.kind === "worktree") {
