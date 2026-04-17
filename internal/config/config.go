@@ -54,6 +54,11 @@ func (c CronAgentConfig) IsEnabled() bool {
 	return c.Enabled == nil || *c.Enabled
 }
 
+type PriorityConfig struct {
+	Color string `yaml:"color"`
+	Bold  bool   `yaml:"bold,omitempty"`
+}
+
 // Config describes a ticket store layout. The store always lives
 // under `<root>/.tickets/`, so the only things worth configuring are
 // the ID prefix and the stage list.
@@ -80,6 +85,9 @@ type Config struct {
 	// CronAgents configures board-level agents fired by `tickets watch`
 	// on a schedule rather than by ticket filesystem events.
 	CronAgents []CronAgentConfig `yaml:"cron_agents,omitempty"`
+	// Priorities configures board priority styling by normalized priority
+	// name. When absent, built-in defaults are used.
+	Priorities map[string]PriorityConfig `yaml:"priorities,omitempty"`
 }
 
 // HasDefaultAgent reports whether a default agent is configured.
@@ -97,6 +105,17 @@ func Default() Config {
 		Prefix:        "TIC",
 		ProjectPrefix: "PRJ",
 		Stages:        []string{"backlog", "prep", "execute", "review", "done"},
+	}
+}
+
+func DefaultPriorities() map[string]PriorityConfig {
+	return map[string]PriorityConfig{
+		"critical": {Color: "#FF5F5F", Bold: true},
+		"urgent":   {Color: "#FF5F5F", Bold: true},
+		"high":     {Color: "#FF8C00", Bold: true},
+		"medium":   {Color: "#FFD700"},
+		"med":      {Color: "#FFD700"},
+		"low":      {Color: "#888888"},
 	}
 }
 
@@ -196,7 +215,28 @@ func (c Config) Validate() error {
 	if c.ArchiveStage != "" && !c.HasStage(c.ArchiveStage) {
 		return fmt.Errorf("unknown archive stage %q", c.ArchiveStage)
 	}
+	if err := validatePriorities(c.Priorities); err != nil {
+		return err
+	}
 	return ValidateCronAgents(c.CronAgents)
+}
+
+func validatePriorities(priorities map[string]PriorityConfig) error {
+	seen := make(map[string]string, len(priorities))
+	for name, priority := range priorities {
+		normalized := normalizePriorityName(name)
+		if normalized == "" {
+			return errors.New("priority name is empty")
+		}
+		if prev, dup := seen[normalized]; dup {
+			return fmt.Errorf("duplicate priority %q conflicts with %q", name, prev)
+		}
+		seen[normalized] = name
+		if strings.TrimSpace(priority.Color) == "" {
+			return fmt.Errorf("priority %q color is empty", name)
+		}
+	}
+	return nil
 }
 
 func ValidateCronAgents(cronAgents []CronAgentConfig) error {
@@ -303,4 +343,25 @@ func (c Config) IsCompleteStage(name string) bool {
 		}
 	}
 	return false
+}
+
+func (c Config) LookupPriority(name string) (PriorityConfig, bool) {
+	normalized := normalizePriorityName(name)
+	if normalized == "" {
+		return PriorityConfig{}, false
+	}
+	if c.Priorities != nil {
+		for key, priority := range c.Priorities {
+			if normalizePriorityName(key) == normalized {
+				return priority, true
+			}
+		}
+		return PriorityConfig{}, false
+	}
+	priority, ok := DefaultPriorities()[normalized]
+	return priority, ok
+}
+
+func normalizePriorityName(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
 }

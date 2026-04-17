@@ -607,8 +607,20 @@ tickets set TIC-001 priority critical
 tickets set TIC-001 priority -          # clear the field
 ```
 
-Any string is accepted (`low`, `high`, `P0`, …) but the board styling
-knows about `critical`, `high`, `medium`, `low`.
+Any string is accepted (`low`, `high`, `P0`, …). Board styling uses
+built-in defaults for `critical`, `high`, `medium`, and `low` unless
+you override it in `.tickets/config.yml`:
+
+```yaml
+priorities:
+  P0:
+    color: "#ff4d4f"
+    bold: true
+  P1:
+    color: "#fa8c16"
+```
+
+Omit `priorities:` to keep the current default styling.
 
 ## Create-Time Metadata
 
