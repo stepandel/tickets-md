@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-04-16
+
 - The `tickets watch` monitor's poll interval (default 5s) and the
   idle-pane threshold that promotes a run to `blocked` (default 30s)
   are now configurable via a new optional `watch:` block in
@@ -407,7 +409,9 @@ course of development.
 - `make release VERSION=x.y.z` stamps the binary version via
   `-ldflags`; `tickets --version` reports it.
 
-[Unreleased]: https://github.com/stepandel/tickets-md/compare/v0.1.9...HEAD
+[Unreleased]: https://github.com/stepandel/tickets-md/compare/v0.1.11...HEAD
+[0.1.11]: https://github.com/stepandel/tickets-md/compare/v0.1.10...v0.1.11
+[0.1.10]: https://github.com/stepandel/tickets-md/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/stepandel/tickets-md/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/stepandel/tickets-md/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/stepandel/tickets-md/compare/v0.1.6...v0.1.7
