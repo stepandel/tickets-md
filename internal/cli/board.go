@@ -280,6 +280,8 @@ func (m *boardModel) finishOverlay() {
 		m.applyPriorityChoice(ov)
 	case "delete":
 		m.applyDeleteConfirm()
+	case "force-rerun":
+		m.applyForceRerun(ctx)
 	case "link":
 		m.applyLinkChoice(ov, ctx)
 	case "unlink":

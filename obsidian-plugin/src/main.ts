@@ -19,6 +19,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { html as diff2html } from "diff2html";
 import { planDiffCommand, resolveDefaultBranch } from "./diff";
+import { formatForceRerunDescription } from "./force-rerun";
 import {
 	ACTIVE_AGENT_STATUSES,
 	canReplayTerminal,
@@ -1425,7 +1426,12 @@ class BoardView extends ItemView {
 			if (hasActiveAgent(ticket)) {
 				menu.addItem((item) =>
 					item.setTitle("Force re-run stage agent").setIcon("refresh-cw").onClick(() => {
-						rerunStageAgent(this.app, ticket, true);
+						new ConfirmForceRerunModal(
+							this.app,
+							ticket.id,
+							ticket.agent_session,
+							async () => { await rerunStageAgent(this.app, ticket, true); },
+						).open();
 					}),
 				);
 			}
@@ -2153,7 +2159,12 @@ class AgentsView extends ItemView {
 		if (!Platform.isMobile && hasActiveAgent(ticket)) {
 			menu.addItem((item) =>
 				item.setTitle("Force re-run stage agent").setIcon("refresh-cw").onClick(() => {
-					rerunStageAgent(this.app, ticket, true);
+					new ConfirmForceRerunModal(
+						this.app,
+						ticket.id,
+						ticket.agent_session,
+						async () => { await rerunStageAgent(this.app, ticket, true); },
+					).open();
 				}),
 			);
 		}
@@ -3029,6 +3040,47 @@ class ConfirmDeleteModal extends Modal {
 
 		new Setting(contentEl).addButton((btn) =>
 			btn.setButtonText("Delete").setWarning().onClick(async () => {
+				await this.onConfirm();
+				this.close();
+			}),
+		).addButton((btn) =>
+			btn.setButtonText("Cancel").onClick(() => this.close()),
+		);
+	}
+
+	onClose() {
+		this.contentEl.empty();
+	}
+}
+
+class ConfirmForceRerunModal extends Modal {
+	private readonly ticketId: string;
+	private readonly sessionId?: string;
+	private readonly onConfirm: () => Promise<void>;
+
+	constructor(
+		app: import("obsidian").App,
+		ticketId: string,
+		sessionId: string | undefined,
+		onConfirm: () => Promise<void>,
+	) {
+		super(app);
+		this.ticketId = ticketId;
+		this.sessionId = sessionId;
+		this.onConfirm = onConfirm;
+	}
+
+	onOpen() {
+		const { contentEl } = this;
+		this.modalEl.addClass("tb-confirm-delete-modal");
+
+		contentEl.createEl("h3", { text: "Force re-run stage agent" });
+		contentEl.createEl("p", {
+			text: formatForceRerunDescription(this.ticketId, this.sessionId),
+		});
+
+		new Setting(contentEl).addButton((btn) =>
+			btn.setButtonText("Force re-run").setWarning().onClick(async () => {
 				await this.onConfirm();
 				this.close();
 			}),

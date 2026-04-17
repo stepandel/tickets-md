@@ -125,6 +125,10 @@ type linkCtx struct {
 	kind     string // "related" | "blocked_by" | "parent"
 }
 
+type forceRerunCtx struct {
+	ticketID string
+}
+
 type unlinkEntry struct {
 	peerID string
 	kind   string // "related" | "blocked_by" | "blocks" | "parent" | "child"
