@@ -108,6 +108,11 @@ temporarily skipped until macOS CI coverage is restored.
   diff a run produced.
 - Cron agents from `config.yml` in the Agents view, including edit,
   enable/disable, run now (desktop), and last-log actions.
+- Watcher pause/resume toggle in the Agents view header, with a
+  status pill that reflects whether `tickets watch` is active,
+  paused, offline, or unreachable. Pausing prompts for an optional
+  reason and writes the same `.tickets/.watch-paused` sentinel the
+  CLI uses.
 - A projects view (`Open: Tickets Projects` command) listing
   `.tickets/projects/` alongside a tickets sidebar that shows the
   selected project's assigned tickets, with create, rename, set
