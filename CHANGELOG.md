@@ -21,11 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   optional `bold`. When the map is omitted, the built-in defaults for
   `critical`, `urgent`, `high`, `medium`, `med`, and `low` are used so
   existing boards render unchanged.
-- The CLI board's `p` priority picker now also reads optional
-  `priorities.<name>.order` values from `.tickets/config.yml`. Ordered
-  entries appear first by ascending number, unordered entries follow by
-  normalized name, and `none` stays last. This only affects the CLI
-  picker; ticket sorting and the Obsidian picker are unchanged.
+- The CLI board's `p` priority picker and the Obsidian board's "Set
+  priority" picker now both read optional `priorities.<name>.order`
+  values from `.tickets/config.yml`. Ordered entries appear first by
+  ascending number, unordered entries follow by normalized name, and
+  `none` stays last. Ticket sorting is unchanged.
 
 - Per-ticket git worktrees are now configurable via an optional
   `worktrees:` block in `.tickets/config.yml`. `worktrees.dir` sets
