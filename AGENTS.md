@@ -145,7 +145,7 @@ CI always runs `make qa-cli`, and also runs `make qa-plugin` on
 AppImage pinned in `.github/workflows/ci.yml` via
 `OBSIDIAN_VERSION`. The workflow still provisions the matching macOS
 `.dmg` from that same env var, but the macOS `qa-plugin` step is
-currently skipped until TIC-127 restores stable coverage. Bump that
+currently skipped until macOS CI coverage is restored. Bump that
 workflow env var when the CI Obsidian pin needs to change.
 
 For a full rebuild of the installed binary:

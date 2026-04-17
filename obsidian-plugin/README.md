@@ -87,7 +87,7 @@ It currently runs the smoke test on Linux, pinning the Obsidian desktop
 build via the workflow-level `OBSIDIAN_VERSION` env var and setting
 `QA_PLUGIN_SKIP_OBSIDIAN_CLI_CHECK=1` under `xvfb-run`. The workflow
 still provisions the matching macOS `.dmg`, but the macOS smoke step is
-temporarily skipped until TIC-127 restores stable coverage.
+temporarily skipped until macOS CI coverage is restored.
 
 ## What it provides
 
