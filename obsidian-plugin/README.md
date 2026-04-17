@@ -113,6 +113,9 @@ under `xvfb-run`; macOS downloads the matching `.dmg` and runs
   selected project's assigned tickets, with create, rename, set
   status, assign tickets, and delete (which unassigns `project:` on
   member tickets first).
+- A `Search tickets` command that opens a fuzzy picker over all
+  tickets in non-archive stages (matching by id, title, or stage) and
+  opens the chosen ticket in a preview leaf.
 - A diff view (powered by diff2html) for any agent run that touched
   files.
 
