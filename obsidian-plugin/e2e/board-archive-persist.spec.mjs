@@ -59,7 +59,7 @@ test("persists archived-stage visibility across renderer reloads", async () => {
 
 		await expect(page.locator(".tb-stage-name")).toContainText(["backlog", "doing"]);
 		await expect(page.locator(".tb-card-list[data-stage='archive']")).toHaveCount(0);
-		await expect(page.locator(".tb-ticket-id")).not.toContainText(["TIC-003"]);
+		await expect(page.locator(".tb-ticket-id").filter({ hasText: "TIC-003" })).toHaveCount(0);
 
 		await setArchivedVisibility(page, vaultPath, true);
 		await expect(page.locator(".tb-stage-name")).toContainText(["backlog", "doing", "archive"]);
@@ -73,12 +73,12 @@ test("persists archived-stage visibility across renderer reloads", async () => {
 
 		await setArchivedVisibility(page, vaultPath, false);
 		await expect(page.locator(".tb-card-list[data-stage='archive']")).toHaveCount(0);
-		await expect(page.locator(".tb-ticket-id")).not.toContainText(["TIC-003"]);
+		await expect(page.locator(".tb-ticket-id").filter({ hasText: "TIC-003" })).toHaveCount(0);
 
 		await reloadRenderer(page);
 		await expect(page.locator(".tb-stage-name")).toContainText(["backlog", "doing"]);
 		await expect(page.locator(".tb-card-list[data-stage='archive']")).toHaveCount(0);
-		await expect(page.locator(".tb-ticket-id")).not.toContainText(["TIC-003"]);
+		await expect(page.locator(".tb-ticket-id").filter({ hasText: "TIC-003" })).toHaveCount(0);
 	} finally {
 		if (browser) {
 			try {
