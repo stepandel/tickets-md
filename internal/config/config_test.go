@@ -53,7 +53,7 @@ func TestLoad_InvalidConfig(t *testing.T) {
 
 func TestLoad_Success(t *testing.T) {
 	root := t.TempDir()
-	writeConfig(t, root, "name: Board\nprefix: BUG\nproject_prefix: PRJ\nstages:\n  - triage\n  - doing\nwatch:\n  poll_interval: 7s\n  idle_block_after: 45s\n  idle_kill_after: 10m\nworktrees:\n  dir: .trees\n  branch_prefix: agent/\ndefault_agent:\n  command: claude\n  args:\n    - --json\ncron_agents:\n  - name: groomer\n    schedule: \"@every 5m\"\n    command: codex\n    prompt: \"tidy\"\n")
+	writeConfig(t, root, "name: Board\nprefix: BUG\nproject_prefix: PRJ\nstages:\n  - triage\n  - doing\nwatch:\n  poll_interval: 7s\n  idle_block_after: 45s\n  idle_kill_after: 10m\nworktrees:\n  dir: .trees\n  branch_prefix: agent/\ndefault_agent:\n  command: claude\n  args:\n    - --json\ncron_agents:\n  - name: groomer\n    schedule: \"@every 5m\"\n    command: codex\n    prompt: \"tidy\"\n    interactive: true\n")
 
 	got, err := Load(root)
 	if err != nil {
@@ -86,7 +86,7 @@ func TestLoad_Success(t *testing.T) {
 	if got.DefaultAgent == nil || got.DefaultAgent.Command != "claude" || len(got.DefaultAgent.Args) != 1 || got.DefaultAgent.Args[0] != "--json" {
 		t.Fatalf("unexpected default agent: %#v", got.DefaultAgent)
 	}
-	if len(got.CronAgents) != 1 || got.CronAgents[0].Name != "groomer" || got.CronAgents[0].Command != "codex" || !got.CronAgents[0].IsEnabled() {
+	if len(got.CronAgents) != 1 || got.CronAgents[0].Name != "groomer" || got.CronAgents[0].Command != "codex" || !got.CronAgents[0].IsEnabled() || !got.CronAgents[0].Interactive {
 		t.Fatalf("unexpected cron agents: %#v", got.CronAgents)
 	}
 }
@@ -275,12 +275,13 @@ func TestSaveLoadCronAgents(t *testing.T) {
 		Stages:        []string{"backlog", "done"},
 		CronAgents: []CronAgentConfig{
 			{
-				Name:     "backlog-groomer",
-				Schedule: "@every 5m",
-				Command:  "claude",
-				Args:     []string{"--print"},
-				Prompt:   "groom",
-				Enabled:  &disabled,
+				Name:        "backlog-groomer",
+				Schedule:    "@every 5m",
+				Command:     "claude",
+				Args:        []string{"--print"},
+				Prompt:      "groom",
+				Interactive: true,
+				Enabled:     &disabled,
 			},
 		},
 	}
@@ -296,7 +297,7 @@ func TestSaveLoadCronAgents(t *testing.T) {
 		t.Fatalf("CronAgents = %#v, want one entry", got.CronAgents)
 	}
 	cron := got.CronAgents[0]
-	if cron.Name != "backlog-groomer" || cron.Schedule != "@every 5m" || cron.Command != "claude" || cron.Prompt != "groom" {
+	if cron.Name != "backlog-groomer" || cron.Schedule != "@every 5m" || cron.Command != "claude" || cron.Prompt != "groom" || !cron.Interactive {
 		t.Fatalf("cron agent = %#v", cron)
 	}
 	if cron.IsEnabled() {

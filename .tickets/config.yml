@@ -20,7 +20,10 @@ complete_stages:
 cron_agents:
   # Non-Claude cron agents must put their one-shot/non-interactive flags
   # in args:, otherwise tickets watch will warn that the command may not
-  # exit cleanly after each scheduled run.
+  # exit cleanly after each scheduled run. Set interactive: true to keep
+  # the PTY attachable from the Obsidian agents view; while it stays
+  # open, later ticks are skipped, and Claude still needs flags like
+  # --dangerously-skip-permissions in args: to avoid blocking on prompts.
   - name: backlog-groomer
     schedule: "@every 1m"
     command: claude

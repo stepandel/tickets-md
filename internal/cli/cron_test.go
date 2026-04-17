@@ -154,3 +154,68 @@ func TestStartCronRunPrefersCronIntegrationHook(t *testing.T) {
 		t.Fatalf("SessionUUID = %q, want %q", as.SessionUUID, "cron-session")
 	}
 }
+
+func TestStartCronRunInteractivePrefersPrepareArgs(t *testing.T) {
+	root := t.TempDir()
+	fake := &fakeCronIntegration{name: "fake-cron-interactive-test-agent"}
+	agent.Register(fake)
+
+	if err := os.MkdirAll(agent.CronRunsDir(root, "fake-cron-interactive"), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	runner := agent.NewPTYRunner()
+	mon := agent.NewMonitor(root, 0, 0, 0, runner.Alive, runner.IdleSeconds, runner.Kill)
+
+	_ = spawnCronAgent(root, config.CronAgentConfig{
+		Name:        "fake-cron-interactive",
+		Schedule:    "@every 5m",
+		Command:     fake.name,
+		Args:        []string{"--flag"},
+		Prompt:      "ignored",
+		Interactive: true,
+	}, mon, runner)
+
+	if fake.stageCalls != 1 {
+		t.Fatalf("stageCalls = %d, want 1", fake.stageCalls)
+	}
+	if fake.cronCalls != 0 {
+		t.Fatalf("cronCalls = %d, want 0", fake.cronCalls)
+	}
+
+	as, err := agent.CronLatest(root, "fake-cron-interactive")
+	if err != nil {
+		t.Fatalf("CronLatest: %v", err)
+	}
+	if as.SessionUUID != "stage-session" {
+		t.Fatalf("SessionUUID = %q, want %q", as.SessionUUID, "stage-session")
+	}
+}
+
+func TestStartCronRunNonInteractiveStillUsesPrepareCronArgs(t *testing.T) {
+	root := t.TempDir()
+	fake := &fakeCronIntegration{name: "fake-cron-noninteractive-test-agent"}
+	agent.Register(fake)
+
+	if err := os.MkdirAll(agent.CronRunsDir(root, "fake-cron-noninteractive"), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	runner := agent.NewPTYRunner()
+	mon := agent.NewMonitor(root, 0, 0, 0, runner.Alive, runner.IdleSeconds, runner.Kill)
+
+	_ = spawnCronAgent(root, config.CronAgentConfig{
+		Name:     "fake-cron-noninteractive",
+		Schedule: "@every 5m",
+		Command:  fake.name,
+		Args:     []string{"--flag"},
+		Prompt:   "ignored",
+	}, mon, runner)
+
+	if fake.cronCalls != 1 {
+		t.Fatalf("cronCalls = %d, want 1", fake.cronCalls)
+	}
+	if fake.stageCalls != 0 {
+		t.Fatalf("stageCalls = %d, want 0", fake.stageCalls)
+	}
+}

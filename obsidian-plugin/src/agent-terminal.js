@@ -4,6 +4,10 @@ export function hasLiveTerminal(ticket) {
 	return Boolean(ticket?.agent_session);
 }
 
+export function cronHasLiveSession(run) {
+	return Boolean(run?.session && run?.status && ACTIVE_AGENT_STATUSES.has(run.status));
+}
+
 export function canReplayTerminal(ticket) {
 	return Boolean(
 		ticket?.agent_run

@@ -74,14 +74,15 @@ type WorktreesConfig struct {
 }
 
 type CronAgentConfig struct {
-	Name       string   `yaml:"name"`
-	Schedule   string   `yaml:"schedule"`
-	Command    string   `yaml:"command"`
-	Args       []string `yaml:"args,omitempty"`
-	Prompt     string   `yaml:"prompt"`
-	Worktree   bool     `yaml:"worktree,omitempty"`
-	BaseBranch string   `yaml:"base_branch,omitempty"`
-	Enabled    *bool    `yaml:"enabled,omitempty"`
+	Name        string   `yaml:"name"`
+	Schedule    string   `yaml:"schedule"`
+	Command     string   `yaml:"command"`
+	Args        []string `yaml:"args,omitempty"`
+	Prompt      string   `yaml:"prompt"`
+	Interactive bool     `yaml:"interactive,omitempty"`
+	Worktree    bool     `yaml:"worktree,omitempty"`
+	BaseBranch  string   `yaml:"base_branch,omitempty"`
+	Enabled     *bool    `yaml:"enabled,omitempty"`
 }
 
 func (c CronAgentConfig) IsEnabled() bool {
