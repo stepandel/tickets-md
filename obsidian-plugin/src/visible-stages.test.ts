@@ -13,6 +13,19 @@ test("visibleStages hides the configured archive stage by default", () => {
 	);
 });
 
+test("visibleStages hides the configured archive stage when showArchived is explicitly false", () => {
+	assert.deepEqual(
+		visibleStages(
+			{
+				stages: ["backlog", "doing", "archive"],
+				archive_stage: "archive",
+			},
+			false,
+		),
+		["backlog", "doing"],
+	);
+});
+
 test("visibleStages includes the configured archive stage when requested", () => {
 	assert.deepEqual(
 		visibleStages(
