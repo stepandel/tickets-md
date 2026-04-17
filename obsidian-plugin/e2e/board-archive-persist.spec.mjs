@@ -66,10 +66,21 @@ async function openBoard(page) {
 }
 
 async function setArchivedVisibility(page, visible) {
-	await page.locator('.tb-header-btn[aria-label="Board menu"]').click();
-	await page.getByRole("menuitem", { name: visible ? "Show archived stage" : "Hide archived stage" }).click();
+	await page.evaluate(async (nextVisible) => {
+		const leaf = window.app.workspace.getLeavesOfType("tickets-board")[0];
+		const current = leaf?.getViewState?.();
+		if (!leaf || !current) {
+			throw new Error("tickets-board leaf is not available");
+		}
 
-	await page.evaluate(async () => {
+		await leaf.setViewState({
+			...current,
+			state: {
+				...(current.state ?? {}),
+				showArchived: nextVisible,
+			},
+		});
+
 		const saveLayout = window.app.workspace?.requestSaveLayout?.bind(window.app.workspace);
 		if (saveLayout) {
 			saveLayout();
@@ -78,7 +89,7 @@ async function setArchivedVisibility(page, visible) {
 		if (saveCommand) {
 			await window.app.commands.executeCommandById("workspace:save-layout");
 		}
-	});
+	}, visible);
 
 	await expect
 		.poll(
