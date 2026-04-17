@@ -20,6 +20,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { html as diff2html } from "diff2html";
 import { planDiffCommand, resolveDefaultBranch } from "./diff";
 import { formatForceRerunDescription } from "./force-rerun";
+import { visibleStages } from "./visible-stages";
 import {
 	ACTIVE_AGENT_STATUSES,
 	canReplayTerminal,
@@ -307,11 +308,6 @@ async function loadTickets(app: import("obsidian").App, stages: string[]): Promi
 		}
 	}
 	return tickets;
-}
-
-function visibleStages(config: TicketsConfig): string[] {
-	if (!config.archive_stage) return config.stages;
-	return config.stages.filter((stage) => stage !== config.archive_stage);
 }
 
 function cronAgentEnabled(config: CronAgentConfig): boolean {
@@ -615,6 +611,7 @@ export default class TicketsBoardPlugin extends Plugin {
 
 class BoardView extends ItemView {
 	private config: TicketsConfig | null = null;
+	private showArchived = false;
 	private stages: string[] = [];
 	private tickets: Ticket[] = [];
 	private projects: Project[] = [];
@@ -706,7 +703,7 @@ class BoardView extends ItemView {
 		}
 
 		this.config = config;
-		this.stages = visibleStages(config);
+		this.stages = visibleStages(config, this.showArchived);
 		this.tickets = await loadTickets(this.app, this.stages);
 		this.projects = await loadProjects(this.app, config);
 		this.agentStages = await this.loadAgentStages(this.stages);
@@ -767,6 +764,17 @@ class BoardView extends ItemView {
 					).open();
 				}),
 			);
+			if (this.config?.archive_stage) {
+				menu.addItem((item) =>
+					item
+						.setTitle(this.showArchived ? "Hide archived stage" : "Show archived stage")
+						.setIcon(this.showArchived ? "eye-off" : "eye")
+						.onClick(async () => {
+							this.showArchived = !this.showArchived;
+							await this.refresh();
+						}),
+				);
+			}
 			menu.showAtMouseEvent(e);
 		});
 

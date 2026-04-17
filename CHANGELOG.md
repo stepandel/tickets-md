@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added optional `archive_stage` config, a `tickets archive` command,
   and `--archived` toggles for the default CLI board/list views while
   keeping archived tickets in the normal filesystem-backed store.
+- The Obsidian board now mirrors the CLI's archive visibility: when
+  `archive_stage` is configured, the stage is hidden by default and a
+  "Show archived stage" / "Hide archived stage" toggle is available
+  from the board's empty-area context menu.
 
 - `tickets board` and the Obsidian plugin can now force a stage-agent
   re-run while a previous run is still active. In the TUI, `F` opens a
