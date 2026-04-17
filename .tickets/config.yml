@@ -9,7 +9,9 @@ stages:
   - qa
   - docs
   - done
+  - archive
   - cancelled
+archive_stage: archive
 default_agent:
   command: claude
 complete_stages:
