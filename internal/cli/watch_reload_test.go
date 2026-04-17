@@ -44,6 +44,15 @@ func watchListContains(w *fsnotify.Watcher, path string) bool {
 	return slices.Contains(w.WatchList(), path)
 }
 
+// sortedWatchList returns w.WatchList() sorted. fsnotify ranges an
+// internal map to build it, so iteration order is not stable — any
+// equality check against a prior snapshot must sort first.
+func sortedWatchList(w *fsnotify.Watcher) []string {
+	list := w.WatchList()
+	slices.Sort(list)
+	return list
+}
+
 func TestReloadWatchConfigUpdatesMonitorTiming(t *testing.T) {
 	s := newReloadWatchStore(t, config.Config{
 		Prefix:        "TIC",
@@ -116,7 +125,7 @@ func TestReloadWatchConfigInvalidConfigPreservesMonitorTiming(t *testing.T) {
 
 	pollBefore, idleBefore, killBefore := mon.Timing()
 	stagesBefore := slices.Clone(s.Config.Stages)
-	watchesBefore := slices.Clone(w.WatchList())
+	watchesBefore := sortedWatchList(w)
 	_, changed, err := reloadWatchConfig(s.Root, &s.Config, mon, w, stageConfigs, knownPaths, func(cfg config.Config) error {
 		t.Fatal("reloadCron should not run when config.Load fails")
 		return nil
@@ -134,8 +143,8 @@ func TestReloadWatchConfigInvalidConfigPreservesMonitorTiming(t *testing.T) {
 	if !slices.Equal(s.Config.Stages, stagesBefore) {
 		t.Fatalf("Stages = %v, want unchanged %v", s.Config.Stages, stagesBefore)
 	}
-	if !slices.Equal(w.WatchList(), watchesBefore) {
-		t.Fatalf("WatchList = %v, want unchanged %v", w.WatchList(), watchesBefore)
+	if got := sortedWatchList(w); !slices.Equal(got, watchesBefore) {
+		t.Fatalf("WatchList = %v, want unchanged %v", got, watchesBefore)
 	}
 }
 
@@ -166,7 +175,7 @@ func TestReloadWatchConfigCronReloadFailurePreservesMonitorTiming(t *testing.T) 
 	reloadErr := errors.New("cron reload failed")
 	pollBefore, idleBefore, killBefore := mon.Timing()
 	stagesBefore := slices.Clone(s.Config.Stages)
-	watchesBefore := slices.Clone(w.WatchList())
+	watchesBefore := sortedWatchList(w)
 	_, changed, err := reloadWatchConfig(s.Root, &s.Config, mon, w, stageConfigs, knownPaths, func(cfg config.Config) error { return reloadErr })
 	if !errors.Is(err, reloadErr) {
 		t.Fatalf("reloadWatchConfig error = %v, want %v", err, reloadErr)
@@ -184,8 +193,8 @@ func TestReloadWatchConfigCronReloadFailurePreservesMonitorTiming(t *testing.T) 
 	if !slices.Equal(s.Config.Stages, stagesBefore) {
 		t.Fatalf("Stages = %v, want unchanged %v", s.Config.Stages, stagesBefore)
 	}
-	if !slices.Equal(w.WatchList(), watchesBefore) {
-		t.Fatalf("WatchList = %v, want unchanged %v", w.WatchList(), watchesBefore)
+	if got := sortedWatchList(w); !slices.Equal(got, watchesBefore) {
+		t.Fatalf("WatchList = %v, want unchanged %v", got, watchesBefore)
 	}
 }
 
