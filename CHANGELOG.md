@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of hanging in interactive mode. Stage-agent runs are unaffected.
   Other agents are unaffected; only the Claude integration opts into
   the new optional `CronIntegration` hook in `internal/agent/`.
+- `tickets watch` now logs an advisory warning when a configured cron
+  command has neither cron-specific integration support nor cron-only
+  `args:`. Non-Claude cron agents already support one-shot mode via
+  `cron_agents[].args`; the warning makes that requirement visible
+  before a long-running command causes later ticks to be skipped.
 
 - Added optional `archive_stage` config, a `tickets archive` command,
   and `--archived` toggles for the default CLI board/list views while

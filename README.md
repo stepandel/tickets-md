@@ -63,6 +63,14 @@ cron_agents:
       Review the backlog and clean up duplicates or outdated tickets.
 ```
 
+Only the built-in `claude` cron integration auto-adds a one-shot flag
+(`--print`). Other cron commands must supply their own non-interactive
+or exit-on-complete flags in `cron_agents[].args` so each tick exits
+cleanly. If a non-integrated cron agent is configured without cron-only
+`args:`, `tickets watch` logs an advisory warning when it loads the
+entry because later ticks may be skipped while the prior run is still
+active.
+
 Moving a ticket between stages is just a file rename, so if you choose
 to commit ticket markdown in your own workflow, `git log` can serve as
 an audit trail too. By default this repo keeps ticket markdown ignored
