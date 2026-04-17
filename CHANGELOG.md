@@ -26,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   values from `.tickets/config.yml`. Ordered entries appear first by
   ascending number, unordered entries follow by normalized name, and
   `none` stays last. Ticket sorting is unchanged.
+- `priorities:` now rejects `none` as a key (matched case-insensitively
+  with whitespace trimmed) because the picker reserves it for the
+  cleared-priority option. Config load fails with a `priority "…" is
+  reserved` error instead of silently shadowing the built-in entry.
 
 - Per-ticket git worktrees are now configurable via an optional
   `worktrees:` block in `.tickets/config.yml`. `worktrees.dir` sets
