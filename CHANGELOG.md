@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Per-ticket git worktrees are now configurable via an optional
+  `worktrees:` block in `.tickets/config.yml`. `worktrees.dir` sets
+  the directory where worktrees live (default `.worktrees`) and
+  `worktrees.branch_prefix` sets the branch namespace (default
+  `tickets/`, must end with `/`). Omit the block to keep the
+  existing defaults.
+
 - Board-level cron runs of the `claude` agent now auto-inject
   `--print` (unless the user already passed `--print`/`-p` in the
   cron's `args:`) so Claude exits after producing its response instead
