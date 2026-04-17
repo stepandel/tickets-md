@@ -14,12 +14,17 @@ agent:
     - bugs, missing validation, error handling gaps, or edge cases
     - regressions in readability, maintainability, or unnecessary complexity
     - missing or insufficient test coverage for changed behavior
-    - type-check, lint, and build errors as they exist in this repo: `make check` (`go build ./...`, `go vet ./...`, `go test ./...`) and, when `obsidian-plugin/` changed, `make plugin-test` (TypeScript type-check + Jest coverage for the plugin)
+    - type-check, lint, and build errors
+
+    Verification commands in this repo:
+    - `make check` runs `go build ./...`, `go vet ./...`, and `go test ./...` (covers Go build, vet, and the full test suite including arch tests).
+    - `make plugin-test` runs the TypeScript type-check and Jest suite for `obsidian-plugin/` — run it whenever files under `obsidian-plugin/` changed.
+    There is no `make lint` target; do not invent one.
 
     Fix every issue you find directly on tickets/{{id}}:
     - make the minimal correct change
     - add or update tests when behavior changes
-    - run the relevant verification and rerun it until green
+    - rerun `make check` (and `make plugin-test` when `obsidian-plugin/` changed) until green
     - commit fixes on tickets/{{id}} with clear commit messages
 
     Do not defer must-fix work to QA. QA validates the feature end to end after review; review owns review findings and repo-level verification for the diff it inspected.
