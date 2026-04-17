@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Board-level cron runs of the `claude` agent now auto-inject
+  `--print` (unless the user already passed `--print`/`-p` in the
+  cron's `args:`) so Claude exits after producing its response instead
+  of hanging in interactive mode. Stage-agent runs are unaffected.
+  Other agents are unaffected; only the Claude integration opts into
+  the new optional `CronIntegration` hook in `internal/agent/`.
+
 - Added optional `archive_stage` config, a `tickets archive` command,
   and `--archived` toggles for the default CLI board/list views while
   keeping archived tickets in the normal filesystem-backed store.

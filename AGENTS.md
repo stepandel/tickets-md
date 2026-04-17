@@ -179,16 +179,23 @@ make install
 ## Agent integrations
 
 `internal/agent/integration.go` defines an optional per-agent hook
-(`PrepareArgs` before spawn, `ExtractPlan` after exit). Agents with no
-integration still work — they run as plain subprocesses configured via
-`.stage.yml`. The interface exists so core code never hardcodes a
-specific agent's name.
+(`PrepareArgs` before spawn, `ExtractPlan` after exit), plus an
+optional `CronIntegration` extension (`PrepareCronArgs`) for agents
+whose board-level cron runs need different startup flags than
+interactive ticket-stage runs. Agents with no integration still work
+— they run as plain subprocesses configured via `.stage.yml`. The
+interface exists so core code never hardcodes a specific agent's
+name.
 
 Only **Claude Code** has an integration today. It fits because Claude
 lets the caller pre-generate a session UUID (`--session-id`), persists
 its transcript at a path derivable from cwd + session id, and has a
 first-class plan mode that writes to `~/.claude/plans/` — so we can
-link a run back to its plan file deterministically.
+link a run back to its plan file deterministically. The Claude
+integration also implements `PrepareCronArgs`, which auto-injects
+`--print` for cron runs (unless the user already passed `--print`/`-p`)
+so a board-level cron doesn't hang in interactive mode and exits
+cleanly when the prompt is done.
 
 **Codex CLI does not have an integration, and that is intentional.**
 Codex auto-generates its own thread ids (not injectable), has no plan
