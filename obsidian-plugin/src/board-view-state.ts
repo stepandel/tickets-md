@@ -1,37 +1,26 @@
 export interface BoardViewState {
 	showArchived: boolean;
-<<<<<<< HEAD
 	filterQuery: string;
-=======
-	query: string;
->>>>>>> tickets/TIC-135
 }
 
 export function readBoardViewState(state: unknown): BoardViewState {
+	const stateObject = typeof state === "object" && state !== null ? state as {
+		showArchived?: unknown;
+		filterQuery?: unknown;
+		query?: unknown;
+	} : null;
+
 	const showArchived =
-		typeof state === "object" &&
-		state !== null &&
-		"showArchived" in state &&
-		(state as { showArchived?: unknown }).showArchived === true;
+		stateObject !== null &&
+		"showArchived" in stateObject &&
+		stateObject.showArchived === true;
+
 	const filterQuery =
-		typeof state === "object" &&
-		state !== null &&
-		"filterQuery" in state &&
-		typeof (state as { filterQuery?: unknown }).filterQuery === "string"
-			? (state as { filterQuery: string }).filterQuery
-			: "";
+		typeof stateObject?.filterQuery === "string"
+			? stateObject.filterQuery
+			: typeof stateObject?.query === "string"
+				? stateObject.query
+				: "";
 
-<<<<<<< HEAD
 	return { showArchived, filterQuery };
-=======
-	const query =
-		typeof state === "object" &&
-		state !== null &&
-		"query" in state &&
-		typeof (state as { query?: unknown }).query === "string"
-			? (state as { query: string }).query
-			: "";
-
-	return { showArchived, query };
->>>>>>> tickets/TIC-135
 }
