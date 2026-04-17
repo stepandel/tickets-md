@@ -58,7 +58,7 @@ export function priorityBadgeStyle(
 export function orderedPriorityNames(
 	priorities: Record<string, PriorityConfig> | undefined,
 ): string[] {
-	if (priorities === undefined) {
+	if (priorities == null) {
 		return ["critical", "high", "medium", "low"];
 	}
 

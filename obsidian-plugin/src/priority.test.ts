@@ -66,6 +66,13 @@ test("orderedPriorityNames uses built-in defaults when priorities are absent", (
 	assert.deepEqual(orderedPriorityNames(undefined), ["critical", "high", "medium", "low"]);
 });
 
+test("orderedPriorityNames treats a null priorities map like unset", () => {
+	assert.deepEqual(
+		orderedPriorityNames(null as unknown as undefined),
+		["critical", "high", "medium", "low"],
+	);
+});
+
 test("orderedPriorityNames keeps an empty configured map empty", () => {
 	assert.deepEqual(orderedPriorityNames({}), []);
 });
