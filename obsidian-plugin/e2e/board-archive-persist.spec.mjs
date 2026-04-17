@@ -8,6 +8,8 @@ import { execFileSync, spawn } from "node:child_process";
 
 import { chromium, expect, test } from "@playwright/test";
 
+import { prepareObsidianConfigIsolation } from "./obsidian-config.mjs";
+
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "..", "..");
 const fixtureVault = path.join(here, "fixtures", "vault-archive");
@@ -23,6 +25,9 @@ test("persists archived-stage visibility across renderer reloads", async () => {
 
 	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "tickets-obsidian-e2e-"));
 	const vaultPath = path.join(tempRoot, "vault");
+	const { env: obsidianEnv, configDir, restore } = await prepareObsidianConfigIsolation(
+		path.join(tempRoot, "obsidian-home"),
+	);
 	await fs.cp(fixtureVault, vaultPath, { recursive: true });
 
 	let obsidianProcess;
@@ -34,7 +39,7 @@ test("persists archived-stage visibility across renderer reloads", async () => {
 			{ cwd: repoRoot, stdio: "inherit" },
 		);
 
-		await registerVault(vaultPath);
+		await registerVault(vaultPath, configDir);
 
 		const debugPort = await pickFreePort();
 		const args = [`--remote-debugging-port=${debugPort}`];
@@ -43,7 +48,7 @@ test("persists archived-stage visibility across renderer reloads", async () => {
 		}
 		obsidianProcess = spawn(obsidianBin, args, {
 			stdio: ["ignore", "pipe", "pipe"],
-			env: { ...process.env },
+			env: obsidianEnv,
 		});
 
 		const cdpEndpoint = `http://127.0.0.1:${debugPort}`;
@@ -102,6 +107,7 @@ test("persists archived-stage visibility across renderer reloads", async () => {
 				}
 			}
 		}
+		await restore();
 		await fs.rm(tempRoot, { recursive: true, force: true });
 	}
 });
@@ -166,19 +172,7 @@ async function readMtimeMs(filePath) {
 	}
 }
 
-function obsidianConfigDir() {
-	switch (process.platform) {
-		case "darwin":
-			return path.join(os.homedir(), "Library", "Application Support", "obsidian");
-		case "win32":
-			return path.join(process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming"), "obsidian");
-		default:
-			return path.join(process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), ".config"), "obsidian");
-	}
-}
-
-async function registerVault(vaultPath) {
-	const configDir = obsidianConfigDir();
+async function registerVault(vaultPath, configDir) {
 	await fs.mkdir(configDir, { recursive: true });
 	const configPath = path.join(configDir, "obsidian.json");
 	let existing = { vaults: {} };

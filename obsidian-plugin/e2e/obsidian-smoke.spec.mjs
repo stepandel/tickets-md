@@ -8,6 +8,8 @@ import { execFileSync, spawn } from "node:child_process";
 
 import { chromium, expect, test } from "@playwright/test";
 
+import { prepareObsidianConfigIsolation } from "./obsidian-config.mjs";
+
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "..", "..");
 const fixtureVault = path.join(here, "fixtures", "vault");
@@ -23,6 +25,9 @@ test("opens the board and creates a ticket from the fixture vault", async () => 
 
 	const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "tickets-obsidian-e2e-"));
 	const vaultPath = path.join(tempRoot, "vault");
+	const { env: obsidianEnv, configDir, restore } = await prepareObsidianConfigIsolation(
+		path.join(tempRoot, "obsidian-home"),
+	);
 	await fs.cp(fixtureVault, vaultPath, { recursive: true });
 
 	let obsidianProcess;
@@ -40,7 +45,7 @@ test("opens the board and creates a ticket from the fixture vault", async () => 
 		// straight into the vault picker and no plugin ever loads. Writing
 		// an entry into the user-level obsidian.json with `open: true`
 		// tells Obsidian to open this vault on startup regardless.
-		await registerVault(vaultPath);
+		await registerVault(vaultPath, configDir);
 
 		// Obsidian ships with the Electron `enableNodeCliInspectArguments`
 		// fuse disabled, which strips `--inspect=0` before Node can honor
@@ -58,7 +63,7 @@ test("opens the board and creates a ticket from the fixture vault", async () => 
 		obsidianProcess = spawn(obsidianBin, args, {
 			stdio: ["ignore", "pipe", "pipe"],
 			// Surface any AppImage APPDIR env the CI workflow exported.
-			env: { ...process.env },
+			env: obsidianEnv,
 		});
 
 		const cdpEndpoint = `http://127.0.0.1:${debugPort}`;
@@ -126,23 +131,12 @@ test("opens the board and creates a ticket from the fixture vault", async () => 
 				}
 			}
 		}
+		await restore();
 		await fs.rm(tempRoot, { recursive: true, force: true });
 	}
 });
 
-function obsidianConfigDir() {
-	switch (process.platform) {
-		case "darwin":
-			return path.join(os.homedir(), "Library", "Application Support", "obsidian");
-		case "win32":
-			return path.join(process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming"), "obsidian");
-		default:
-			return path.join(process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), ".config"), "obsidian");
-	}
-}
-
-async function registerVault(vaultPath) {
-	const configDir = obsidianConfigDir();
+async function registerVault(vaultPath, configDir) {
 	await fs.mkdir(configDir, { recursive: true });
 	const configPath = path.join(configDir, "obsidian.json");
 	let existing = { vaults: {} };
