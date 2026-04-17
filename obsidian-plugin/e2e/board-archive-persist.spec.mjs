@@ -93,7 +93,18 @@ async function reloadRenderer(page) {
 	await page.evaluate(() => {
 		location.reload();
 	});
-	await page.waitForLoadState("domcontentloaded");
+	await expect
+		.poll(
+			async () => {
+				try {
+					return await page.evaluate(() => document.readyState);
+				} catch {
+					return "loading";
+				}
+			},
+			{ timeout: 60_000 },
+		)
+		.toBe("complete");
 	await dismissTrustDialogIfPresent(page);
 	await openBoard(page);
 }
