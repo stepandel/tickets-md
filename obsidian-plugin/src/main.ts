@@ -34,6 +34,7 @@ interface TicketsConfig {
 	prefix: string;
 	project_prefix?: string;
 	stages: string[];
+	archive_stage?: string;
 	default_agent?: { command: string; args?: string[] };
 	cron_agents?: CronAgentConfig[];
 }
@@ -306,6 +307,11 @@ async function loadTickets(app: import("obsidian").App, stages: string[]): Promi
 		}
 	}
 	return tickets;
+}
+
+function visibleStages(config: TicketsConfig): string[] {
+	if (!config.archive_stage) return config.stages;
+	return config.stages.filter((stage) => stage !== config.archive_stage);
 }
 
 function cronAgentEnabled(config: CronAgentConfig): boolean {
@@ -700,7 +706,7 @@ class BoardView extends ItemView {
 		}
 
 		this.config = config;
-		this.stages = config.stages;
+		this.stages = visibleStages(config);
 		this.tickets = await loadTickets(this.app, this.stages);
 		this.projects = await loadProjects(this.app, config);
 		this.agentStages = await this.loadAgentStages(this.stages);
