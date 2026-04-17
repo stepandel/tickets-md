@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `tickets watch` now auto-reloads per-stage `.stage.yml` files while
+  the watcher is running. Editing, creating, or removing a stage's
+  `.stage.yml` is picked up on the next debounce without a restart;
+  if the reloaded file fails to parse, the previous config is kept
+  and the watcher keeps running.
+
 ## [0.1.11] - 2026-04-16
 
 - The `tickets watch` monitor's poll interval (default 5s) and the

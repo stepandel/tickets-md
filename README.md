@@ -48,9 +48,9 @@ The intended git policy is mixed:
 - let `tickets init` maintain the repo-root `.gitignore` block for that policy
 
 Board-level cron agents can also be defined in `.tickets/config.yml`
-and are fired by `tickets watch` while it is running. Editing
-`cron_agents:` and `watch:` monitor timings are hot-reloaded by a
-running watcher; no restart is required:
+and are fired by `tickets watch` while it is running. Edits to
+`cron_agents:`, `watch:` monitor timings, and per-stage `.stage.yml`
+files are hot-reloaded by a running watcher; no restart is required:
 
 ```yaml
 cron_agents:
@@ -498,6 +498,12 @@ Durations use Go's `time.ParseDuration` syntax (`500ms`, `2s`,
 `1m`, …). `idle_block_after` must be ≥ `1s`. Editing either value
 while `tickets watch` is already running updates the live monitor on
 the next config reload debounce; no watcher restart is required.
+
+Edits to any stage's `.stage.yml` while the watcher is running are
+also picked up without a restart — the watcher reloads the affected
+stage config on the next debounce and logs the new status. If the
+reloaded file fails to parse, the previous config is kept so the
+watcher stays running.
 
 ### Monitoring agents
 
