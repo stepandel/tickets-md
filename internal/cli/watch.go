@@ -297,20 +297,15 @@ func runWatch(s *ticket.Store) error {
 		stageReloadTimer.Reset(250 * time.Millisecond)
 	}
 	defer func() {
-		if configReloadTimer == nil {
-		} else if !configReloadTimer.Stop() {
-			select {
-			case <-configReloadTimer.C:
-			default:
+		for _, t := range []*time.Timer{configReloadTimer, stageReloadTimer} {
+			if t == nil {
+				continue
 			}
-		}
-		if stageReloadTimer == nil {
-			return
-		}
-		if !stageReloadTimer.Stop() {
-			select {
-			case <-stageReloadTimer.C:
-			default:
+			if !t.Stop() {
+				select {
+				case <-t.C:
+				default:
+				}
 			}
 		}
 	}()
