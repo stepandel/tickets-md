@@ -1,0 +1,8 @@
+name: QA Archive Harness
+prefix: TIC
+project_prefix: PRJ
+archive_stage: archive
+stages:
+  - backlog
+  - doing
+  - archive
