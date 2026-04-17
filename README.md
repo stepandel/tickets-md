@@ -656,6 +656,11 @@ entries follow sorted case-insensitively by name, and `none` is still
 appended last. `priorities: {}` is an explicit opt-out that leaves the
 picker with only `none`.
 
+`none` is reserved for the picker's cleared-priority option, so it
+cannot be used as a key in `priorities:` (the check is
+case-insensitive and trims whitespace). Config load fails with a
+`priority "…" is reserved` error if you try.
+
 Omit `priorities:` to keep the current default styling and picker
 ordering.
 
