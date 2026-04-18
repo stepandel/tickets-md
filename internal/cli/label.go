@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"io"
 	"slices"
 	"strings"
 
@@ -236,9 +235,3 @@ func configuredAndUnconfiguredLabels(cfg config.Config, assigned []string) []pic
 }
 
 type createLabelSentinel struct{}
-
-func writeLabels(w io.Writer, labels []string) {
-	for _, label := range labels {
-		fmt.Fprintln(w, label)
-	}
-}
