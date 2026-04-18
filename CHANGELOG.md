@@ -41,13 +41,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the running watcher to skip agent spawns on stage arrivals, stage
   reruns, and cron ticks until `resume` clears the file. In-flight
   sessions are unaffected.
-- The Obsidian plugin's Agents view now surfaces the watcher pause
-  state and a pause/resume toggle in its header. The control is
-  backed by new `GET /watch/status`, `POST /watch/pause`, and
-  `POST /watch/resume` endpoints on the terminal server exposed by
-  `tickets watch`, which read and write the same
-  `.tickets/.watch-paused` sentinel the CLI uses so both control
-  paths stay coherent.
+- The Obsidian plugin's Board and Agents views now surface the
+  watcher pause state and a pause/resume toggle in their headers.
+  The control is backed by new `GET /watch/status`,
+  `POST /watch/pause`, and `POST /watch/resume` endpoints on the
+  terminal server exposed by `tickets watch`, which read and write
+  the same `.tickets/.watch-paused` sentinel the CLI uses so both
+  control paths stay coherent.
 - `cron_agents[]` gained an optional `interactive: true` flag. When
   set, the scheduler skips the cron-specific arg prep (so Claude's
   auto-`--print` is not injected) and the run's PTY stays alive until
