@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   location. `tickets watch` is deliberately excluded so the daemon
   keeps owning its `.tickets/.terminal-server` socket, fsnotify
   watches, and PTYs in the main repo.
+- `tickets watch` now refuses to start from a linked git worktree
+  unless `-C` is passed explicitly. The error points at the main repo
+  root and keeps the daemon from silently competing with the main-repo
+  watcher over `.tickets/.terminal-server`, fsnotify watches, and PTY
+  sessions.
 - `tickets watch` now detects when a configured stage directory is
   removed, renamed, or recreated on the filesystem without a matching
   `stages:` edit. The watcher drops the watch and clears the cached

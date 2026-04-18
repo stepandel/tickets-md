@@ -39,6 +39,10 @@ a PTY session. View agent output with:
 Each agent run is recorded under .tickets/.agents/<id>/<run>.yml
 with a .log sibling under runs/.
 
+When invoked from a linked git worktree, watch refuses to start unless
+you pass -C explicitly. Run it from the main repo root so one daemon
+owns .tickets/.terminal-server, fsnotify watches, and PTY sessions.
+
 Create a .stage.yml in any stage directory to configure an agent:
 
   # .tickets/execute/.stage.yml
@@ -48,8 +52,12 @@ Create a .stage.yml in any stage directory to configure an agent:
     prompt: |
       Read the ticket at {{path}} and implement what it describes.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// watch is intentionally not auto-resolved to the main store:
-			// one daemon must own its terminal server, fsnotify watches, and PTYs.
+			if err := preflightWatchRoot(); err != nil {
+				return err
+			}
+
+			// watch is intentionally not auto-resolved to the main store.
+			// It either runs at the explicit root (-C) or from the main repo.
 			s, err := openStore()
 			if err != nil {
 				return err
@@ -63,6 +71,19 @@ Create a .stage.yml in any stage directory to configure an agent:
 		newWatchStatusCmd(),
 	)
 	return cmd
+}
+
+func preflightWatchRoot() error {
+	if globalFlags.rootExplicit {
+		return nil
+	}
+
+	root, redirected, err := resolveStoreRoot(globalFlags.root)
+	if err != nil || !redirected {
+		return nil
+	}
+
+	return fmt.Errorf("tickets watch: refusing to start from a linked git worktree.\nThe main repo ticket store is at %s. Run `tickets watch` there, or pass `-C <path>` to force a per-worktree daemon (not recommended: it competes with the main-repo watcher over .tickets/.terminal-server, fsnotify watches, and live PTY sessions)", root)
 }
 
 type watchTimings struct {

@@ -7,6 +7,9 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/stepandel/tickets-md/internal/config"
+	"github.com/stepandel/tickets-md/internal/ticket"
 )
 
 func TestShowCommandRedirectsFromLinkedWorktree(t *testing.T) {
@@ -174,5 +177,75 @@ func TestWatchCommandStaysOnPlainOpenStore(t *testing.T) {
 	}
 	if strings.Contains(src, "openStoreAuto(cmd)") {
 		t.Fatalf("watch.go unexpectedly uses openStoreAuto")
+	}
+}
+
+func TestWatchCommandRefusesFromLinkedWorktree(t *testing.T) {
+	_, s, worktreePath := newMoveWorktreeRepo(t)
+	resetRootFlags(t)
+	chdirForTest(t, worktreePath)
+
+	cmd := NewRootCmd()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{"watch"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "refusing to start from a linked git worktree") {
+		t.Fatalf("error = %v", err)
+	}
+	if !strings.Contains(err.Error(), canonicalPath(t, s.Root)) {
+		t.Fatalf("error = %v", err)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
+	}
+}
+
+func TestPreflightWatchRootAllowsExplicitRootInLinkedWorktree(t *testing.T) {
+	_, _, worktreePath := newMoveWorktreeRepo(t)
+	resetRootFlags(t)
+	chdirForTest(t, worktreePath)
+
+	globalFlags.root = "."
+	globalFlags.rootExplicit = true
+
+	if err := preflightWatchRoot(); err != nil {
+		t.Fatalf("preflightWatchRoot: %v", err)
+	}
+}
+
+func TestPreflightWatchRootAllowsMainRepo(t *testing.T) {
+	root, _, _ := newMoveWorktreeRepo(t)
+	resetRootFlags(t)
+	chdirForTest(t, root)
+
+	globalFlags.root = "."
+
+	if err := preflightWatchRoot(); err != nil {
+		t.Fatalf("preflightWatchRoot: %v", err)
+	}
+}
+
+func TestPreflightWatchRootAllowsNonGitDir(t *testing.T) {
+	root := t.TempDir()
+	if _, err := ticket.Init(root, config.Config{
+		Prefix:        "TIC",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "execute", "done"},
+	}); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	resetRootFlags(t)
+	chdirForTest(t, root)
+	globalFlags.root = "."
+
+	if err := preflightWatchRoot(); err != nil {
+		t.Fatalf("preflightWatchRoot: %v", err)
 	}
 }

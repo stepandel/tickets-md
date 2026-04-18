@@ -1066,7 +1066,12 @@ stages:
   to launch an interactive session for any ticket.
 
 The store always lives at `<project>/.tickets/`, the same way `.git/`
-always lives at the repo root.
+always lives at the repo root. From a linked git worktree, every
+command except `tickets watch` auto-detects that main repo store
+unless you pass `-C` explicitly. `tickets watch` refuses to start from
+the linked worktree by default; run it from the main repo root so one
+daemon owns `.tickets/.terminal-server`, fsnotify watches, and PTY
+sessions, or pass `-C <path>` to opt into a per-worktree daemon.
 
 ID numbers are assigned by scanning every stage directory for the
 highest existing `<PREFIX>-NNN`, so deletions and manual edits never
