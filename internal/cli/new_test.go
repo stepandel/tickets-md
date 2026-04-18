@@ -192,6 +192,81 @@ func TestNewCommandWithProject(t *testing.T) {
 	}
 }
 
+func TestNewCommandWithLabels(t *testing.T) {
+	s := newCleanupStoreWithConfig(t, config.Config{
+		Prefix:        "TIC",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "execute", "done"},
+		Labels: map[string]config.LabelConfig{
+			"Backend": {Color: "#0f766e"},
+			"Ops":     {Color: "#dc2626"},
+		},
+	})
+
+	globalFlags.root = s.Root
+	cmd := newNewCmd()
+	cmd.SetArgs([]string{"--label", "backend", "--label", "ops", "Scoped work"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	created, err := s.Get("TIC-001")
+	if err != nil {
+		t.Fatalf("Get created: %v", err)
+	}
+	if !slices.Equal(created.Labels, []string{"Backend", "Ops"}) {
+		t.Fatalf("Labels = %#v, want configured casing", created.Labels)
+	}
+}
+
+func TestNewCommandRejectsDuplicateLabelsBeforeCreate(t *testing.T) {
+	s := newCleanupStoreWithConfig(t, config.Config{
+		Prefix:        "TIC",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "execute", "done"},
+		Labels: map[string]config.LabelConfig{
+			"Backend": {Color: "#0f766e"},
+		},
+	})
+
+	globalFlags.root = s.Root
+	cmd := newNewCmd()
+	cmd.SetArgs([]string{"--label", "Backend", "--label", " backend ", "Scoped work"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "duplicate label") {
+		t.Fatalf("expected duplicate label error, got %v", err)
+	}
+
+	assertNoTicketCreated(t, s)
+}
+
+func TestNewCommandRejectsUnknownLabelBeforeCreate(t *testing.T) {
+	s := newCleanupStoreWithConfig(t, config.Config{
+		Prefix:        "TIC",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "execute", "done"},
+		Labels: map[string]config.LabelConfig{
+			"Backend": {Color: "#0f766e"},
+		},
+	})
+
+	globalFlags.root = s.Root
+	cmd := newNewCmd()
+	cmd.SetArgs([]string{"--label", "missing", "Scoped work"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), `unknown label "missing"`) {
+		t.Fatalf("expected unknown label error, got %v", err)
+	}
+
+	assertNoTicketCreated(t, s)
+}
+
 func TestNewCommandWithUnknownProjectFails(t *testing.T) {
 	s := newCLITestStore(t)
 

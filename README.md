@@ -287,14 +287,17 @@ setup steps.
 | Command                                 | What it does                                       |
 | --------------------------------------- | -------------------------------------------------- |
 | `tickets init`                          | Create `.tickets/config.yml` + stage folders       |
-| `tickets new <title...> [--priority P] [--project ID] [--parent ID] [--blocked-by ID...] [--blocks ID...] [--related ID...] [--body MD]` | Create a ticket in the default stage |
+| `tickets new <title...> [--priority P] [--project ID] [--parent ID] [--blocked-by ID...] [--blocks ID...] [--related ID...] [--label L...] [--body MD]` | Create a ticket in the default stage |
 | `tickets projects <subcommand>`         | Create, list, show, update, assign, and delete projects |
 | `tickets list [--stage X] [--project P] [--archived]`| List tickets, grouped by stage (alias: `ls`)       |
+| `tickets labels [--on <id>]`            | List configured labels, or the labels on a ticket  |
 | `tickets archive <id> [--from <stage>] [--older-than D] [--dry-run]` | Move a ticket, or older tickets from a stage, into the configured archive stage |
 | `tickets show <id>`                     | Print a ticket's contents                          |
 | `tickets move <id> <stage>`             | Move a ticket to another stage (alias: `mv`)       |
 | `tickets edit <id>`                     | Open the ticket file in your editor                |
 | `tickets set <id> <field> <value...>`   | Update a scalar field (`priority`, `project`, `title`) |
+| `tickets label <id> <label...>`         | Add one or more configured labels to a ticket      |
+| `tickets unlabel <id> <label...>`       | Remove one or more labels from a ticket            |
 | `tickets rm <id> [--force]`             | Delete a ticket                                    |
 | `tickets link <a> <b> [--blocks\|--parent]`       | Link two tickets (related, blocks, or parent/child) |
 | `tickets unlink <a> <b> [--blocks\|--parent]`     | Remove a link                                      |
@@ -760,6 +763,20 @@ If a ticket already contains a label that is not currently configured,
 the board still renders it with fallback styling and lets you remove it
 without editing YAML by hand.
 
+The CLI exposes the same ticket-level workflows:
+
+```sh
+tickets labels
+tickets labels --on TIC-001
+tickets label TIC-001 backend customer
+tickets unlabel TIC-001 customer
+```
+
+CLI label assignment is strict: `tickets label` and `tickets new --label`
+only accept labels that already exist in `.tickets/config.yml`. The
+board's `t` action can still create a new configured label on the fly
+with the default chip color `#6b7280`, then assign it immediately.
+
 ## Create-Time Metadata
 
 `tickets new` can also set existing ticket metadata up front instead of
@@ -769,11 +786,13 @@ requiring follow-up `set` or `link` commands:
 tickets new "Fix login bug on Safari" --project PRJ-001 --blocked-by TIC-003
 tickets new "Split auth UI" --parent TIC-001 --related TIC-004 --related TIC-005
 tickets new "Ship migration" --blocks TIC-010 --priority critical
+tickets new "Triage bug report" --label customer --label backend
 tickets new "Document auth flow" --body "## Description\n\nCapture the login states."
 ```
 
 `--blocked-by`, `--blocks`, and `--related` accept multiple ticket IDs,
 either by repeating the flag or by passing a comma-separated list.
+`--label` works the same way, but only for preconfigured labels.
 
 `--body` recognizes a small fixed escape set in the flag value:
 `\n` becomes a newline, `\r` a carriage return, `\t` a tab, and `\\`
