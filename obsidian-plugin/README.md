@@ -97,9 +97,11 @@ temporarily skipped until macOS CI coverage is restored.
   board by default; use the board menu to reveal it when needed, and
   that choice is remembered per board leaf across reopen/reload.
   Archived tickets remain on disk and visible to the CLI either way.
-  The board header has a filter input that narrows visible cards to
-  tickets whose id or title matches the query (case-insensitive). The
-  query is persisted per board leaf across reopen/reload.
+  The board header has a filter input that narrows visible cards using
+  case-insensitive matching across ticket id, title, priority,
+  project, stage, and agent status. Space-separated tokens are
+  combined with AND semantics. The query is persisted per board leaf
+  across reopen/reload.
 - Inline ticket creation, edits, priority and link controls.
 - Board card project assignment controls: assign, change, or remove
   `project:` from the ticket context menu.
@@ -126,8 +128,10 @@ temporarily skipped until macOS CI coverage is restored.
   tickets in non-archive stages (matching by id, title, or stage) and
   opens the chosen ticket in a preview leaf.
 - A board-level filter input in the board header that narrows the
-  visible cards by id, title, priority, or project. The query is
-  remembered per board leaf across reopen/reload.
+  visible cards by id, title, priority, project, stage, or agent
+  status. Space-separated query tokens all must match somewhere across
+  those fields. The query is remembered per board leaf across
+  reopen/reload.
 - A diff view (powered by diff2html) for any agent run that touched
   files.
 
