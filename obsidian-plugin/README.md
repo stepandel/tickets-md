@@ -128,11 +128,6 @@ temporarily skipped until macOS CI coverage is restored.
 - A `Search tickets` command that opens a fuzzy picker over all
   tickets in non-archive stages (matching by id, title, or stage) and
   opens the chosen ticket in a preview leaf.
-- A board-level filter input in the board header that narrows the
-  visible cards by id, title, priority, labels, project, stage,
-  agent status, and linked ticket ids. Queries are tokenized on
-  whitespace with AND-across-tokens semantics, and are remembered per
-  board leaf across reopen/reload.
 - A diff view (powered by diff2html) for any agent run that touched
   files.
 

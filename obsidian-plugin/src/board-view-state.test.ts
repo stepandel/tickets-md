@@ -17,6 +17,13 @@ test("readBoardViewState accepts legacy query state", () => {
 	});
 });
 
+test("readBoardViewState prefers filterQuery over legacy query", () => {
+	assert.deepEqual(readBoardViewState({ filterQuery: "tic-139", query: "tic-135" }), {
+		showArchived: false,
+		filterQuery: "tic-139",
+	});
+});
+
 test("readBoardViewState defaults missing state to false", () => {
 	assert.deepEqual(readBoardViewState(undefined), { showArchived: false, filterQuery: "" });
 	assert.deepEqual(readBoardViewState(null), { showArchived: false, filterQuery: "" });
