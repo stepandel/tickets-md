@@ -126,8 +126,8 @@ temporarily skipped until macOS CI coverage is restored.
   tickets in non-archive stages (matching by id, title, or stage) and
   opens the chosen ticket in a preview leaf.
 - A board-level filter input in the board header that narrows the
-  visible cards by id, title, priority, or project. The query is
-  remembered per board leaf across reopen/reload.
+  visible cards by id, title, priority, project, stage, or agent
+  status. The query is remembered per board leaf across reopen/reload.
 - A diff view (powered by diff2html) for any agent run that touched
   files.
 
