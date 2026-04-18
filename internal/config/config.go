@@ -315,7 +315,13 @@ func (c Config) Validate() error {
 func validatePriorities(priorities map[string]PriorityConfig) error {
 	seen := make(map[string]string, len(priorities))
 	orderSeen := make(map[int]string, len(priorities))
-	for name, priority := range priorities {
+	names := make([]string, 0, len(priorities))
+	for name := range priorities {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		priority := priorities[name]
 		normalized := normalizePriorityName(name)
 		if normalized == "" {
 			return errors.New("priority name is empty")
@@ -343,7 +349,13 @@ func validatePriorities(priorities map[string]PriorityConfig) error {
 func validateLabels(labels map[string]LabelConfig) error {
 	seen := make(map[string]string, len(labels))
 	orderSeen := make(map[int]string, len(labels))
-	for name, label := range labels {
+	names := make([]string, 0, len(labels))
+	for name := range labels {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		label := labels[name]
 		normalized := normalizeLabelName(name)
 		if normalized == "" {
 			return errors.New("label name is empty")
