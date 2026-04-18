@@ -79,7 +79,10 @@ mode the watcher skips Claude's auto-`--print` injection, so the session
 stays interactive until you close it. While that interactive run is
 alive, subsequent ticks for the same cron are skipped; keep any required
 permission-bypass flags such as `--dangerously-skip-permissions` in
-`args:` or the cron may block on its first prompt.
+`args:` or the cron may block on its first prompt. To stop an
+interactive cron and let later ticks run again, use `tickets crons stop
+<name>` or the Obsidian desktop Agents-view cron menu's `Stop session`
+action.
 
 Moving a ticket between stages is just a file rename, so if you choose
 to commit ticket markdown in your own workflow, `git log` can serve as
