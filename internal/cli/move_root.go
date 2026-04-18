@@ -21,7 +21,7 @@ func openStoreAt(root string) (*ticket.Store, error) {
 	return s, nil
 }
 
-func resolveMoveStoreRoot(root string) (string, bool, error) {
+func resolveStoreRoot(root string) (string, bool, error) {
 	if globalFlags.rootExplicit {
 		return root, false, nil
 	}

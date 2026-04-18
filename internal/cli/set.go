@@ -27,7 +27,7 @@ Pass "-" as the value to clear a field. Multi-word values don't need
 quoting — all arguments after the field name are joined with spaces.`,
 		Args: cobra.MinimumNArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := openStore()
+			s, err := openStoreAuto(cmd)
 			if err != nil {
 				return err
 			}

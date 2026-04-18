@@ -35,7 +35,7 @@ func newCronsListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List configured cron agents and their last run",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := openStore()
+			s, err := openStoreAuto(cmd)
 			if err != nil {
 				return err
 			}
@@ -67,7 +67,7 @@ func newCronsLogCmd() *cobra.Command {
 		Short: "Print output for a cron agent run",
 		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := openStore()
+			s, err := openStoreAuto(cmd)
 			if err != nil {
 				return err
 			}
@@ -108,7 +108,7 @@ func newCronsRunCmd() *cobra.Command {
 		Short: "Run a configured cron agent now",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := openStore()
+			s, err := openStoreAuto(cmd)
 			if err != nil {
 				return err
 			}
@@ -147,7 +147,7 @@ func newCronsStopCmd() *cobra.Command {
 		Short: "Terminate an active cron agent session",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := openStore()
+			s, err := openStoreAuto(cmd)
 			if err != nil {
 				return err
 			}
@@ -177,7 +177,7 @@ func newCronsEnableCmd() *cobra.Command {
 		Short: "Enable a configured cron agent",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := openStore()
+			s, err := openStoreAuto(cmd)
 			if err != nil {
 				return err
 			}
@@ -202,7 +202,7 @@ func newCronsDisableCmd() *cobra.Command {
 		Short: "Disable a configured cron agent",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := openStore()
+			s, err := openStoreAuto(cmd)
 			if err != nil {
 				return err
 			}
@@ -236,7 +236,7 @@ with spaces. For args, remaining arguments are stored as the arg list.
 Pass "-" as the args value to clear the stored args list.`,
 		Args: cobra.MinimumNArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := openStore()
+			s, err := openStoreAuto(cmd)
 			if err != nil {
 				return err
 			}

@@ -102,7 +102,7 @@ func newWatchPauseCmd() *cobra.Command {
 		Short: "Pause watcher-managed spawns",
 		Args:  cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := openStore()
+			s, err := openStoreAuto(cmd)
 			if err != nil {
 				return err
 			}
@@ -121,7 +121,7 @@ func newWatchResumeCmd() *cobra.Command {
 		Short: "Resume watcher-managed spawns",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := openStore()
+			s, err := openStoreAuto(cmd)
 			if err != nil {
 				return err
 			}
@@ -140,7 +140,7 @@ func newWatchStatusCmd() *cobra.Command {
 		Short: "Show watcher pause state",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := openStore()
+			s, err := openStoreAuto(cmd)
 			if err != nil {
 				return err
 			}

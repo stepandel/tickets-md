@@ -19,7 +19,7 @@ func newLabelCmd() *cobra.Command {
 		Short: "Add configured labels to a ticket",
 		Args:  cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := openStore()
+			s, err := openStoreAuto(cmd)
 			if err != nil {
 				return err
 			}
@@ -48,7 +48,7 @@ func newUnlabelCmd() *cobra.Command {
 		Short: "Remove labels from a ticket",
 		Args:  cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := openStore()
+			s, err := openStoreAuto(cmd)
 			if err != nil {
 				return err
 			}
@@ -77,7 +77,7 @@ func newLabelsCmd() *cobra.Command {
 		Use:   "labels",
 		Short: "List configured labels or labels on a ticket",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := openStore()
+			s, err := openStoreAuto(cmd)
 			if err != nil {
 				return err
 			}

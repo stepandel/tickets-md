@@ -14,7 +14,7 @@ func newShowCmd() *cobra.Command {
 		Short: "Print a ticket's contents",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := openStore()
+			s, err := openStoreAuto(cmd)
 			if err != nil {
 				return err
 			}

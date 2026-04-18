@@ -39,7 +39,7 @@ drift and orphan .yml.tmp files — and suppresses output. It is the
 same pass tickets watch runs at startup so long-lived stores self-heal.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := openStore()
+			s, err := openStoreAuto(cmd)
 			if err != nil {
 				return err
 			}
