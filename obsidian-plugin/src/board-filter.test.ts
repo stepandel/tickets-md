@@ -7,13 +7,15 @@ test("normalizeBoardFilterQuery trims and lowercases the query", () => {
 	assert.equal(normalizeBoardFilterQuery("  TIC-12  "), "tic-12");
 });
 
-test("ticketMatchesBoardFilter matches id, title, priority, project, and labels", () => {
+test("ticketMatchesBoardFilter matches id, title, priority, project, labels, stage, and agent status", () => {
 	const ticket = {
 		id: "TIC-133",
 		title: "Add board-level ticket filter",
 		priority: "High",
 		project: "PRJ-002",
 		labels: ["backend", "customer"],
+		stage: "execute",
+		agent_status: "running",
 	};
 
 	assert.equal(ticketMatchesBoardFilter(ticket, "tic-133"), true);
@@ -21,6 +23,8 @@ test("ticketMatchesBoardFilter matches id, title, priority, project, and labels"
 	assert.equal(ticketMatchesBoardFilter(ticket, "high"), true);
 	assert.equal(ticketMatchesBoardFilter(ticket, "prj-002"), true);
 	assert.equal(ticketMatchesBoardFilter(ticket, "customer"), true);
+	assert.equal(ticketMatchesBoardFilter(ticket, "execute"), true);
+	assert.equal(ticketMatchesBoardFilter(ticket, "running"), true);
 });
 
 test("ticketMatchesBoardFilter ignores surrounding whitespace and rejects misses", () => {
