@@ -142,6 +142,79 @@ func watchTimingsForConfig(cfg config.Config) watchTimings {
 	return timings
 }
 
+func isConfiguredStageDirPath(root string, cfg config.Config, path string) (string, bool) {
+	if filepath.Dir(path) != filepath.Join(root, config.ConfigDir) {
+		return "", false
+	}
+	stageName := filepath.Base(path)
+	if !cfg.HasStage(stageName) {
+		return "", false
+	}
+	return stageName, true
+}
+
+func clearKnownPathsUnderDir(knownPaths map[string]bool, dir string) {
+	prefix := dir + string(os.PathSeparator)
+	for path := range knownPaths {
+		if strings.HasPrefix(path, prefix) {
+			delete(knownPaths, path)
+		}
+	}
+}
+
+func seedKnownStageTicketPaths(knownPaths map[string]bool, dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
+			continue
+		}
+		knownPaths[filepath.Join(dir, entry.Name())] = true
+	}
+	return nil
+}
+
+func watcherHasPath(w *fsnotify.Watcher, path string) bool {
+	for _, watched := range w.WatchList() {
+		if watched == path {
+			return true
+		}
+	}
+	return false
+}
+
+func unwatchStageDirDrift(w *fsnotify.Watcher, stageConfigs *stageConfigStore, knownPaths map[string]bool, stageName, dir string) {
+	if watcherHasPath(w, dir) {
+		if err := w.Remove(dir); err != nil {
+			log.Printf("stage %s: removing watch for %s: %v", stageName, dir, err)
+		}
+	}
+	clearKnownPathsUnderDir(knownPaths, dir)
+	stageConfigs.Set(stageName, stage.Config{})
+	log.Printf("stage %s: directory disappeared; cached config reset and watch will be restored if it reappears", stageName)
+}
+
+func rewatchStageDirDrift(w *fsnotify.Watcher, stageConfigs *stageConfigStore, knownPaths map[string]bool, stageName, dir string) error {
+	sc, err := stage.Load(dir)
+	if err != nil {
+		return err
+	}
+	if !watcherHasPath(w, dir) {
+		if err := w.Add(dir); err != nil {
+			return err
+		}
+	}
+	clearKnownPathsUnderDir(knownPaths, dir)
+	if err := seedKnownStageTicketPaths(knownPaths, dir); err != nil {
+		return err
+	}
+	stageConfigs.Set(stageName, sc)
+	log.Printf("watching %s/ (%s) (restored after directory drift)", stageName, stageConfigStatus(sc))
+	return nil
+}
+
 func reloadWatchConfig(root string, cfg *config.Config, mon *agent.Monitor, reloadCron func(config.Config) error) (watchTimings, bool, []string, []string, error) {
 	newCfg, err := config.Load(root)
 	if err != nil {
@@ -217,16 +290,9 @@ func reconcileStageWatchSet(w *fsnotify.Watcher, root string, stageConfigs *stag
 			continue
 		}
 		stageConfigs.Set(stageName, sc)
-		entries, err := os.ReadDir(dir)
-		if err != nil {
+		if err := seedKnownStageTicketPaths(knownPaths, dir); err != nil {
 			log.Printf("stage %s: scanning %s: %v", stageName, dir, err)
 			continue
-		}
-		for _, entry := range entries {
-			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
-				continue
-			}
-			knownPaths[filepath.Join(dir, entry.Name())] = true
 		}
 		log.Printf("watching %s/ (%s) (added)", stageName, stageConfigStatus(sc))
 	}
@@ -482,6 +548,26 @@ func runWatch(s *ticket.Store) error {
 					scheduleStageReload(filepath.Base(filepath.Dir(event.Name)), filepath.Dir(event.Name))
 				}
 				continue
+			}
+			if stageName, ok := isConfiguredStageDirPath(s.Root, s.Config, event.Name); ok {
+				switch {
+				case event.Has(fsnotify.Remove), event.Has(fsnotify.Rename):
+					unwatchStageDirDrift(w, stageConfigs, knownPaths, stageName, event.Name)
+					continue
+				case event.Has(fsnotify.Create):
+					info, err := os.Stat(event.Name)
+					if err != nil {
+						log.Printf("stage %s: stat after create for %s: %v", stageName, event.Name, err)
+						continue
+					}
+					if !info.IsDir() {
+						continue
+					}
+					if err := rewatchStageDirDrift(w, stageConfigs, knownPaths, stageName, event.Name); err != nil {
+						log.Printf("stage %s: restoring watch for %s: %v", stageName, event.Name, err)
+					}
+					continue
+				}
 			}
 
 			if event.Has(fsnotify.Rename) || event.Has(fsnotify.Remove) {
