@@ -76,6 +76,7 @@ func newLabelsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "labels",
 		Short: "List configured labels or labels on a ticket",
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := openStoreAuto(cmd)
 			if err != nil {
@@ -103,7 +104,42 @@ func newLabelsCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&onTicket, "on", "", "show the labels currently assigned to a ticket")
+	cmd.AddCommand(newLabelsCreateCmd())
 	return cmd
+}
+
+func newLabelsCreateCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "create <name>",
+		Short: "Create a configured label",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := openStore()
+			if err != nil {
+				return err
+			}
+			name := strings.TrimSpace(args[0])
+			normalized := normalizeLabelName(name)
+			if normalized == "" {
+				return fmt.Errorf("label name is required")
+			}
+			if normalized == "none" {
+				return fmt.Errorf(`label "none" is reserved`)
+			}
+			if key, ok := canonicalConfiguredLabel(s.Config, name); ok {
+				return fmt.Errorf("label %q already exists as %q", name, key)
+			}
+			if s.Config.Labels == nil {
+				s.Config.Labels = map[string]config.LabelConfig{}
+			}
+			s.Config.Labels[name] = config.LabelConfig{Color: defaultNewLabelColor}
+			if err := config.Save(s.Root, s.Config); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Created label %q (color %s)\n", name, defaultNewLabelColor)
+			return nil
+		},
+	}
 }
 
 func normalizeLabelName(name string) string {

@@ -291,6 +291,7 @@ setup steps.
 | `tickets projects <subcommand>`         | Create, list, show, update, assign, and delete projects |
 | `tickets list [--stage X] [--project P] [--archived]`| List tickets, grouped by stage (alias: `ls`)       |
 | `tickets labels [--on <id>]`            | List configured labels, or the labels on a ticket  |
+| `tickets labels create <name>`          | Add a configured label with the default chip color |
 | `tickets archive <id> [--from <stage>] [--older-than D] [--dry-run]` | Move a ticket, or older tickets from a stage, into the configured archive stage |
 | `tickets show <id>`                     | Print a ticket's contents                          |
 | `tickets move <id> <stage>`             | Move a ticket to another stage (alias: `mv`)       |
@@ -768,14 +769,21 @@ The CLI exposes the same ticket-level workflows:
 ```sh
 tickets labels
 tickets labels --on TIC-001
+tickets labels create backend
 tickets label TIC-001 backend customer
 tickets unlabel TIC-001 customer
 ```
 
 CLI label assignment is strict: `tickets label` and `tickets new --label`
 only accept labels that already exist in `.tickets/config.yml`. The
-board's `t` action can still create a new configured label on the fly
-with the default chip color `#6b7280`, then assign it immediately.
+CLI can create configured labels explicitly with `tickets labels create`,
+which writes the new config entry using the default chip color `#6b7280`.
+Creation rejects empty names, the reserved label `none`, and
+case-insensitive duplicates by reporting the existing configured key.
+Assignment stays strict: `tickets label` and `tickets new --label` still
+fail on unknown labels instead of creating them implicitly. The board's
+`t` action can also create a new configured label on the fly with the
+same default color, then assign it immediately.
 
 ## Create-Time Metadata
 
