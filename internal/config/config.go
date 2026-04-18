@@ -95,6 +95,12 @@ type PriorityConfig struct {
 	Order *int   `yaml:"order,omitempty"`
 }
 
+type LabelConfig struct {
+	Color string `yaml:"color"`
+	Bold  bool   `yaml:"bold,omitempty"`
+	Order *int   `yaml:"order,omitempty"`
+}
+
 // Config describes a ticket store layout. The store always lives
 // under `<root>/.tickets/`, so the only things worth configuring are
 // the ID prefix and the stage list.
@@ -129,6 +135,8 @@ type Config struct {
 	// Priorities configures board priority styling by normalized priority
 	// name. When absent, built-in defaults are used.
 	Priorities map[string]PriorityConfig `yaml:"priorities,omitempty"`
+	// Labels configures board label styling by normalized label name.
+	Labels map[string]LabelConfig `yaml:"labels,omitempty"`
 }
 
 // HasDefaultAgent reports whether a default agent is configured.
@@ -292,6 +300,9 @@ func (c Config) Validate() error {
 	if err := validatePriorities(c.Priorities); err != nil {
 		return err
 	}
+	if err := validateLabels(c.Labels); err != nil {
+		return err
+	}
 	if err := validateWorktreeDir(c.WorktreeDir()); err != nil {
 		return err
 	}
@@ -324,6 +335,34 @@ func validatePriorities(priorities map[string]PriorityConfig) error {
 				return fmt.Errorf("priority %q order %d conflicts with %q", name, *priority.Order, prev)
 			}
 			orderSeen[*priority.Order] = name
+		}
+	}
+	return nil
+}
+
+func validateLabels(labels map[string]LabelConfig) error {
+	seen := make(map[string]string, len(labels))
+	orderSeen := make(map[int]string, len(labels))
+	for name, label := range labels {
+		normalized := normalizeLabelName(name)
+		if normalized == "" {
+			return errors.New("label name is empty")
+		}
+		if normalized == "none" {
+			return fmt.Errorf("label %q is reserved", name)
+		}
+		if prev, dup := seen[normalized]; dup {
+			return fmt.Errorf("duplicate label %q conflicts with %q", name, prev)
+		}
+		seen[normalized] = name
+		if strings.TrimSpace(label.Color) == "" {
+			return fmt.Errorf("label %q color is empty", name)
+		}
+		if label.Order != nil {
+			if prev, dup := orderSeen[*label.Order]; dup {
+				return fmt.Errorf("label %q order %d conflicts with %q", name, *label.Order, prev)
+			}
+			orderSeen[*label.Order] = name
 		}
 	}
 	return nil
@@ -515,6 +554,66 @@ func (c Config) OrderedPriorityNames() []string {
 }
 
 func normalizePriorityName(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
+}
+
+func (c Config) LookupLabel(name string) (LabelConfig, bool) {
+	normalized := normalizeLabelName(name)
+	if normalized == "" || c.Labels == nil {
+		return LabelConfig{}, false
+	}
+	for key, label := range c.Labels {
+		if normalizeLabelName(key) == normalized {
+			return label, true
+		}
+	}
+	return LabelConfig{}, false
+}
+
+func (c Config) OrderedLabelNames() []string {
+	if c.Labels == nil {
+		return nil
+	}
+
+	type entry struct {
+		name       string
+		normalized string
+		order      *int
+	}
+
+	entries := make([]entry, 0, len(c.Labels))
+	for name, label := range c.Labels {
+		entries = append(entries, entry{
+			name:       name,
+			normalized: normalizeLabelName(name),
+			order:      label.Order,
+		})
+	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		left := entries[i]
+		right := entries[j]
+		switch {
+		case left.order != nil && right.order != nil:
+			if *left.order != *right.order {
+				return *left.order < *right.order
+			}
+		case left.order != nil:
+			return true
+		case right.order != nil:
+			return false
+		}
+		return left.normalized < right.normalized
+	})
+
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		names = append(names, entry.name)
+	}
+	return names
+}
+
+func normalizeLabelName(name string) string {
 	return strings.ToLower(strings.TrimSpace(name))
 }
 
