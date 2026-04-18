@@ -5,9 +5,6 @@
 package cli
 
 import (
-	"fmt"
-	"os"
-
 	"github.com/spf13/cobra"
 
 	"github.com/stepandel/tickets-md/internal/ticket"
@@ -15,7 +12,8 @@ import (
 
 // rootFlags holds flags shared across subcommands.
 type rootFlags struct {
-	root string
+	root         string
+	rootExplicit bool
 }
 
 var globalFlags rootFlags
@@ -32,6 +30,7 @@ Move tickets between stages by renaming the file across folders.`,
 		SilenceUsage: true,
 		Version:      version,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			globalFlags.rootExplicit = cmd.Flags().Changed("root")
 			return maybeNagForUpdate(cmd)
 		},
 	}
@@ -68,12 +67,5 @@ Move tickets between stages by renaming the file across folders.`,
 // openStore is the helper every subcommand uses to load the store.
 // It centralizes the "did you forget to run init?" error message.
 func openStore() (*ticket.Store, error) {
-	s, err := ticket.Open(globalFlags.root)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("no ticket store here — run `tickets init` first")
-		}
-		return nil, err
-	}
-	return s, nil
+	return openStoreAt(globalFlags.root)
 }
