@@ -254,7 +254,9 @@ async function parseTicket(app: import("obsidian").App, file: TFile, stage: stri
 			id: fm.id ?? file.basename,
 			title: fm.title ?? file.basename,
 			priority: fm.priority,
-			labels: Array.isArray(fm.labels) ? fm.labels.filter((value): value is string => typeof value === "string") : undefined,
+			labels: Array.isArray(fm.labels)
+				? fm.labels.filter((value: unknown): value is string => typeof value === "string")
+				: undefined,
 			project: fm.project,
 			related: fm.related,
 			blocked_by: fm.blocked_by,
