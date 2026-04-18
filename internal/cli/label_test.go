@@ -148,6 +148,73 @@ func TestLabelsCommandListsConfiguredLabelsInOrder(t *testing.T) {
 	}
 }
 
+func TestLabelsCreateCommandCreatesConfiguredLabelWithDefaultColor(t *testing.T) {
+	s := newCleanupStoreWithConfig(t, config.Config{
+		Prefix:        "TIC",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "execute", "done"},
+	})
+
+	globalFlags.root = s.Root
+	cmd := newLabelsCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"create", "Backend"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	cfg, err := config.Load(s.Root)
+	if err != nil {
+		t.Fatalf("Load config: %v", err)
+	}
+	labelCfg, ok := cfg.Labels["Backend"]
+	if !ok {
+		t.Fatal("expected Backend label in config")
+	}
+	if labelCfg.Color != defaultNewLabelColor {
+		t.Fatalf("color = %q, want %q", labelCfg.Color, defaultNewLabelColor)
+	}
+	if got := strings.TrimSpace(out.String()); got != `Created label "Backend" (color `+defaultNewLabelColor+`)` {
+		t.Fatalf("output = %q", got)
+	}
+}
+
+func TestLabelsCreateCommandRejectsNormalizedDuplicate(t *testing.T) {
+	s := newCleanupStoreWithConfig(t, config.Config{
+		Prefix:        "TIC",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "execute", "done"},
+		Labels: map[string]config.LabelConfig{
+			"Backend": {Color: "#0f766e"},
+		},
+	})
+
+	globalFlags.root = s.Root
+	cmd := newLabelsCmd()
+	cmd.SetArgs([]string{"create", " backend "})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), `label "backend" already exists as "Backend"`) {
+		t.Fatalf("Execute() error = %v, want canonical duplicate error", err)
+	}
+}
+
+func TestLabelsCreateCommandRejectsReservedNone(t *testing.T) {
+	s := newCleanupStoreWithConfig(t, config.Config{
+		Prefix:        "TIC",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "execute", "done"},
+	})
+
+	globalFlags.root = s.Root
+	cmd := newLabelsCmd()
+	cmd.SetArgs([]string{"create", " none "})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), `label "none" is reserved`) {
+		t.Fatalf("Execute() error = %v, want reserved error", err)
+	}
+}
+
 func TestLabelsCommandOnTicketShowsUnknownLabelsAndNone(t *testing.T) {
 	s := newCleanupStoreWithConfig(t, config.Config{
 		Prefix:        "TIC",
