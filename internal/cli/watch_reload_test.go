@@ -483,6 +483,193 @@ func TestReloadStageConfigDeletionResetsToZeroConfig(t *testing.T) {
 	}
 }
 
+func TestUnwatchStageDirDriftResetsCacheAndKnownPaths(t *testing.T) {
+	s := newReloadWatchStore(t, config.Config{
+		Prefix:        "TIC",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "execute", "done"},
+	})
+	w := newReloadWatcher(t, s.Root, s.Config.Stages)
+
+	executeDir := filepath.Join(s.Root, config.ConfigDir, "execute")
+	stageConfigs := newStageConfigStore()
+	stageConfigs.Set("execute", stage.Config{
+		Agent: &stage.AgentConfig{Command: "codex", Prompt: "ship it"},
+	})
+	knownPaths := map[string]bool{
+		filepath.Join(executeDir, "TIC-007.md"):                          true,
+		filepath.Join(executeDir, "nested", "ignored-but-cleared.md"):    true,
+		filepath.Join(s.Root, config.ConfigDir, "backlog", "TIC-001.md"): true,
+	}
+
+	unwatchStageDirDrift(w, stageConfigs, knownPaths, "execute", executeDir)
+
+	if watchListContains(w, executeDir) {
+		t.Fatalf("WatchList = %v, did not expect %s", w.WatchList(), executeDir)
+	}
+	got, ok := stageConfigs.Get("execute")
+	if !ok {
+		t.Fatal("stage config missing after drift unwatch")
+	}
+	if got.HasAgent() || got.HasCleanup() {
+		t.Fatalf("cached config = %#v, want zero config", got)
+	}
+	if knownPaths[filepath.Join(executeDir, "TIC-007.md")] {
+		t.Fatal("execute ticket known path still present after drift unwatch")
+	}
+	if knownPaths[filepath.Join(executeDir, "nested", "ignored-but-cleared.md")] {
+		t.Fatal("execute nested known path still present after drift unwatch")
+	}
+	if !knownPaths[filepath.Join(s.Root, config.ConfigDir, "backlog", "TIC-001.md")] {
+		t.Fatal("backlog known path removed unexpectedly")
+	}
+}
+
+func TestRewatchStageDirDriftRestoresWatchAndSeedsKnownPaths(t *testing.T) {
+	s := newReloadWatchStore(t, config.Config{
+		Prefix:        "TIC",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "execute", "done"},
+	})
+	w := newReloadWatcher(t, s.Root, []string{"backlog", "done"})
+
+	executeDir := filepath.Join(s.Root, config.ConfigDir, "execute")
+	if err := os.WriteFile(filepath.Join(executeDir, ".stage.yml"), []byte("cleanup:\n  worktree: true\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile stage config: %v", err)
+	}
+	existingTicket := filepath.Join(executeDir, "TIC-042.md")
+	if err := os.WriteFile(existingTicket, []byte("---\ntitle: Existing\n---\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile ticket: %v", err)
+	}
+
+	stageConfigs := newStageConfigStore()
+	stageConfigs.Set("execute", stage.Config{})
+	knownPaths := map[string]bool{
+		filepath.Join(executeDir, "stale.md"):                            true,
+		filepath.Join(s.Root, config.ConfigDir, "backlog", "TIC-001.md"): true,
+	}
+
+	if err := rewatchStageDirDrift(w, stageConfigs, knownPaths, "execute", executeDir); err != nil {
+		t.Fatalf("rewatchStageDirDrift: %v", err)
+	}
+
+	if !watchListContains(w, executeDir) {
+		t.Fatalf("WatchList = %v, want %s", w.WatchList(), executeDir)
+	}
+	got, ok := stageConfigs.Get("execute")
+	if !ok {
+		t.Fatal("stage config missing after drift rewatch")
+	}
+	if !got.HasCleanup() || got.Cleanup == nil || !got.Cleanup.Worktree {
+		t.Fatalf("cached config = %#v, want cleanup.worktree=true", got)
+	}
+	if !knownPaths[existingTicket] {
+		t.Fatalf("knownPaths missing restored ticket %s", existingTicket)
+	}
+	if knownPaths[filepath.Join(executeDir, "stale.md")] {
+		t.Fatal("stale execute known path still present after rewatch")
+	}
+	if !knownPaths[filepath.Join(s.Root, config.ConfigDir, "backlog", "TIC-001.md")] {
+		t.Fatal("backlog known path removed unexpectedly")
+	}
+}
+
+func TestStageDirDriftHelpersAreIdempotent(t *testing.T) {
+	s := newReloadWatchStore(t, config.Config{
+		Prefix:        "TIC",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "execute", "done"},
+	})
+	w := newReloadWatcher(t, s.Root, []string{"backlog", "done"})
+
+	executeDir := filepath.Join(s.Root, config.ConfigDir, "execute")
+	stageConfigs := newStageConfigStore()
+	stageConfigs.Set("execute", stage.Config{})
+	knownPaths := map[string]bool{}
+
+	unwatchStageDirDrift(w, stageConfigs, knownPaths, "execute", executeDir)
+	unwatchStageDirDrift(w, stageConfigs, knownPaths, "execute", executeDir)
+
+	if err := rewatchStageDirDrift(w, stageConfigs, knownPaths, "execute", executeDir); err != nil {
+		t.Fatalf("first rewatchStageDirDrift: %v", err)
+	}
+	if err := rewatchStageDirDrift(w, stageConfigs, knownPaths, "execute", executeDir); err != nil {
+		t.Fatalf("second rewatchStageDirDrift: %v", err)
+	}
+	if !watchListContains(w, executeDir) {
+		t.Fatalf("WatchList = %v, want %s present after idempotent rewatch", w.WatchList(), executeDir)
+	}
+}
+
+func TestStageDirDriftDoesNotRegressConfigReconcile(t *testing.T) {
+	s := newReloadWatchStore(t, config.Config{
+		Prefix:        "TIC",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "done"},
+	})
+	w := newReloadWatcher(t, s.Root, s.Config.Stages)
+	stageConfigs := newStageConfigStore()
+	stageConfigs.Set("backlog", stage.Config{})
+	stageConfigs.Set("done", stage.Config{})
+	knownPaths := map[string]bool{}
+
+	executeDir := filepath.Join(s.Root, config.ConfigDir, "execute")
+	if err := os.MkdirAll(executeDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll execute: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(executeDir, ".stage.yml"), []byte("agent:\n  command: /bin/sh\n  prompt: go\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile stage config: %v", err)
+	}
+	executeTicket := filepath.Join(executeDir, "TIC-009.md")
+	if err := os.WriteFile(executeTicket, []byte("---\ntitle: Added\n---\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile ticket: %v", err)
+	}
+
+	added, removed := reconcileStageWatchSet(w, s.Root, stageConfigs, knownPaths, []string{"backlog", "done"}, []string{"backlog", "execute", "done"})
+	if added != 1 || removed != 0 {
+		t.Fatalf("reconcile added/removed = %d/%d, want 1/0", added, removed)
+	}
+	if !watchListContains(w, executeDir) {
+		t.Fatalf("WatchList = %v, want %s after reconcile add", w.WatchList(), executeDir)
+	}
+	if !knownPaths[executeTicket] {
+		t.Fatalf("knownPaths missing %s after reconcile add", executeTicket)
+	}
+
+	unwatchStageDirDrift(w, stageConfigs, knownPaths, "execute", executeDir)
+
+	got, ok := stageConfigs.Get("execute")
+	if !ok {
+		t.Fatal("execute stage config missing after drift unwatch")
+	}
+	if got.HasAgent() || got.HasCleanup() {
+		t.Fatalf("cached config after drift unwatch = %#v, want zero config", got)
+	}
+	if knownPaths[executeTicket] {
+		t.Fatalf("knownPaths still contains %s after drift unwatch", executeTicket)
+	}
+	if watchListContains(w, executeDir) {
+		t.Fatalf("WatchList = %v, did not expect %s after drift unwatch", w.WatchList(), executeDir)
+	}
+
+	if err := rewatchStageDirDrift(w, stageConfigs, knownPaths, "execute", executeDir); err != nil {
+		t.Fatalf("rewatchStageDirDrift after reconcile add: %v", err)
+	}
+	if !watchListContains(w, executeDir) {
+		t.Fatalf("WatchList = %v, want %s restored after drift rewatch", w.WatchList(), executeDir)
+	}
+	got, ok = stageConfigs.Get("execute")
+	if !ok {
+		t.Fatal("execute stage config missing after drift rewatch")
+	}
+	if !got.HasAgent() || got.Agent.Command != "/bin/sh" {
+		t.Fatalf("cached config after drift rewatch = %#v, want /bin/sh agent", got)
+	}
+	if !knownPaths[executeTicket] {
+		t.Fatalf("knownPaths missing %s after drift rewatch", executeTicket)
+	}
+}
+
 func TestReconcileStageWatchSetAddsStage(t *testing.T) {
 	s := newReloadWatchStore(t, config.Config{
 		Prefix:        "TIC",
