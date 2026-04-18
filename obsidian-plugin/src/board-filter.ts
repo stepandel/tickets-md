@@ -17,6 +17,43 @@ export function normalizeBoardFilterQuery(query: string): string {
 	return query.trim().toLowerCase();
 }
 
+function parseQueryTerms(normalizedQuery: string): string[] {
+	const terms: string[] = [];
+
+	for (let i = 0; i < normalizedQuery.length;) {
+		for (i; i < normalizedQuery.length && /\s/.test(normalizedQuery[i]); i++) {
+		}
+		if (i >= normalizedQuery.length) {
+			break;
+		}
+
+		if (normalizedQuery[i] === "\"") {
+			i++;
+			const start = i;
+			for (i; i < normalizedQuery.length && normalizedQuery[i] !== "\""; i++) {
+			}
+			const phrase = normalizedQuery.slice(start, i);
+			if (phrase.trim()) {
+				terms.push(phrase);
+			}
+			if (i < normalizedQuery.length && normalizedQuery[i] === "\"") {
+				i++;
+			}
+			continue;
+		}
+
+		const start = i;
+		for (i; i < normalizedQuery.length && !/\s/.test(normalizedQuery[i]) && normalizedQuery[i] !== "\""; i++) {
+		}
+		const token = normalizedQuery.slice(start, i);
+		if (token) {
+			terms.push(token);
+		}
+	}
+
+	return terms;
+}
+
 function searchableFields(ticket: FilterableBoardTicket): string[] {
 	return [
 		ticket.id,
@@ -42,7 +79,7 @@ export function ticketMatchesBoardFilter(ticket: FilterableBoardTicket, query: s
 		return true;
 	}
 
-	const tokens = normalizedQuery.split(/\s+/).filter(Boolean);
+	const tokens = parseQueryTerms(normalizedQuery);
 	if (tokens.length === 0) {
 		return true;
 	}
