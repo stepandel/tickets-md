@@ -69,3 +69,66 @@ test("ticketMatchesBoardFilter ignores surrounding whitespace, collapses interna
 	assert.equal(ticketMatchesBoardFilter(ticket, "missing"), false);
 	assert.equal(ticketMatchesBoardFilter(ticket, "   "), true);
 });
+
+test("ticketMatchesBoardFilter supports quoted phrases as contiguous substrings", () => {
+	const ticket = {
+		id: "TIC-153",
+		title: "Add board-level ticket filter",
+		priority: "High",
+		project: "PRJ-002",
+		labels: ["customer"],
+	};
+
+	assert.equal(ticketMatchesBoardFilter(ticket, "\"board-level ticket\""), true);
+	assert.equal(ticketMatchesBoardFilter(ticket, "\"board filter\""), false);
+	assert.equal(ticketMatchesBoardFilter(ticket, "high \"board-level ticket\""), true);
+	assert.equal(ticketMatchesBoardFilter(ticket, "\"board-level ticket\" \"prj-002\""), true);
+	assert.equal(ticketMatchesBoardFilter(ticket, "\"BOARD-LEVEL TICKET\""), true);
+});
+
+test("ticketMatchesBoardFilter treats unterminated quotes as phrase-to-end-of-input", () => {
+	const ticket = {
+		id: "TIC-153",
+		title: "Add board-level ticket filter",
+		priority: "High",
+	};
+
+	assert.equal(ticketMatchesBoardFilter(ticket, "high \"board-level ticket"), true);
+	assert.equal(ticketMatchesBoardFilter(ticket, "high \"board filter"), false);
+});
+
+test("ticketMatchesBoardFilter skips empty and whitespace-only quoted phrases", () => {
+	const ticket = {
+		id: "TIC-153",
+		title: "Add board-level ticket filter",
+		priority: "High",
+	};
+
+	assert.equal(ticketMatchesBoardFilter(ticket, "\"\""), true);
+	assert.equal(ticketMatchesBoardFilter(ticket, "\"   \""), true);
+	assert.equal(ticketMatchesBoardFilter(ticket, "\"\" high"), true);
+});
+
+test("ticketMatchesBoardFilter handles adjacent quoted and bare terms", () => {
+	const ticket = {
+		id: "foobaz",
+		title: "bar baz",
+		labels: ["qux"],
+	};
+
+	assert.equal(ticketMatchesBoardFilter(ticket, "foo\"bar baz\"qux"), true);
+	assert.equal(ticketMatchesBoardFilter(ticket, "foo\"bar quux\"qux"), false);
+	assert.equal(ticketMatchesBoardFilter(ticket, "zzz\"r b\"qux"), false);
+});
+
+test("ticketMatchesBoardFilter preserves internal phrase whitespace literally", () => {
+	const ticket = {
+		id: "TIC-153",
+		title: "Alpha beta gamma",
+		labels: ["a  b"],
+	};
+
+	assert.equal(ticketMatchesBoardFilter(ticket, "\"alpha beta\""), true);
+	assert.equal(ticketMatchesBoardFilter(ticket, "\"alpha  beta\""), false);
+	assert.equal(ticketMatchesBoardFilter(ticket, "\"a  b\""), true);
+});

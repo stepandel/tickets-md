@@ -21,10 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Obsidian board view now has a filter input in its header that
   narrows visible cards by ticket id, title, priority, project,
   labels, stage, agent status, and linked ticket ids. Queries are
-  case-insensitive, tokenized on whitespace, and require every token
-  to match somewhere across those fields. The query is persisted per
-  board leaf across reopen/reload, and empty stages render a
-  "No matching tickets" hint while a filter is active.
+  case-insensitive and tokenized on whitespace, with `"double quoted"`
+  phrases matched as a single term so a title or label fragment that
+  contains spaces can be filtered on directly. Every token must match
+  somewhere across those fields. The query is persisted per board
+  leaf across reopen/reload, and empty stages render a "No matching
+  tickets" hint while a filter is active.
 - `tickets crons stop <name>` terminates an active cron agent PTY
   session through the running watcher, marking the run `failed` with
   a `terminated by user` error. The Obsidian agents view exposes the
