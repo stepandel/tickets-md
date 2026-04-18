@@ -835,6 +835,12 @@ class BoardView extends ItemView {
 
 	private render() {
 		const container = this.contentEl;
+		const existingSearchInput = container.querySelector(".tb-header-search");
+		const restoreFilterFocus =
+			existingSearchInput instanceof HTMLInputElement &&
+			document.activeElement === existingSearchInput;
+		const restoreSelectionStart = restoreFilterFocus ? existingSearchInput.selectionStart : null;
+		const restoreSelectionEnd = restoreFilterFocus ? existingSearchInput.selectionEnd : null;
 		container.empty();
 		container.addClass("tb-view");
 
@@ -876,6 +882,12 @@ class BoardView extends ItemView {
 			this.renderBoard();
 			this.queueSaveLayout();
 		});
+		if (restoreFilterFocus) {
+			searchInput.focus();
+			if (restoreSelectionStart !== null && restoreSelectionEnd !== null) {
+				searchInput.setSelectionRange(restoreSelectionStart, restoreSelectionEnd);
+			}
+		}
 
 		const headerActions = header.createDiv({ cls: "tb-header-actions" });
 		const refreshBtn = headerActions.createEl("button", {
@@ -1812,6 +1824,7 @@ class BoardView extends ItemView {
 		if (this.saveLayoutTimer !== null) {
 			window.clearTimeout(this.saveLayoutTimer);
 			this.saveLayoutTimer = null;
+			this.app.workspace.requestSaveLayout();
 		}
 	}
 }
