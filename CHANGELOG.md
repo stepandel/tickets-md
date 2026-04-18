@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `tickets watch` now detects when a configured stage directory is
+  removed, renamed, or recreated on the filesystem without a matching
+  `stages:` edit. The watcher drops the watch and clears the cached
+  stage config when the directory disappears, and re-adds the watch,
+  reloads `.stage.yml`, and re-seeds its known tickets when the
+  directory reappears — no config edit or restart required.
 - `tickets watch` now reconciles the set of watched stage directories
   when `stages:` is edited in `.tickets/config.yml`. Newly added
   stages are created with a default `.stage.yml` and start being

@@ -529,6 +529,13 @@ is likewise reconciled on the next debounce: new stage directories
 are created (with a default `.stage.yml`) and start being watched,
 and removed stages stop being watched. No restart is required.
 
+Direct filesystem changes to a configured stage directory (a `mv` or
+`rm -rf` of the directory itself, or recreating it) are detected the
+same way: the watcher drops the watch and clears the cached stage
+config when the directory disappears, and re-adds the watch, reloads
+`.stage.yml`, and re-seeds its known tickets when the directory
+reappears. No config edit or restart is required.
+
 ### Pausing the watcher
 
 Use `tickets watch pause` to temporarily stop the watcher from
