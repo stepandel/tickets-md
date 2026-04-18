@@ -287,14 +287,17 @@ setup steps.
 | Command                                 | What it does                                       |
 | --------------------------------------- | -------------------------------------------------- |
 | `tickets init`                          | Create `.tickets/config.yml` + stage folders       |
-| `tickets new <title...> [--priority P] [--project ID] [--parent ID] [--blocked-by ID...] [--blocks ID...] [--related ID...] [--body MD]` | Create a ticket in the default stage |
+| `tickets new <title...> [--priority P] [--project ID] [--parent ID] [--blocked-by ID...] [--blocks ID...] [--related ID...] [--label L...] [--body MD]` | Create a ticket in the default stage |
 | `tickets projects <subcommand>`         | Create, list, show, update, assign, and delete projects |
 | `tickets list [--stage X] [--project P] [--archived]`| List tickets, grouped by stage (alias: `ls`)       |
+| `tickets labels [--on <id>]`            | List configured labels, or the labels on a ticket  |
 | `tickets archive <id> [--from <stage>] [--older-than D] [--dry-run]` | Move a ticket, or older tickets from a stage, into the configured archive stage |
 | `tickets show <id>`                     | Print a ticket's contents                          |
 | `tickets move <id> <stage>`             | Move a ticket to another stage (alias: `mv`)       |
 | `tickets edit <id>`                     | Open the ticket file in your editor                |
 | `tickets set <id> <field> <value...>`   | Update a scalar field (`priority`, `project`, `title`) |
+| `tickets label <id> <label...>`         | Add one or more configured labels to a ticket      |
+| `tickets unlabel <id> <label...>`       | Remove one or more labels from a ticket            |
 | `tickets rm <id> [--force]`             | Delete a ticket                                    |
 | `tickets link <a> <b> [--blocks\|--parent]`       | Link two tickets (related, blocks, or parent/child) |
 | `tickets unlink <a> <b> [--blocks\|--parent]`     | Remove a link                                      |
