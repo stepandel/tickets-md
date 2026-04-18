@@ -22,6 +22,7 @@ import { normalizeBoardFilterQuery, ticketMatchesBoardFilter } from "./board-fil
 import { readBoardViewState } from "./board-view-state";
 import { planDiffCommand, resolveDefaultBranch } from "./diff";
 import { formatForceRerunDescription } from "./force-rerun";
+import { formatStopCronDescription } from "./stop-cron";
 import { orderedPriorityNames, PriorityConfig, priorityBadgeStyle } from "./priority";
 import { visibleStages } from "./visible-stages";
 import {
@@ -2542,8 +2543,10 @@ class AgentsView extends ItemView {
 		if (!Platform.isMobile && lastRun && cronHasLiveSession(lastRun)) {
 			menu.addItem((item) =>
 				item.setTitle("Stop session").setIcon("square").onClick(async () => {
-					await stopCronAgent(this.app, cron.config.name);
-					await this.refresh();
+					new ConfirmStopCronSessionModal(this.app, cron.config.name, lastRun, async () => {
+						await stopCronAgent(this.app, cron.config.name);
+						await this.refresh();
+					}).open();
 				}),
 			);
 			menu.addItem((item) =>
@@ -3371,6 +3374,47 @@ class ConfirmForceRerunModal extends Modal {
 
 		new Setting(contentEl).addButton((btn) =>
 			btn.setButtonText("Force re-run").setWarning().onClick(async () => {
+				await this.onConfirm();
+				this.close();
+			}),
+		).addButton((btn) =>
+			btn.setButtonText("Cancel").onClick(() => this.close()),
+		);
+	}
+
+	onClose() {
+		this.contentEl.empty();
+	}
+}
+
+class ConfirmStopCronSessionModal extends Modal {
+	private readonly name: string;
+	private readonly run: Pick<AgentRun, "run_id" | "session"> | null | undefined;
+	private readonly onConfirm: () => Promise<void>;
+
+	constructor(
+		app: import("obsidian").App,
+		name: string,
+		run: Pick<AgentRun, "run_id" | "session"> | null | undefined,
+		onConfirm: () => Promise<void>,
+	) {
+		super(app);
+		this.name = name;
+		this.run = run;
+		this.onConfirm = onConfirm;
+	}
+
+	onOpen() {
+		const { contentEl } = this;
+		this.modalEl.addClass("tb-confirm-delete-modal");
+
+		contentEl.createEl("h3", { text: "Stop cron session" });
+		contentEl.createEl("p", {
+			text: formatStopCronDescription(this.name, this.run),
+		});
+
+		new Setting(contentEl).addButton((btn) =>
+			btn.setButtonText("Stop session").setWarning().onClick(async () => {
 				await this.onConfirm();
 				this.close();
 			}),
