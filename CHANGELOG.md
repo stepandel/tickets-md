@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `tickets labels create <name>` adds a configured label to
+  `.tickets/config.yml` with the default chip color `#6b7280`, so the
+  CLI no longer has to edit the config file by hand before assigning a
+  new label. Creation rejects empty names, the reserved label `none`,
+  and case-insensitive duplicates by reporting the existing configured
+  key. `tickets label` and `tickets new --label` remain strict and
+  still fail on unknown labels instead of creating them implicitly.
 - `tickets watch` now detects when a configured stage directory is
   removed, renamed, or recreated on the filesystem without a matching
   `stages:` edit. The watcher drops the watch and clears the cached
