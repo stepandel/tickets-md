@@ -31,6 +31,7 @@ import {
 	summarizeWatchPause,
 	WatchPauseStatus,
 } from "./watch-pause";
+import { loadWatchStateSnapshot } from "./watch-state";
 import {
 	ACTIVE_AGENT_STATUSES,
 	canReplayTerminal,
@@ -724,7 +725,12 @@ class BoardView extends ItemView {
 	private agentStages: Set<string> = new Set();
 	private previewLeaf: WorkspaceLeaf | null = null;
 	private boardEl: HTMLElement | null = null;
+	private watchControlsEl: HTMLElement | null = null;
 	private saveLayoutTimer: number | null = null;
+	private watchPauseStatus: WatchPauseStatus | null = null;
+	private watchPauseError: string | null = null;
+	private watchServerPort: number | null = null;
+	private watchPauseBusy = false;
 
 	// Touch drag state
 	private dragTicketPath: string | null = null;
@@ -761,7 +767,11 @@ class BoardView extends ItemView {
 	}
 
 	async onOpen() {
+		await this.refreshWatchPauseState();
 		await this.refresh();
+		this.registerInterval(window.setInterval(() => {
+			void this.pollWatchPauseState();
+		}, 5000));
 
 		// Re-render when files change (created, deleted, renamed, modified)
 		this.registerEvent(this.app.vault.on("create", () => this.refresh()));
@@ -833,6 +843,16 @@ class BoardView extends ItemView {
 		this.render();
 	}
 
+	private async refreshWatchPauseState() {
+		const snapshot = await loadWatchStateSnapshot(
+			() => readServerFile(this.app),
+			readWatchPauseStatus,
+		);
+		this.watchPauseStatus = snapshot.status;
+		this.watchPauseError = snapshot.error;
+		this.watchServerPort = snapshot.port;
+	}
+
 	private render() {
 		const container = this.contentEl;
 		container.empty();
@@ -878,6 +898,8 @@ class BoardView extends ItemView {
 		});
 
 		const headerActions = header.createDiv({ cls: "tb-header-actions" });
+		this.watchControlsEl = headerActions.createDiv({ cls: "tb-watch-controls" });
+		this.renderWatchPauseControls();
 		const refreshBtn = headerActions.createEl("button", {
 			cls: "tb-header-btn",
 			attr: { "aria-label": "Refresh board" },
@@ -920,6 +942,37 @@ class BoardView extends ItemView {
 
 		this.boardEl = container.createDiv({ cls: "tb-board" });
 		this.renderBoard();
+	}
+
+	private renderWatchPauseControls() {
+		if (!this.watchControlsEl) {
+			return;
+		}
+		this.watchControlsEl.empty();
+
+		const watchSummary = summarizeWatchPause(this.watchPauseStatus, this.watchPauseError ?? undefined);
+		const watchPill = this.watchControlsEl.createEl("span", {
+			text: watchSummary.label,
+			cls: `tb-watch-pill tb-watch-pill-${watchSummary.kind}`,
+		});
+		watchPill.setAttribute("title", watchSummary.detail);
+
+		const watchButton = this.watchControlsEl.createEl("button", {
+			text: this.watchPauseBusy ? "Working..." : watchSummary.actionLabel,
+			cls: "tb-header-btn tb-watch-toggle-btn",
+			attr: {
+				"aria-label": watchSummary.detail,
+			},
+		});
+		watchButton.disabled = watchSummary.actionDisabled || this.watchPauseBusy;
+		watchButton.addEventListener("click", () => {
+			void this.toggleWatchPause();
+		});
+	}
+
+	private async pollWatchPauseState() {
+		await this.refreshWatchPauseState();
+		this.renderWatchPauseControls();
 	}
 
 	private renderBoard() {
@@ -1022,6 +1075,46 @@ class BoardView extends ItemView {
 			this.saveLayoutTimer = null;
 			this.app.workspace.requestSaveLayout();
 		}, 250);
+	}
+
+	private async toggleWatchPause() {
+		if (this.watchPauseBusy || this.watchServerPort == null) {
+			return;
+		}
+		if (this.watchPauseStatus?.paused) {
+			await this.runWatchPauseAction(async () => resumeWatch(this.watchServerPort!));
+			return;
+		}
+		new TextInputModal(
+			this.app,
+			"Pause watcher",
+			"Optional reason",
+			"",
+			async (reason) => {
+				await this.runWatchPauseAction(async () => pauseWatch(this.watchServerPort!, reason), true);
+			},
+			true,
+		).open();
+	}
+
+	private async runWatchPauseAction(action: () => Promise<WatchPauseStatus>, refreshAfter = false) {
+		this.watchPauseBusy = true;
+		this.renderWatchPauseControls();
+		try {
+			this.watchPauseStatus = await action();
+			this.watchPauseError = null;
+			if (refreshAfter) {
+				await this.refreshWatchPauseState();
+				return;
+			}
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			this.watchPauseError = message;
+			new Notice(message);
+		} finally {
+			this.watchPauseBusy = false;
+			this.renderWatchPauseControls();
+		}
 	}
 
 	private renderCard(parent: HTMLElement, ticket: Ticket) {
@@ -2187,20 +2280,13 @@ class AgentsView extends ItemView {
 			return;
 		}
 
-		const serverInfo = await readServerFile(this.app);
-		this.watchServerPort = serverInfo?.port ?? null;
-		if (!serverInfo) {
-			this.watchPauseStatus = null;
-			this.watchPauseError = "offline";
-		} else {
-			try {
-				this.watchPauseStatus = await readWatchPauseStatus(serverInfo.port);
-				this.watchPauseError = null;
-			} catch (error) {
-				this.watchPauseStatus = null;
-				this.watchPauseError = error instanceof Error ? error.message : String(error);
-			}
-		}
+		const snapshot = await loadWatchStateSnapshot(
+			() => readServerFile(this.app),
+			readWatchPauseStatus,
+		);
+		this.watchPauseStatus = snapshot.status;
+		this.watchPauseError = snapshot.error;
+		this.watchServerPort = snapshot.port;
 
 		const all = await loadTickets(this.app, config.stages);
 		this.tickets = all

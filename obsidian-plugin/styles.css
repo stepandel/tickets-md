@@ -48,6 +48,12 @@
 	flex: 0 0 auto;
 }
 
+.tb-watch-controls {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+}
+
 .tb-header-search {
 	flex: 1 1 220px;
 	min-width: 180px;
