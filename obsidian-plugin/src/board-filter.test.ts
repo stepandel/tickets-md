@@ -57,7 +57,6 @@ test("ticketMatchesBoardFilter requires every query token to match some field", 
 	assert.equal(ticketMatchesBoardFilter(ticket, "high missing"), false);
 	assert.equal(ticketMatchesBoardFilter(ticket, "tic-138 archive"), false);
 });
-
 test("ticketMatchesBoardFilter ignores surrounding whitespace, collapses internal spaces, and rejects misses", () => {
 	const ticket = {
 		id: "TIC-133",
