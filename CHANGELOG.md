@@ -13,8 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   watched; removed stages stop being watched. The change is applied
   on the next config-reload debounce, so no restart is required.
 - The Obsidian board view now has a filter input in its header that
-  narrows visible cards to tickets whose id or title matches the
-  query (case-insensitive, multi-word). The query is persisted per
+  narrows visible cards by ticket id, title, priority, project,
+  stage, agent status, and linked ticket ids. Queries are
+  case-insensitive, tokenized on whitespace, and require every token
+  to match somewhere across those fields. The query is persisted per
   board leaf across reopen/reload, and empty stages render a
   "No matching tickets" hint while a filter is active.
 - `tickets crons stop <name>` terminates an active cron agent PTY
