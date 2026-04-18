@@ -43,7 +43,7 @@ to avoid racing a live agent spawn.`,
 			if opts.orphansOnly && opts.stagesOnly {
 				return fmt.Errorf("--orphans-only and --stages-only are mutually exclusive")
 			}
-			s, err := openStore()
+			s, err := openStoreAuto(cmd)
 			if err != nil {
 				return err
 			}

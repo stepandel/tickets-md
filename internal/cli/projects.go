@@ -35,7 +35,7 @@ func newProjectsNewCmd() *cobra.Command {
 		Short: "Create a new project",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := openStore()
+			s, err := openStoreAuto(cmd)
 			if err != nil {
 				return err
 			}
@@ -55,7 +55,7 @@ func newProjectsListCmd() *cobra.Command {
 		Aliases: []string{"ls"},
 		Short:   "List projects",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := openStore()
+			s, err := openStoreAuto(cmd)
 			if err != nil {
 				return err
 			}
@@ -88,7 +88,7 @@ func newProjectsShowCmd() *cobra.Command {
 		Short: "Print a project's contents",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := openStore()
+			s, err := openStoreAuto(cmd)
 			if err != nil {
 				return err
 			}
@@ -118,7 +118,7 @@ func newProjectsRmCmd() *cobra.Command {
 		Short: "Delete a project",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := openStore()
+			s, err := openStoreAuto(cmd)
 			if err != nil {
 				return err
 			}
@@ -161,7 +161,7 @@ Supported fields: status, title.
 Pass "-" as the value to clear a field.`,
 		Args: cobra.MinimumNArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := openStore()
+			s, err := openStoreAuto(cmd)
 			if err != nil {
 				return err
 			}
@@ -204,7 +204,7 @@ func newProjectsAssignCmd() *cobra.Command {
 		Short: "Assign a ticket to a project",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := openStore()
+			s, err := openStoreAuto(cmd)
 			if err != nil {
 				return err
 			}
@@ -232,7 +232,7 @@ func newProjectsUnassignCmd() *cobra.Command {
 		Short: "Remove a ticket's project assignment",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := openStore()
+			s, err := openStoreAuto(cmd)
 			if err != nil {
 				return err
 			}

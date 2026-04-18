@@ -48,6 +48,8 @@ Create a .stage.yml in any stage directory to configure an agent:
     prompt: |
       Read the ticket at {{path}} and implement what it describes.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// watch is intentionally not auto-resolved to the main store:
+			// one daemon must own its terminal server, fsnotify watches, and PTYs.
 			s, err := openStore()
 			if err != nil {
 				return err

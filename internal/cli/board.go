@@ -26,7 +26,7 @@ func newBoardCmd() *cobra.Command {
 		Aliases: []string{"tui"},
 		Short:   "Interactive kanban board (TUI)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := openStore()
+			s, err := openStoreAuto(cmd)
 			if err != nil {
 				return err
 			}

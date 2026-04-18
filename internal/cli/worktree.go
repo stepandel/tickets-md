@@ -32,7 +32,7 @@ func newWorktreeListCmd() *cobra.Command {
 		Aliases: []string{"ls"},
 		Short:   "List active worktrees",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := openStore()
+			s, err := openStoreAuto(cmd)
 			if err != nil {
 				return err
 			}
@@ -62,7 +62,7 @@ func newWorktreeOpenCmd() *cobra.Command {
 		Short: "Open a ticket's worktree in your editor/IDE",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := openStore()
+			s, err := openStoreAuto(cmd)
 			if err != nil {
 				return err
 			}
@@ -90,7 +90,7 @@ func newWorktreeCleanCmd() *cobra.Command {
 		Use:   "clean [ticket-id...]",
 		Short: "Remove worktrees (specific IDs or --all)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := openStore()
+			s, err := openStoreAuto(cmd)
 			if err != nil {
 				return err
 			}

@@ -92,7 +92,7 @@ func newNewCmd() *cobra.Command {
 		Short: "Create a new ticket in the default stage",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := openStore()
+			s, err := openStoreAuto(cmd)
 			if err != nil {
 				return err
 			}

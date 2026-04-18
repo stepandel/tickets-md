@@ -18,7 +18,7 @@ func newListCmd() *cobra.Command {
 		Aliases: []string{"ls"},
 		Short:   "List tickets, grouped by stage",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := openStore()
+			s, err := openStoreAuto(cmd)
 			if err != nil {
 				return err
 			}

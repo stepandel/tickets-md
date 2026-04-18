@@ -18,7 +18,7 @@ creates a directional "blocked_by" link: <source> blocks <target>.
 With --parent it creates a parent/child link: <source> is a child of <target>.`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := openStore()
+			s, err := openStoreAuto(cmd)
 			if err != nil {
 				return err
 			}
@@ -62,7 +62,7 @@ func newUnlinkCmd() *cobra.Command {
 		Short: "Remove a link between two tickets",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := openStore()
+			s, err := openStoreAuto(cmd)
 			if err != nil {
 				return err
 			}

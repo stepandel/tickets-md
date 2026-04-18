@@ -25,7 +25,7 @@ non-terminal runs. Use --all to include completed and failed runs,
 and --history to expand to one row per run instead of just the
 latest per ticket.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := openStore()
+			s, err := openStoreAuto(cmd)
 			if err != nil {
 				return err
 			}
@@ -78,7 +78,7 @@ not produce a plan — either the agent wasn't in plan mode, or it
 has no integration registered that can locate plan files.`,
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := openStore()
+			s, err := openStoreAuto(cmd)
 			if err != nil {
 				return err
 			}
@@ -127,7 +127,7 @@ With just a ticket id, prints the latest run. Pass an explicit run id
 (e.g. "002-execute") to inspect an earlier run.`,
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := openStore()
+			s, err := openStoreAuto(cmd)
 			if err != nil {
 				return err
 			}

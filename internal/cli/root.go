@@ -5,6 +5,8 @@
 package cli
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 
 	"github.com/stepandel/tickets-md/internal/ticket"
@@ -71,4 +73,19 @@ Move tickets between stages by renaming the file across folders.`,
 // It centralizes the "did you forget to run init?" error message.
 func openStore() (*ticket.Store, error) {
 	return openStoreAt(globalFlags.root)
+}
+
+func openStoreAuto(cmd *cobra.Command) (*ticket.Store, error) {
+	root, redirected, err := resolveStoreRoot(globalFlags.root)
+	if err != nil {
+		return nil, err
+	}
+	s, err := openStoreAt(root)
+	if err != nil {
+		return nil, err
+	}
+	if redirected {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Using main repo ticket store at %s\n", s.Root)
+	}
+	return s, nil
 }

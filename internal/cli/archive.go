@@ -52,7 +52,7 @@ Bulk mode (--from) archives tickets whose updated_at is older than --older-than 
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := openStore()
+			s, err := openStoreAuto(cmd)
 			if err != nil {
 				return err
 			}

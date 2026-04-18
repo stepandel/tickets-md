@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Every `tickets` subcommand except `tickets watch` now auto-detects
+  the main repo ticket store when invoked from a linked git worktree,
+  unless `-C` was passed explicitly. Ticket mutations (`move`, `edit`,
+  `set`, `label`, `rm`, `archive`, `new`, `followup`, `run`), reads
+  (`show`, `list`, `board`, `doctor`), and agent-state commands
+  (`agents`, `crons`, `projects`, `link`, `cleanup`, `watch pause`,
+  `worktree …`) all operate on the main repo store from either
+  location. `tickets watch` is deliberately excluded so the daemon
+  keeps owning its `.tickets/.terminal-server` socket, fsnotify
+  watches, and PTYs in the main repo.
 - `tickets watch` now detects when a configured stage directory is
   removed, renamed, or recreated on the filesystem without a matching
   `stages:` edit. The watcher drops the watch and clears the cached

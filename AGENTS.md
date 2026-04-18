@@ -174,11 +174,13 @@ make install
   says.
 - When moving tickets between stages, prefer the CLI (`tickets move
   <id> <stage>`) instead of raw `mv`. From a linked worktree,
-  `tickets move` auto-detects the main repo store unless you passed
-  `-C` explicitly, so the same command works in either location. It
-  preserves the store-level invariant that stage changes go through
-  `ticket.Store.Move` and avoids repeated per-file `mv` approval
-  churn.
+  every command except `tickets watch` auto-detects the main repo
+  store unless you passed `-C` explicitly, so the same ticket and
+  agent-state commands work in either location. `tickets watch` must
+  run in the main repo because it owns the `.tickets/.terminal-server`
+  file that the Obsidian plugin connects to. Stage changes still go
+  through `ticket.Store.Move`, which avoids repeated per-file `mv`
+  approval churn.
 
 ## Agent integrations
 
