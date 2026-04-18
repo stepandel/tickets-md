@@ -83,6 +83,7 @@ func newNewCmd() *cobra.Command {
 	var project string
 	var parent string
 	var body string
+	var labels []string
 	var blockedBy []string
 	var blocks []string
 	var related []string
@@ -97,6 +98,10 @@ func newNewCmd() *cobra.Command {
 			}
 			title := strings.Join(args, " ")
 			rels, err := validateNewRelations(s, parent, blockedBy, blocks, related)
+			if err != nil {
+				return err
+			}
+			resolvedLabels, err := resolveConfiguredLabels(s.Config, labels)
 			if err != nil {
 				return err
 			}
@@ -118,6 +123,10 @@ func newNewCmd() *cobra.Command {
 					return err
 				}
 				t.Project = project
+				scalarChanged = true
+			}
+			if len(resolvedLabels) > 0 {
+				t.Labels = append([]string(nil), resolvedLabels...)
 				scalarChanged = true
 			}
 			if scalarChanged {
@@ -152,6 +161,9 @@ func newNewCmd() *cobra.Command {
 			if project != "" {
 				extras = append(extras, "project: "+project)
 			}
+			if len(resolvedLabels) > 0 {
+				extras = append(extras, "labels: "+renderLabels(resolvedLabels))
+			}
 			if rels.parent != "" {
 				extras = append(extras, "parent: "+rels.parent)
 			}
@@ -174,6 +186,7 @@ func newNewCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&body, "body", "b", "", "set the ticket body markdown")
 	cmd.Flags().StringVarP(&priority, "priority", "p", "", "set ticket priority (e.g. low, medium, high, critical)")
+	cmd.Flags().StringSliceVar(&labels, "label", nil, "set one or more configured labels")
 	cmd.Flags().StringVar(&project, "project", "", "set the ticket's project ID")
 	cmd.Flags().StringVar(&parent, "parent", "", "set the new ticket's parent ticket ID")
 	cmd.Flags().StringSliceVar(&blockedBy, "blocked-by", nil, "set one or more blocking ticket IDs")

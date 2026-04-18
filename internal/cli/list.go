@@ -76,6 +76,13 @@ func printStage(stage string, tickets []ticket.Ticket) {
 	if len(tickets) == 0 {
 		return
 	}
+	showLabels := false
+	for _, t := range tickets {
+		if len(t.Labels) > 0 {
+			showLabels = true
+			break
+		}
+	}
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	for _, t := range tickets {
 		priority := t.Priority
@@ -85,6 +92,11 @@ func printStage(stage string, tickets []ticket.Ticket) {
 		links := ""
 		if n := t.LinkCount(); n > 0 {
 			links = fmt.Sprintf("[%d links]", n)
+		}
+		if showLabels {
+			labels := renderLabelsOrNone(t.Labels)
+			fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\n", t.ID, priority, labels, links, t.Title)
+			continue
 		}
 		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\n", t.ID, priority, links, t.Title)
 	}

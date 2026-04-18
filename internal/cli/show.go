@@ -30,6 +30,9 @@ func newShowCmd() *cobra.Command {
 			if t.Priority != "" {
 				fmt.Printf("# Priority: %s\n", t.Priority)
 			}
+			if len(t.Labels) > 0 {
+				fmt.Printf("# Labels: %s\n", renderLabels(t.Labels))
+			}
 			if t.Project != "" {
 				if p, err := s.GetProject(t.Project); err == nil {
 					fmt.Printf("# Project: %s — %s\n", p.ID, p.Title)

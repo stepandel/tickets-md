@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/stepandel/tickets-md/internal/config"
 	"github.com/stepandel/tickets-md/internal/ticket"
 )
 
@@ -47,6 +48,87 @@ func (m *boardModel) applyPriorityChoice(ov overlay) {
 	} else {
 		t.Priority = choice
 	}
+	if err := m.store.Save(t); err != nil {
+		m.err = err
+		return
+	}
+	m.err = m.reload()
+}
+
+// --- labels ---
+
+func (m *boardModel) startSetLabels() {
+	t, ok := m.selectedTicket()
+	if !ok {
+		return
+	}
+	m.overlay = newPicker("Labels for "+t.ID, configuredAndUnconfiguredLabels(m.store.Config, t.Labels))
+	m.overlayKind = "labels"
+}
+
+func (m *boardModel) applyLabelChoice(ov overlay) {
+	p, ok := ov.(*pickerOverlay)
+	if !ok || p.choice == nil {
+		return
+	}
+	if _, ok := p.choice.value.(createLabelSentinel); ok {
+		m.overlay = newTextInput("Create label")
+		m.overlayKind = "create-label"
+		return
+	}
+	label, _ := p.choice.value.(string)
+	t, ok := m.selectedTicket()
+	if !ok {
+		return
+	}
+	if ticketHasLabel(t, label) {
+		removeTicketLabels(&t, []string{normalizeLabelName(label)})
+	} else {
+		addTicketLabels(&t, []string{label})
+	}
+	if err := m.store.Save(t); err != nil {
+		m.err = err
+		return
+	}
+	m.err = m.reload()
+}
+
+func (m *boardModel) applyCreateLabel(ov overlay) {
+	input, ok := ov.(*textInputOverlay)
+	if !ok {
+		return
+	}
+	name := strings.TrimSpace(input.value)
+	normalized := normalizeLabelName(name)
+	if normalized == "" {
+		m.overlay = newNotice("error", "label name is required")
+		return
+	}
+	if normalized == "none" {
+		m.overlay = newNotice("error", `label "none" is reserved`)
+		return
+	}
+	if key, ok := canonicalConfiguredLabel(m.store.Config, name); ok {
+		m.assignBoardLabel(key)
+		return
+	}
+	if m.store.Config.Labels == nil {
+		m.store.Config.Labels = map[string]config.LabelConfig{}
+	}
+	m.store.Config.Labels[name] = config.LabelConfig{Color: defaultNewLabelColor}
+	if err := config.Save(m.store.Root, m.store.Config); err != nil {
+		m.err = err
+		return
+	}
+	m.assignBoardLabel(name)
+}
+
+func (m *boardModel) assignBoardLabel(label string) {
+	t, ok := m.selectedTicket()
+	if !ok {
+		return
+	}
+	addTicketLabels(&t, []string{label})
 	if err := m.store.Save(t); err != nil {
 		m.err = err
 		return

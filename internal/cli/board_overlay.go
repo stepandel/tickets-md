@@ -231,3 +231,54 @@ func (n *noticeOverlay) view(width int) string {
 		Width(boxWidth).
 		Render(body)
 }
+
+// --- textInputOverlay: single-line text entry ---
+
+type textInputOverlay struct {
+	title string
+	value string
+}
+
+func newTextInput(title string) *textInputOverlay {
+	return &textInputOverlay{title: title}
+}
+
+func (t *textInputOverlay) update(msg tea.KeyPressMsg) (overlay, tea.Cmd, overlayResult) {
+	switch msg.String() {
+	case "esc", "ctrl+c":
+		return t, nil, overlayCancel
+	case "enter":
+		return t, nil, overlayDone
+	case "backspace":
+		if len(t.value) > 0 {
+			t.value = t.value[:len(t.value)-1]
+		}
+	case "space":
+		t.value += " "
+	default:
+		s := msg.String()
+		runes := []rune(s)
+		if len(runes) == 1 && runes[0] >= 32 {
+			t.value += s
+		}
+	}
+	return t, nil, overlayContinue
+}
+
+func (t *textInputOverlay) view(width int) string {
+	boxWidth := width - 8
+	if boxWidth < 30 {
+		boxWidth = 30
+	}
+	if boxWidth > 60 {
+		boxWidth = 60
+	}
+	hint := lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render("enter: save • esc: cancel")
+	body := t.title + "\n> " + t.value + "█\n" + hint
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("#5A56E0")).
+		Padding(0, 1).
+		Width(boxWidth).
+		Render(body)
+}

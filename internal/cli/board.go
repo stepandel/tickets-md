@@ -241,6 +241,8 @@ func (m *boardModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.inputTitle = ""
 	case "p":
 		m.startSetPriority()
+	case "t":
+		m.startSetLabels()
 	case "D":
 		m.startDelete()
 	case "y":
@@ -282,6 +284,10 @@ func (m *boardModel) finishOverlay() {
 	switch kind {
 	case "priority":
 		m.applyPriorityChoice(ov)
+	case "labels":
+		m.applyLabelChoice(ov)
+	case "create-label":
+		m.applyCreateLabel(ov)
 	case "delete":
 		m.applyDeleteConfirm()
 	case "force-rerun":
@@ -692,6 +698,7 @@ func (m *boardModel) renderHelp() string {
 	}
 	act := []helpBind{
 		{"p", "prio"},
+		{"t", "labels"},
 		{"D", "del"},
 		{"y", "copy"},
 		{"R/b/s", "link"},
