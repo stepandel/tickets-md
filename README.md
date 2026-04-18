@@ -717,38 +717,6 @@ case-insensitive and trims whitespace). Config load fails with a
 Omit `priorities:` to keep the current default styling and picker
 ordering.
 
-## Labels
-
-Tickets can also carry an optional `labels` list. Labels are configured
-in `.tickets/config.yml`, shown as chips on the Obsidian board, and can
-be added or removed from a ticket from the card context menu:
-
-```yaml
-labels:
-  backend:
-    color: "#0f766e"
-    order: 0
-  customer:
-    color: "#dc2626"
-    bold: true
-```
-
-Like priorities, label names are matched case-insensitively for config
-lookup, `order` controls picker ordering, and `none` is reserved so it
-cannot be used as a label key. Unlike priorities, there are no built-in
-defaults: omitting `labels:` simply means there are no configured label
-choices yet.
-
-In the Obsidian board, right-click a card to:
-
-- `Add label` from configured labels not already on the ticket
-- `Remove label` from any label already on the ticket
-- `Create label` to add a new config entry and immediately assign it
-
-If a ticket already contains a label that is not currently configured,
-the board still renders it with fallback styling and lets you remove it
-without editing YAML by hand.
-
 ## Create-Time Metadata
 
 `tickets new` can also set existing ticket metadata up front instead of
@@ -949,7 +917,6 @@ Each ticket is a markdown file with a YAML frontmatter block:
 id: TIC-001
 title: Fix login bug on Safari
 priority: high
-labels: [backend, customer]
 related: [TIC-004]
 blocked_by: [TIC-002]
 blocks: [TIC-009]

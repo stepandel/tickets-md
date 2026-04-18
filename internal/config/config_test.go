@@ -329,30 +329,6 @@ func TestSaveLoadPriorities(t *testing.T) {
 	}
 }
 
-func TestSaveLoadLabels(t *testing.T) {
-	root := t.TempDir()
-	want := Config{
-		Prefix:        "TIC",
-		ProjectPrefix: "PRJ",
-		Stages:        []string{"backlog", "done"},
-		Labels: map[string]LabelConfig{
-			"backend": {Color: "#0f766e", Order: intPtr(1)},
-			"UX":      {Color: "#7c3aed", Bold: true},
-		},
-	}
-
-	if err := Save(root, want); err != nil {
-		t.Fatalf("Save: %v", err)
-	}
-	got, err := Load(root)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if !reflect.DeepEqual(got.Labels, want.Labels) {
-		t.Fatalf("Labels = %#v, want %#v", got.Labels, want.Labels)
-	}
-}
-
 func TestValidate(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -482,40 +458,6 @@ func TestValidate(t *testing.T) {
 				"P1": {Color: "#0f0", Order: intPtr(1)},
 			},
 		}, wantErr: `order 1 conflicts`},
-		{name: "empty label color", cfg: Config{
-			Prefix:        "TIC",
-			ProjectPrefix: "PRJ",
-			Stages:        []string{"backlog", "done"},
-			Labels: map[string]LabelConfig{
-				"backend": {Color: ""},
-			},
-		}, wantErr: `label "backend" color is empty`},
-		{name: "reserved none label", cfg: Config{
-			Prefix:        "TIC",
-			ProjectPrefix: "PRJ",
-			Stages:        []string{"backlog", "done"},
-			Labels: map[string]LabelConfig{
-				"none": {Color: "#888"},
-			},
-		}, wantErr: `label "none" is reserved`},
-		{name: "duplicate normalized label", cfg: Config{
-			Prefix:        "TIC",
-			ProjectPrefix: "PRJ",
-			Stages:        []string{"backlog", "done"},
-			Labels: map[string]LabelConfig{
-				"Backend":   {Color: "#123"},
-				" backend ": {Color: "#456"},
-			},
-		}, wantErr: `duplicate label`},
-		{name: "duplicate label order", cfg: Config{
-			Prefix:        "TIC",
-			ProjectPrefix: "PRJ",
-			Stages:        []string{"backlog", "done"},
-			Labels: map[string]LabelConfig{
-				"backend": {Color: "#123", Order: intPtr(1)},
-				"ops":     {Color: "#456", Order: intPtr(1)},
-			},
-		}, wantErr: `label "ops" order 1 conflicts`},
 		{name: "invalid worktree dir absolute", cfg: Config{
 			Prefix:        "TIC",
 			ProjectPrefix: "PRJ",
@@ -713,76 +655,6 @@ func TestOrderedPriorityNames(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := tt.cfg.OrderedPriorityNames(); !reflect.DeepEqual(got, tt.want) {
 				t.Fatalf("OrderedPriorityNames() = %#v, want %#v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestLookupLabel(t *testing.T) {
-	cfg := Config{
-		Labels: map[string]LabelConfig{
-			"Backend": {Color: "#123456", Bold: true},
-			"Ops":     {Color: "#654321"},
-		},
-	}
-
-	got, ok := cfg.LookupLabel(" backend ")
-	if !ok {
-		t.Fatal("LookupLabel() = missing, want configured Backend")
-	}
-	if got.Color != "#123456" || !got.Bold {
-		t.Fatalf("LookupLabel() = %#v, want configured Backend styling", got)
-	}
-
-	got, ok = cfg.LookupLabel("OPS")
-	if !ok {
-		t.Fatal("LookupLabel() = missing, want configured Ops")
-	}
-	if got.Color != "#654321" || got.Bold {
-		t.Fatalf("LookupLabel() = %#v, want configured Ops styling", got)
-	}
-
-	if _, ok := cfg.LookupLabel("missing"); ok {
-		t.Fatal("LookupLabel() unexpectedly found missing label")
-	}
-}
-
-func TestOrderedLabelNames(t *testing.T) {
-	tests := []struct {
-		name string
-		cfg  Config
-		want []string
-	}{
-		{
-			name: "nil labels stay nil",
-			cfg:  Config{},
-			want: nil,
-		},
-		{
-			name: "ordered before unordered labels",
-			cfg: Config{
-				Labels: map[string]LabelConfig{
-					"ops":      {Color: "#333", Order: intPtr(10)},
-					"backend":  {Color: "#111", Order: intPtr(0)},
-					"z-last":   {Color: "#999"},
-					"Frontend": {Color: "#aaa"},
-				},
-			},
-			want: []string{"backend", "ops", "Frontend", "z-last"},
-		},
-		{
-			name: "empty labels map stays empty",
-			cfg: Config{
-				Labels: map[string]LabelConfig{},
-			},
-			want: []string{},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.cfg.OrderedLabelNames(); !reflect.DeepEqual(got, tt.want) {
-				t.Fatalf("OrderedLabelNames() = %#v, want %#v", got, tt.want)
 			}
 		})
 	}

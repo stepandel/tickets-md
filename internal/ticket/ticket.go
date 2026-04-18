@@ -23,7 +23,6 @@ type Ticket struct {
 	ID        string    `yaml:"id"`
 	Title     string    `yaml:"title"`
 	Priority  string    `yaml:"priority,omitempty"`
-	Labels    []string  `yaml:"labels,omitempty"`
 	Project   string    `yaml:"project,omitempty"`
 	Related   []string  `yaml:"related,omitempty"`
 	BlockedBy []string  `yaml:"blocked_by,omitempty"`

@@ -4,7 +4,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -737,41 +736,6 @@ func TestProjectRoundTripsThroughSaveLoad(t *testing.T) {
 	}
 	if got.Project != p.ID {
 		t.Fatalf("Project = %q, want %q", got.Project, p.ID)
-	}
-}
-
-func TestLabelsRoundTripThroughSaveLoad(t *testing.T) {
-	s := newTestStore(t)
-	a, err := s.Create("Alpha")
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	a.Labels = []string{"backend", "customer"}
-	if err := s.Save(a); err != nil {
-		t.Fatalf("Save: %v", err)
-	}
-
-	got, err := s.Get(a.ID)
-	if err != nil {
-		t.Fatalf("Get: %v", err)
-	}
-	if !reflect.DeepEqual(got.Labels, a.Labels) {
-		t.Fatalf("Labels = %#v, want %#v", got.Labels, a.Labels)
-	}
-}
-
-func TestLabelsOmittedWhenEmpty(t *testing.T) {
-	s := newTestStore(t)
-	a, err := s.Create("Alpha")
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	data, err := os.ReadFile(a.Path)
-	if err != nil {
-		t.Fatalf("ReadFile: %v", err)
-	}
-	if strings.Contains(string(data), "labels:") {
-		t.Errorf("expected no labels key in frontmatter for ticket without labels, got:\n%s", string(data))
 	}
 }
 

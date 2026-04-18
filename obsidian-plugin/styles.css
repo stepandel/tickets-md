@@ -367,22 +367,6 @@
 	color: var(--text-muted);
 }
 
-.tb-label-chip {
-	font-size: 0.6em;
-	font-weight: 600;
-	padding: 1px 6px;
-	border-radius: 999px;
-	max-width: 12em;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
-.tb-label-chip-dangling {
-	outline: 1px dashed color-mix(in srgb, currentColor 45%, transparent);
-	outline-offset: 0;
-}
-
 /* ── Stage Config Modal ─────────────────────────────────────────────── */
 
 .tb-config-modal {

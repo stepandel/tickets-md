@@ -22,7 +22,6 @@ import { normalizeBoardFilterQuery, ticketMatchesBoardFilter } from "./board-fil
 import { readBoardViewState } from "./board-view-state";
 import { planDiffCommand, resolveDefaultBranch } from "./diff";
 import { formatForceRerunDescription } from "./force-rerun";
-import { labelBadgeStyle, LabelConfig, normalizeLabelName, orderedLabelNames } from "./labels";
 import { orderedPriorityNames, PriorityConfig, priorityBadgeStyle } from "./priority";
 import { visibleStages } from "./visible-stages";
 import {
@@ -51,7 +50,6 @@ interface TicketsConfig {
 	default_agent?: { command: string; args?: string[] };
 	cron_agents?: CronAgentConfig[];
 	priorities?: Record<string, PriorityConfig>;
-	labels?: Record<string, LabelConfig>;
 	worktrees?: {
 		dir?: string;
 		branch_prefix?: string;
@@ -62,7 +60,6 @@ interface Ticket {
 	id: string;
 	title: string;
 	priority?: string;
-	labels?: string[];
 	project?: string;
 	related?: string[];
 	blocked_by?: string[];
@@ -179,17 +176,6 @@ function applyPriorityBadgeStyle(
 	el.style.fontWeight = style.fontWeight;
 }
 
-function applyLabelBadgeStyle(
-	el: HTMLElement,
-	labels: Record<string, LabelConfig> | undefined,
-	name?: string,
-): void {
-	const style = labelBadgeStyle(labels, name);
-	el.style.backgroundColor = style.backgroundColor;
-	el.style.color = style.color;
-	el.style.fontWeight = style.fontWeight;
-}
-
 function worktreeDir(config: TicketsConfig | null): string {
 	return config?.worktrees?.dir || ".worktrees";
 }
@@ -252,7 +238,6 @@ async function parseTicket(app: import("obsidian").App, file: TFile, stage: stri
 			id: fm.id ?? file.basename,
 			title: fm.title ?? file.basename,
 			priority: fm.priority,
-			labels: Array.isArray(fm.labels) ? fm.labels.filter((value): value is string => typeof value === "string") : undefined,
 			project: fm.project,
 			related: fm.related,
 			blocked_by: fm.blocked_by,
@@ -1247,24 +1232,6 @@ class BoardView extends ItemView {
 				},
 			});
 		}
-
-		for (const label of ticket.labels ?? []) {
-			const configured = Object.keys(this.config?.labels ?? {}).find(
-				(name) => normalizeLabelName(name) === normalizeLabelName(label),
-			);
-			const labelEl = footer.createEl("span", {
-				text: label,
-				cls: "tb-label-chip",
-				attr: {
-					"aria-label": configured ? `Label ${label}` : `Label ${label} (unconfigured)`,
-					title: configured ? `Label ${label}` : `${label} (unconfigured)`,
-				},
-			});
-			if (!configured) {
-				labelEl.addClass("tb-label-chip-dangling");
-			}
-			applyLabelBadgeStyle(labelEl, this.config?.labels, label);
-		}
 	}
 
 	// ── Touch Drag Helpers ────────────────────────────────────────────
@@ -1368,100 +1335,6 @@ class BoardView extends ItemView {
 					async (choice) => {
 						await this.updateTicketFrontmatter(ticket.file, (fm) => {
 							fm.priority = choice === "none" ? undefined : choice;
-						});
-					},
-				).open();
-			}),
-		);
-		const assignedLabels = ticket.labels ?? [];
-		const configuredLabels = orderedLabelNames(this.config?.labels);
-		const availableLabels = configuredLabels.filter((label) =>
-			!assignedLabels.some((assigned) => normalizeLabelName(assigned) === normalizeLabelName(label)),
-		);
-		if (availableLabels.length > 0) {
-			menu.addItem((item) =>
-				item.setTitle("Add label").setIcon("plus").onClick(() => {
-					new FuzzyPickerModal<string>(
-						this.app,
-						availableLabels,
-						(label) => label,
-						async (label) => {
-							await this.updateTicketFrontmatter(ticket.file, (fm) => {
-								const next = Array.isArray(fm.labels) ? [...fm.labels] : [];
-								next.push(label);
-								fm.labels = next;
-							});
-						},
-					).open();
-				}),
-			);
-		}
-		if (assignedLabels.length > 0) {
-			menu.addItem((item) =>
-				item.setTitle("Remove label").setIcon("minus-circle").onClick(() => {
-					new FuzzyPickerModal<string>(
-						this.app,
-						assignedLabels,
-						(label) => label,
-						async (label) => {
-							await this.updateTicketFrontmatter(ticket.file, (fm) => {
-								const next = Array.isArray(fm.labels)
-									? fm.labels.filter((value: unknown) => typeof value === "string" && normalizeLabelName(value) !== normalizeLabelName(label))
-									: [];
-								fm.labels = next;
-							});
-						},
-					).open();
-				}),
-			);
-		}
-		menu.addItem((item) =>
-			item.setTitle("Create label").setIcon("tag").onClick(() => {
-				new TextInputModal(
-					this.app,
-					"New label",
-					"backend",
-					"",
-					async (rawName) => {
-						const labelName = rawName.trim();
-						const normalized = normalizeLabelName(labelName);
-						if (!normalized) {
-							new Notice("Label name is required");
-							return;
-						}
-						if (normalized === "none") {
-							new Notice("\"none\" is reserved");
-							return;
-						}
-
-						const config = (await loadConfig(this.app)) ?? this.config;
-						if (!config) {
-							new Notice("Could not load config.yml");
-							return;
-						}
-						config.labels ??= {};
-
-						let assignedName = labelName;
-						for (const existingName of Object.keys(config.labels)) {
-							if (normalizeLabelName(existingName) === normalized) {
-								assignedName = existingName;
-								await this.updateTicketFrontmatter(ticket.file, (fm) => {
-									const next = Array.isArray(fm.labels) ? [...fm.labels] : [];
-									if (!next.some((value: unknown) => typeof value === "string" && normalizeLabelName(value) === normalized)) {
-										next.push(existingName);
-									}
-									fm.labels = next;
-								});
-								return;
-							}
-						}
-
-						config.labels[labelName] = { color: "#6b7280" };
-						await this.saveConfig(config);
-						await this.updateTicketFrontmatter(ticket.file, (fm) => {
-							const next = Array.isArray(fm.labels) ? [...fm.labels] : [];
-							next.push(assignedName);
-							fm.labels = next;
 						});
 					},
 				).open();

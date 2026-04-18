@@ -3,7 +3,6 @@ export interface FilterableBoardTicket {
 	title: string;
 	priority?: string;
 	project?: string;
-	labels?: string[];
 }
 
 export function normalizeBoardFilterQuery(query: string): string {
@@ -16,6 +15,6 @@ export function ticketMatchesBoardFilter(ticket: FilterableBoardTicket, query: s
 		return true;
 	}
 
-	return [ticket.id, ticket.title, ticket.priority ?? "", ticket.project ?? "", ...(ticket.labels ?? [])]
+	return [ticket.id, ticket.title, ticket.priority ?? "", ticket.project ?? ""]
 		.some((value) => value.toLowerCase().includes(normalizedQuery));
 }
