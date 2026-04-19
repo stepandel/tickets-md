@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.14] - 2026-04-19
+
+- Promoted `golang.org/x/sys` to a direct module dependency so the new
+  Windows watcher-lock implementation matches `go mod tidy -diff` in
+  release CI and GoReleaser can publish the cross-platform build.
+
 ## [0.1.13] - 2026-04-19
 
 - `tickets watch` now builds correctly on Windows again. The watcher
