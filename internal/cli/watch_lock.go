@@ -2,13 +2,11 @@ package cli
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/stepandel/tickets-md/internal/config"
@@ -70,10 +68,10 @@ func acquireWatcherLock(root string) (*watcherLock, error) {
 		return nil, err
 	}
 
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	if err := lockFile(f); err != nil {
 		info, _ := readWatcherLockInfo(f)
 		f.Close()
-		if errors.Is(err, syscall.EWOULDBLOCK) {
+		if isDuplicateLockError(err) {
 			return nil, &duplicateWatcherError{path: path, info: info}
 		}
 		return nil, err
@@ -135,7 +133,7 @@ func (l *watcherLock) Release() error {
 		return nil
 	}
 
-	unlockErr := syscall.Flock(int(l.file.Fd()), syscall.LOCK_UN)
+	unlockErr := unlockFile(l.file)
 	closeErr := l.file.Close()
 	l.file = nil
 

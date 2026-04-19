@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.13] - 2026-04-19
+
+- `tickets watch` now builds correctly on Windows again. The watcher
+  lock now uses OS-specific file-locking primitives instead of
+  Unix-only `syscall.Flock`, so cross-platform release builds no
+  longer fail on the Windows target.
+- Queue-drain PTY tests now wait for killed sessions to fully exit and
+  explicitly shut down follow-on queued runs before tempdir cleanup,
+  fixing a `go test -race` cleanup failure in
+  `TestHandleCreateQueuesWhenStageAtCapacity`.
+
 ## [0.1.12] - 2026-04-19
 
 - `tickets watch resume` now drains queued stage agents immediately

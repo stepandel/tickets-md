@@ -49,6 +49,16 @@ func waitForRunStatus(t *testing.T, root, ticketID string, want agent.Status) ag
 	return agent.AgentStatus{}
 }
 
+func killAndWait(t *testing.T, runner *agent.PTYRunner, session string) {
+	t.Helper()
+	if err := runner.Kill(session); err != nil {
+		t.Fatalf("Kill(%q): %v", session, err)
+	}
+	if _, err := runner.Wait(session); err != nil {
+		t.Fatalf("Wait(%q): %v", session, err)
+	}
+}
+
 func TestSpawnAgentStartFailureMarksRunErrored(t *testing.T) {
 	s := newWatchStore(t)
 	tk, err := s.Create("Alpha")
@@ -358,9 +368,7 @@ func TestRerunStageAgentRefusesActiveSessionWithoutForce(t *testing.T) {
 		t.Fatalf("session = %q, want %q", as.Session, session)
 	}
 
-	if err := runner.Kill(session); err != nil {
-		t.Fatalf("Kill(%q): %v", session, err)
-	}
+	killAndWait(t, runner, session)
 	waitForRunStatus(t, s.Root, tk.ID, agent.StatusFailed)
 }
 
@@ -459,9 +467,7 @@ func TestRerunStageAgentForceReplacesActiveSession(t *testing.T) {
 		t.Fatalf("agent_session = %q, want %q", got.AgentSession, secondSession)
 	}
 
-	if err := runner.Kill(secondSession); err != nil {
-		t.Fatalf("Kill(%q): %v", secondSession, err)
-	}
+	killAndWait(t, runner, secondSession)
 	waitForRunStatus(t, s.Root, tk.ID, agent.StatusFailed)
 }
 
@@ -519,10 +525,18 @@ func TestHandleCreateQueuesWhenStageAtCapacity(t *testing.T) {
 		t.Fatal("queued ticket unexpectedly has an agent run")
 	}
 
-	if err := runner.Kill(session); err != nil {
-		t.Fatalf("Kill(%q): %v", session, err)
-	}
+	killAndWait(t, runner, session)
 	waitForRunStatus(t, s.Root, activeTicket.ID, agent.StatusFailed)
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		as, err := agent.Latest(s.Root, queuedTicket.ID)
+		if err == nil && as.RunID != "" {
+			runner.Shutdown()
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }
 
 func TestDrainQueuedStageStartsOldestQueuedTicketWhenCapacityFrees(t *testing.T) {
@@ -579,9 +593,7 @@ func TestDrainQueuedStageStartsOldestQueuedTicketWhenCapacityFrees(t *testing.T)
 		t.Fatalf("Save second queued: %v", err)
 	}
 
-	if err := runner.Kill(session); err != nil {
-		t.Fatalf("Kill(%q): %v", session, err)
-	}
+	killAndWait(t, runner, session)
 	waitForRunStatus(t, s.Root, activeTicket.ID, agent.StatusFailed)
 
 	deadline := time.Now().Add(5 * time.Second)
@@ -614,9 +626,7 @@ func TestDrainQueuedStageStartsOldestQueuedTicketWhenCapacityFrees(t *testing.T)
 		t.Fatal("second queued QueuedAt cleared unexpectedly")
 	}
 
-	if err := runner.Kill(firstRun.Session); err != nil {
-		t.Fatalf("Kill(%q): %v", firstRun.Session, err)
-	}
+	killAndWait(t, runner, firstRun.Session)
 	waitForRunStatus(t, s.Root, firstQueued.ID, agent.StatusFailed)
 }
 
@@ -673,9 +683,7 @@ func TestDrainQueuedStageOnStartupStartsQueuedTicket(t *testing.T) {
 		t.Fatalf("QueuedAt = %v, want cleared", got.QueuedAt)
 	}
 
-	if err := runner.Kill(as.Session); err != nil {
-		t.Fatalf("Kill(%q): %v", as.Session, err)
-	}
+	killAndWait(t, runner, as.Session)
 	waitForRunStatus(t, s.Root, queuedTicket.ID, agent.StatusFailed)
 }
 
@@ -833,13 +841,9 @@ func TestDrainAllStagesAdmitsQueuedAfterResume(t *testing.T) {
 		t.Fatalf("done QueuedAt = %v, want cleared", refreshedDone.QueuedAt)
 	}
 
-	if err := runner.Kill(executeRun.Session); err != nil {
-		t.Fatalf("Kill(%q): %v", executeRun.Session, err)
-	}
+	killAndWait(t, runner, executeRun.Session)
 	waitForRunStatus(t, s.Root, executeTicket.ID, agent.StatusFailed)
-	if err := runner.Kill(doneRun.Session); err != nil {
-		t.Fatalf("Kill(%q): %v", doneRun.Session, err)
-	}
+	killAndWait(t, runner, doneRun.Session)
 	waitForRunStatus(t, s.Root, doneTicket.ID, agent.StatusFailed)
 }
 
@@ -887,9 +891,7 @@ func TestRerunStageAgentRefusesWhenStageAtCapacity(t *testing.T) {
 		t.Fatal("blocked rerun unexpectedly created an agent run")
 	}
 
-	if err := runner.Kill(session); err != nil {
-		t.Fatalf("Kill(%q): %v", session, err)
-	}
+	killAndWait(t, runner, session)
 	waitForRunStatus(t, s.Root, activeTicket.ID, agent.StatusFailed)
 }
 
@@ -975,13 +977,9 @@ func TestForceRerunDrainsSupersededOldStageQueue(t *testing.T) {
 		t.Fatalf("queued run id = %q, want 001-execute", queuedRun.RunID)
 	}
 
-	if err := runner.Kill(newSession); err != nil {
-		t.Fatalf("Kill(%q): %v", newSession, err)
-	}
+	killAndWait(t, runner, newSession)
 	waitForRunStatus(t, s.Root, reloadedMoved.ID, agent.StatusFailed)
-	if err := runner.Kill(queuedRun.Session); err != nil {
-		t.Fatalf("Kill(%q): %v", queuedRun.Session, err)
-	}
+	killAndWait(t, runner, queuedRun.Session)
 	waitForRunStatus(t, s.Root, queuedTicket.ID, agent.StatusFailed)
 }
 
@@ -1030,9 +1028,7 @@ func TestMovedTicketActiveRunStillCountsAgainstOldStageCapacity(t *testing.T) {
 		t.Fatalf("rerunStageAgent error = %v, want stage capacity error", err)
 	}
 
-	if err := runner.Kill(session); err != nil {
-		t.Fatalf("Kill(%q): %v", session, err)
-	}
+	killAndWait(t, runner, session)
 	waitForRunStatus(t, s.Root, movedTicket.ID, agent.StatusFailed)
 }
 
@@ -1077,9 +1073,7 @@ func TestRerunStageAgentClearsQueuedAt(t *testing.T) {
 		t.Fatalf("QueuedAt = %v, want cleared after rerun spawn", got.QueuedAt)
 	}
 
-	if err := runner.Kill(session); err != nil {
-		t.Fatalf("Kill(%q): %v", session, err)
-	}
+	killAndWait(t, runner, session)
 	waitForRunStatus(t, s.Root, tk.ID, agent.StatusFailed)
 
 	// After termination, drainQueuedStage runs via waitForSession. With
