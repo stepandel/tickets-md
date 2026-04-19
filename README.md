@@ -292,6 +292,8 @@ setup steps.
 | `tickets list [--stage X] [--project P] [--archived]`| List tickets, grouped by stage (alias: `ls`)       |
 | `tickets labels [--on <id>]`            | List configured labels, or the labels on a ticket  |
 | `tickets labels create <name>`          | Add a configured label with the default chip color |
+| `tickets labels edit <name> [--color C] [--bold\|--no-bold] [--order N\| - ]` | Edit configured label styling fields |
+| `tickets labels rename <old> <new>`    | Change a configured label's casing and rewrite matching ticket labels |
 | `tickets archive <id> [--from <stage>] [--older-than D] [--dry-run]` | Move a ticket, or older tickets from a stage, into the configured archive stage |
 | `tickets show <id>`                     | Print a ticket's contents                          |
 | `tickets move <id> <stage>`             | Move a ticket to another stage (alias: `mv`)       |
@@ -770,6 +772,9 @@ The CLI exposes the same ticket-level workflows:
 tickets labels
 tickets labels --on TIC-001
 tickets labels create backend
+tickets labels edit backend --color '#0f766e' --bold --order 10
+tickets labels edit backend --order -
+tickets labels rename backend Backend
 tickets label TIC-001 backend customer
 tickets unlabel TIC-001 customer
 ```
@@ -780,6 +785,14 @@ CLI can create configured labels explicitly with `tickets labels create`,
 which writes the new config entry using the default chip color `#6b7280`.
 Creation rejects empty names, the reserved label `none`, and
 case-insensitive duplicates by reporting the existing configured key.
+The CLI can also edit configured label fields with `tickets labels edit`:
+`--color` changes the chip color, `--bold` / `--no-bold` toggles bold
+rendering, and `--order` sets picker ordering (`--order -` clears it).
+`tickets labels rename` supports casing-only renames such as `backend`
+to `Backend`, and rewrites matching ticket frontmatter labels to keep
+ticket casing aligned with config.
+Semantic renames across different normalized label names and label
+deletion are intentionally not supported yet.
 Assignment stays strict: `tickets label` and `tickets new --label` still
 fail on unknown labels instead of creating them implicitly. The board's
 `t` action can also create a new configured label on the fly with the

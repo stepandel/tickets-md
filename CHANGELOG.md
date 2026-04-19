@@ -29,6 +29,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and case-insensitive duplicates by reporting the existing configured
   key. `tickets label` and `tickets new --label` remain strict and
   still fail on unknown labels instead of creating them implicitly.
+- `tickets labels edit <name>` now updates configured label styling in
+  `.tickets/config.yml` without hand-editing YAML: `--color`,
+  `--bold` / `--no-bold`, and `--order` (including `--order -` to
+  clear it). `tickets labels rename <old> <new>` supports casing-only
+  renames such as `backend` to `Backend` and rewrites matching ticket
+  labels to keep frontmatter aligned with the configured key. Semantic
+  renames across different normalized names and label deletion remain
+  unsupported.
 - `tickets watch` now detects when a configured stage directory is
   removed, renamed, or recreated on the filesystem without a matching
   `stages:` edit. The watcher drops the watch and clears the cached
