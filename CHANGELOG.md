@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `.stage.yml` gained an optional `agent.max_concurrent` field that
+  caps how many non-terminal agent runs may be active in a stage at
+  once (default `0` = unlimited). When the cap is reached, arriving
+  tickets get a `queued_at` frontmatter timestamp and the watcher
+  admits them in FIFO order as active runs finish or the cap is
+  raised. Rerunning a stage agent clears `queued_at` so a later
+  drain doesn't re-spawn the same ticket, and negative
+  `max_concurrent` values are rejected at load time.
 - Every `tickets` subcommand except `tickets watch` now auto-detects
   the main repo ticket store when invoked from a linked git worktree,
   unless `-C` was passed explicitly. Ticket mutations (`move`, `edit`,

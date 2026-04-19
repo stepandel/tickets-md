@@ -57,6 +57,9 @@ type AgentConfig struct {
 	// BaseBranch is the branch to create the worktree from. Defaults
 	// to HEAD if empty.
 	BaseBranch string `yaml:"base_branch,omitempty"`
+	// MaxConcurrent limits how many non-terminal runs may be active in
+	// this stage at once. Zero means unlimited.
+	MaxConcurrent int `yaml:"max_concurrent,omitempty"`
 }
 
 // HasAgent reports whether this stage is configured to spawn an
@@ -85,6 +88,9 @@ func Load(stageDir string) (Config, error) {
 	if err := yaml.Unmarshal(data, &c); err != nil {
 		return Config{}, fmt.Errorf("parsing %s: %w", p, err)
 	}
+	if c.Agent != nil && c.Agent.MaxConcurrent < 0 {
+		return Config{}, fmt.Errorf("parsing %s: agent.max_concurrent must be >= 0", p)
+	}
 	return c, nil
 }
 
@@ -107,6 +113,7 @@ const defaultStageYML = `# Stage configuration — uncomment to enable an agent 
 #   args: ["--dangerously-skip-permissions"]  # extra flags before the prompt
 #   worktree: true           # isolate work in a git worktree per ticket
 #   base_branch: main        # branch to create worktree from (default: HEAD)
+#   max_concurrent: 1        # limit active agents in this stage (0 = unlimited)
 #   prompt: |                # template with {{path}}, {{id}}, {{title}}, {{stage}}, {{body}}, {{worktree}}, {{links}}
 #     You are working in {{worktree}} on branch tickets/{{id}}.
 #     Read the ticket at {{path}} and implement what it describes.

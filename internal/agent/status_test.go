@@ -170,3 +170,106 @@ func TestSetPlanFileConcurrentUpdates(t *testing.T) {
 		t.Fatalf("PlanFile = %q, want one of the concurrent writes", got.PlanFile)
 	}
 }
+
+func TestActiveCountByStageCountsLatestNonTerminalRuns(t *testing.T) {
+	root := t.TempDir()
+	now := time.Now().UTC().Truncate(time.Second)
+	writeRun := func(as AgentStatus) {
+		t.Helper()
+		if err := os.MkdirAll(RunsDir(root, as.TicketID), 0o755); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
+		if err := Write(root, as); err != nil {
+			t.Fatalf("Write(%s/%s): %v", as.TicketID, as.RunID, err)
+		}
+	}
+
+	writeRun(AgentStatus{
+		TicketID:  "TIC-001",
+		RunID:     "001-execute",
+		Seq:       1,
+		Attempt:   1,
+		Stage:     "execute",
+		Agent:     "claude",
+		Session:   "TIC-001-1",
+		Status:    StatusRunning,
+		SpawnedAt: now,
+		LogFile:   LogPath(root, "TIC-001", "001-execute"),
+	})
+	writeRun(AgentStatus{
+		TicketID:  "TIC-002",
+		RunID:     "001-execute",
+		Seq:       1,
+		Attempt:   1,
+		Stage:     "execute",
+		Agent:     "claude",
+		Session:   "TIC-002-1",
+		Status:    StatusBlocked,
+		SpawnedAt: now.Add(time.Second),
+		LogFile:   LogPath(root, "TIC-002", "001-execute"),
+	})
+	writeRun(AgentStatus{
+		TicketID:  "TIC-003",
+		RunID:     "001-execute",
+		Seq:       1,
+		Attempt:   1,
+		Stage:     "execute",
+		Agent:     "claude",
+		Session:   "TIC-003-1",
+		Status:    StatusDone,
+		SpawnedAt: now.Add(2 * time.Second),
+		LogFile:   LogPath(root, "TIC-003", "001-execute"),
+	})
+	writeRun(AgentStatus{
+		TicketID:  "TIC-004",
+		RunID:     "001-review",
+		Seq:       1,
+		Attempt:   1,
+		Stage:     "review",
+		Agent:     "claude",
+		Session:   "TIC-004-1",
+		Status:    StatusRunning,
+		SpawnedAt: now.Add(3 * time.Second),
+		LogFile:   LogPath(root, "TIC-004", "001-review"),
+	})
+	writeRun(AgentStatus{
+		TicketID:  "TIC-005",
+		RunID:     "001-execute",
+		Seq:       1,
+		Attempt:   1,
+		Stage:     "execute",
+		Agent:     "claude",
+		Session:   "TIC-005-1",
+		Status:    StatusRunning,
+		SpawnedAt: now.Add(4 * time.Second),
+		LogFile:   LogPath(root, "TIC-005", "001-execute"),
+	})
+	writeRun(AgentStatus{
+		TicketID:  "TIC-005",
+		RunID:     "002-execute",
+		Seq:       2,
+		Attempt:   2,
+		Stage:     "execute",
+		Agent:     "claude",
+		Session:   "TIC-005-2",
+		Status:    StatusFailed,
+		SpawnedAt: now.Add(5 * time.Second),
+		LogFile:   LogPath(root, "TIC-005", "002-execute"),
+	})
+
+	got, err := ActiveCountByStage(root, "execute")
+	if err != nil {
+		t.Fatalf("ActiveCountByStage: %v", err)
+	}
+	if got != 2 {
+		t.Fatalf("ActiveCountByStage(execute) = %d, want 2", got)
+	}
+
+	got, err = ActiveCountByStage(root, "review")
+	if err != nil {
+		t.Fatalf("ActiveCountByStage: %v", err)
+	}
+	if got != 1 {
+		t.Fatalf("ActiveCountByStage(review) = %d, want 1", got)
+	}
+}
