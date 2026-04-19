@@ -18,7 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   admits them in FIFO order as active runs finish or the cap is
   raised. Rerunning a stage agent clears `queued_at` so a later
   drain doesn't re-spawn the same ticket, and negative
-  `max_concurrent` values are rejected at load time.
+  `max_concurrent` values are rejected at load time. The Obsidian
+  plugin's Board and Agents views surface queued tickets with a
+  dedicated "queued" badge (and a "Queued <elapsed>" hint in the
+  Agents view) so it's visible when a ticket is waiting on the
+  stage cap rather than actively running.
 - Every `tickets` subcommand except `tickets watch` now auto-detects
   the main repo ticket store when invoked from a linked git worktree,
   unless `-C` was passed explicitly. Ticket mutations (`move`, `edit`,

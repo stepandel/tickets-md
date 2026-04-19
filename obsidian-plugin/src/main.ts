@@ -38,7 +38,10 @@ import {
 	ACTIVE_AGENT_STATUSES,
 	canReplayTerminal,
 	cronHasLiveSession,
+	effectiveAgentStatus,
 	hasLiveTerminal,
+	isQueued,
+	QUEUED_STATUS,
 	ticketRunLogPath,
 } from "./agent-terminal.js";
 
@@ -73,6 +76,7 @@ interface Ticket {
 	children?: string[];
 	created_at?: string;
 	updated_at?: string;
+	queued_at?: string;
 	agent_status?: string;
 	agent_run?: string;
 	agent_session?: string;
@@ -120,6 +124,7 @@ const AGENT_BADGES: Record<string, { icon: string; cls: string }> = {
 	spawned:  { icon: "\u25D0", cls: "tb-agent-spawned" },
 	running:  { icon: "\u25CF", cls: "tb-agent-running" },
 	blocked:  { icon: "\u23F8", cls: "tb-agent-blocked" },
+	queued:   { icon: "\u23F3", cls: "tb-agent-queued" },
 	done:     { icon: "\u2713", cls: "tb-agent-done" },
 	failed:   { icon: "\u2717", cls: "tb-agent-failed" },
 	errored:  { icon: "\u2717", cls: "tb-agent-errored" },
@@ -153,7 +158,7 @@ const CONFIG_PATH = "config.yml";
 const TERMINAL_SERVER_PATH = ".terminal-server";
 const PROJECTS_DIR = "projects";
 
-const AGENTS_VIEW_STATUSES = [...ACTIVE_AGENT_STATUSES, "failed", "errored"];
+const AGENTS_VIEW_STATUSES = new Set([...ACTIVE_AGENT_STATUSES, QUEUED_STATUS, "failed", "errored"]);
 
 // ── Shared helpers ─────────────────────────────────────────────────────
 
@@ -265,6 +270,7 @@ async function parseTicket(app: import("obsidian").App, file: TFile, stage: stri
 			children: fm.children,
 			created_at: fm.created_at,
 			updated_at: fm.updated_at,
+			queued_at: fm.queued_at,
 			agent_status: fm.agent_status,
 			agent_run: fm.agent_run,
 			agent_session: fm.agent_session,
@@ -440,11 +446,12 @@ async function loadLatestCronRun(
 }
 
 function hasActiveAgent(ticket: Ticket): boolean {
-	return !!ticket.agent_status && ACTIVE_AGENT_STATUSES.has(ticket.agent_status);
+	const status = effectiveAgentStatus(ticket);
+	return !!status && ACTIVE_AGENT_STATUSES.has(status);
 }
 
 function canRerunStageAgent(ticket: Ticket): boolean {
-	return !ticket.agent_status || !hasActiveAgent(ticket);
+	return !hasActiveAgent(ticket) && !isQueued(ticket);
 }
 
 async function readServerFile(app: import("obsidian").App): Promise<{ port: number; pid: number } | null> {
@@ -1261,12 +1268,13 @@ class BoardView extends ItemView {
 		const headerLeft = cardHeader.createDiv({ cls: "tb-card-header-left" });
 		headerLeft.createEl("span", { text: ticket.id, cls: "tb-ticket-id" });
 
-		if (ticket.agent_status && AGENT_BADGES[ticket.agent_status]) {
-			const badge = AGENT_BADGES[ticket.agent_status];
+		const status = effectiveAgentStatus(ticket);
+		if (status && AGENT_BADGES[status]) {
+			const badge = AGENT_BADGES[status];
 			headerLeft.createEl("span", {
 				text: badge.icon,
 				cls: `tb-agent-badge ${badge.cls}`,
-				attr: { "aria-label": ticket.agent_status },
+				attr: { "aria-label": status },
 			});
 		}
 
@@ -2433,7 +2441,10 @@ class AgentsView extends ItemView {
 
 		const all = await loadTickets(this.app, config.stages);
 		this.tickets = all
-			.filter((t) => t.agent_status && AGENTS_VIEW_STATUSES.includes(t.agent_status))
+			.filter((t) => {
+				const status = effectiveAgentStatus(t);
+				return !!status && AGENTS_VIEW_STATUSES.has(status);
+			})
 			.sort((a, b) => {
 				const au = a.updated_at ?? "";
 				const bu = b.updated_at ?? "";
@@ -2489,7 +2500,7 @@ class AgentsView extends ItemView {
 		refreshBtn.addEventListener("click", () => this.refresh());
 
 		if (totalCount === 0) {
-			container.createDiv({ cls: "tb-empty", text: "No active agents or cron agents" });
+			container.createDiv({ cls: "tb-empty", text: "No queued, active, or cron agents" });
 			return;
 		}
 
@@ -2585,12 +2596,13 @@ class AgentsView extends ItemView {
 		}
 
 		const left = row.createDiv({ cls: "tb-agent-row-left" });
-		if (ticket.agent_status && AGENT_BADGES[ticket.agent_status]) {
-			const badge = AGENT_BADGES[ticket.agent_status];
+		const status = effectiveAgentStatus(ticket);
+		if (status && AGENT_BADGES[status]) {
+			const badge = AGENT_BADGES[status];
 			left.createEl("span", {
 				text: badge.icon,
 				cls: `tb-agent-badge ${badge.cls}`,
-				attr: { "aria-label": ticket.agent_status },
+				attr: { "aria-label": status },
 			});
 		}
 		left.createEl("span", { text: ticket.id, cls: "tb-ticket-id" });
@@ -2598,7 +2610,12 @@ class AgentsView extends ItemView {
 
 		const right = row.createDiv({ cls: "tb-agent-row-right" });
 		right.createEl("span", { text: ticket.stage, cls: "tb-stage-name" });
-		if (hasLiveTerminal(ticket)) {
+		if (isQueued(ticket)) {
+			right.createEl("span", {
+				text: `Queued ${formatElapsedSince(ticket.queued_at)}`,
+				cls: "tb-agent-session",
+			});
+		} else if (hasLiveTerminal(ticket)) {
 			right.createEl("span", {
 				text: ticket.agent_session,
 				cls: "tb-agent-session",
@@ -3107,12 +3124,13 @@ class ProjectsView extends ItemView {
 				});
 				applyPriorityBadgeStyle(priorityEl, this.config?.priorities, ticket.priority);
 			}
-			if (ticket.agent_status && AGENT_BADGES[ticket.agent_status]) {
-				const badge = AGENT_BADGES[ticket.agent_status];
+			const status = effectiveAgentStatus(ticket);
+			if (status && AGENT_BADGES[status]) {
+				const badge = AGENT_BADGES[status];
 				meta.createEl("span", {
 					text: badge.icon,
 					cls: `tb-agent-badge ${badge.cls}`,
-					attr: { "aria-label": ticket.agent_status },
+					attr: { "aria-label": status },
 				});
 			}
 			row.createEl("div", { text: ticket.title, cls: "tb-project-ticket-title" });

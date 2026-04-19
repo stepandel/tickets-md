@@ -282,6 +282,7 @@
 .tb-agent-spawned { color: #FFD700; }
 .tb-agent-running { color: #00b368; animation: tb-pulse 2s ease-in-out infinite; }
 .tb-agent-blocked { color: #FF8C00; }
+.tb-agent-queued  { color: #4f7cff; }
 .tb-agent-done    { color: #00b368; }
 .tb-agent-failed  { color: #e5534b; }
 .tb-agent-errored { color: #e5534b; }
