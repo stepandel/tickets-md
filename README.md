@@ -415,6 +415,7 @@ agent:
   args: ["--dangerously-skip-permissions"]
   worktree: true              # isolate work in worktrees.dir/<id> on branch worktrees.branch_prefix<id>
   base_branch: main           # branch to create the worktree from (default: HEAD)
+  max_concurrent: 2           # cap on simultaneously-active agents in this stage (0 = unlimited)
   prompt: |
     You are working in {{worktree}} on the ticket branch.
     Read the ticket at {{path}} and implement what it describes.
@@ -431,6 +432,15 @@ agent:
   `.worktrees/<ticket-id>` and `tickets/<ticket-id>`, so concurrent
   agents don't trample one another's changes
 - **base_branch** — the branch the worktree is cut from
+- **max_concurrent** — optional cap on how many non-terminal agent
+  runs may be active in this stage at once. Zero (the default) means
+  unlimited. When the cap is reached, additional tickets that arrive
+  in the stage are queued: their frontmatter gets a `queued_at`
+  timestamp and they're admitted in FIFO order (oldest `queued_at`
+  first, ticket id as tiebreaker) as soon as an active run completes
+  or the cap is raised by editing `.stage.yml`. `tickets agents`
+  continues to show the active runs; queued tickets sit in the stage
+  directory with `queued_at` set until their turn comes up
 - **prompt** — a template string rendered with ticket metadata and
   passed as the final argument
 
@@ -501,9 +511,10 @@ The ticket's frontmatter is also updated with `agent_status`,
 `agent_run`, and `agent_session` so the Obsidian view always reflects
 the latest run without re-reading the YAML.
 
-Multiple agents can run concurrently for different tickets. The
-watcher also picks up manual file moves (`mv`, Finder, git) — it
-watches the filesystem directly, not just the `tickets move` command.
+Multiple agents can run concurrently for different tickets, optionally
+capped per stage via `agent.max_concurrent` (see above). The watcher
+also picks up manual file moves (`mv`, Finder, git) — it watches the
+filesystem directly, not just the `tickets move` command.
 
 The watcher's monitor polls every 5s by default and flips a session
 to `blocked` after 30s of pane silence. Both thresholds are

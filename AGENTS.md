@@ -226,7 +226,12 @@ worse than none — it advertises capability that does not exist.
 
 1. `tickets watch` observes a `Create` event in a stage directory.
 2. If the stage's `.stage.yml` has `agent:`, the watcher calls
-   `agent.NextRun` to pick the next `<seq>-<stage>` run id.
+   `agent.NextRun` to pick the next `<seq>-<stage>` run id. When
+   `agent.max_concurrent` is set and already met, the ticket's
+   `queued_at` frontmatter is stamped and the spawn is deferred;
+   `drainQueuedStage` admits queued tickets in FIFO order (oldest
+   `queued_at` first) as active runs finish, `.stage.yml` is reloaded,
+   or the watcher starts.
 3. A `StatusSpawned` run YAML is written, then the PTY session is
    started (optionally inside a per-ticket worktree).
 4. The monitor (`internal/agent/monitor.go`) polls every 5s by
