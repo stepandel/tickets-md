@@ -1,6 +1,6 @@
 agent:
   command: codex
-  args: ["--full-auto"]
+  args: ["--dangerously-bypass-approvals-and-sandbox"]
   worktree: true
   prompt: |
     You are the execution-stage implementation agent for ticket {{id}}: "{{title}}".
