@@ -215,6 +215,257 @@ func TestLabelsCreateCommandRejectsReservedNone(t *testing.T) {
 	}
 }
 
+func TestLabelsEditCommandUpdatesConfiguredFields(t *testing.T) {
+	s := newCleanupStoreWithConfig(t, config.Config{
+		Prefix:        "TIC",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "execute", "done"},
+		Labels: map[string]config.LabelConfig{
+			"Backend": {Color: "#0f766e", Bold: true, Order: intPtr(3)},
+		},
+	})
+
+	globalFlags.root = s.Root
+	cmd := newLabelsCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"edit", "backend", "--color", "#123456", "--no-bold", "--order", "7"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	cfg, err := config.Load(s.Root)
+	if err != nil {
+		t.Fatalf("Load config: %v", err)
+	}
+	got := cfg.Labels["Backend"]
+	if got.Color != "#123456" || got.Bold || got.Order == nil || *got.Order != 7 {
+		t.Fatalf("label config = %#v", got)
+	}
+	if got := strings.TrimSpace(out.String()); got != `Updated label "Backend"` {
+		t.Fatalf("output = %q", got)
+	}
+}
+
+func TestLabelsEditCommandClearsOrder(t *testing.T) {
+	s := newCleanupStoreWithConfig(t, config.Config{
+		Prefix:        "TIC",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "execute", "done"},
+		Labels: map[string]config.LabelConfig{
+			"Backend": {Color: "#0f766e", Order: intPtr(3)},
+		},
+	})
+
+	globalFlags.root = s.Root
+	cmd := newLabelsCmd()
+	cmd.SetArgs([]string{"edit", "Backend", "--order", "-"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	cfg, err := config.Load(s.Root)
+	if err != nil {
+		t.Fatalf("Load config: %v", err)
+	}
+	if got := cfg.Labels["Backend"].Order; got != nil {
+		t.Fatalf("order = %v, want nil", *got)
+	}
+}
+
+func TestLabelsEditCommandRejectsUnknownLabel(t *testing.T) {
+	s := newCleanupStoreWithConfig(t, config.Config{
+		Prefix:        "TIC",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "execute", "done"},
+	})
+
+	globalFlags.root = s.Root
+	cmd := newLabelsCmd()
+	cmd.SetArgs([]string{"edit", "missing", "--color", "#123456"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), `unknown label "missing"`) {
+		t.Fatalf("Execute() error = %v, want unknown label", err)
+	}
+}
+
+func TestLabelsEditCommandRejectsEmptyColor(t *testing.T) {
+	s := newCleanupStoreWithConfig(t, config.Config{
+		Prefix:        "TIC",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "execute", "done"},
+		Labels: map[string]config.LabelConfig{
+			"Backend": {Color: "#0f766e"},
+		},
+	})
+
+	globalFlags.root = s.Root
+	cmd := newLabelsCmd()
+	cmd.SetArgs([]string{"edit", "Backend", "--color", "   "})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), `label "Backend" color is empty`) {
+		t.Fatalf("Execute() error = %v, want empty color error", err)
+	}
+}
+
+func TestLabelsEditCommandRejectsDuplicateOrder(t *testing.T) {
+	s := newCleanupStoreWithConfig(t, config.Config{
+		Prefix:        "TIC",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "execute", "done"},
+		Labels: map[string]config.LabelConfig{
+			"Backend":  {Color: "#0f766e", Order: intPtr(1)},
+			"Customer": {Color: "#dc2626", Order: intPtr(2)},
+		},
+	})
+
+	globalFlags.root = s.Root
+	cmd := newLabelsCmd()
+	cmd.SetArgs([]string{"edit", "Backend", "--order", "2"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), `label "Customer" order 2 conflicts with "Backend"`) {
+		t.Fatalf("Execute() error = %v, want duplicate order error", err)
+	}
+}
+
+func TestLabelsEditCommandRejectsConflictingBoldFlags(t *testing.T) {
+	s := newCleanupStoreWithConfig(t, config.Config{
+		Prefix:        "TIC",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "execute", "done"},
+		Labels: map[string]config.LabelConfig{
+			"Backend": {Color: "#0f766e"},
+		},
+	})
+
+	globalFlags.root = s.Root
+	cmd := newLabelsCmd()
+	cmd.SetArgs([]string{"edit", "Backend", "--bold", "--no-bold"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), `--bold and --no-bold are mutually exclusive`) {
+		t.Fatalf("Execute() error = %v, want conflicting bold flags error", err)
+	}
+}
+
+func TestLabelsRenameCommandRewritesTicketLabels(t *testing.T) {
+	s := newCleanupStoreWithConfig(t, config.Config{
+		Prefix:        "TIC",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "execute", "done"},
+		Labels: map[string]config.LabelConfig{
+			"backend": {Color: "#0f766e", Bold: true, Order: intPtr(1)},
+		},
+	})
+	first, err := s.Create("First")
+	if err != nil {
+		t.Fatalf("Create first: %v", err)
+	}
+	first.Labels = []string{"backend"}
+	if err := s.Save(first); err != nil {
+		t.Fatalf("Save first: %v", err)
+	}
+	second, err := s.Create("Second")
+	if err != nil {
+		t.Fatalf("Create second: %v", err)
+	}
+	second.Labels = []string{"BACKEND", "Legacy"}
+	if err := s.Save(second); err != nil {
+		t.Fatalf("Save second: %v", err)
+	}
+
+	globalFlags.root = s.Root
+	cmd := newLabelsCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"rename", "backend", "Backend"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	cfg, err := config.Load(s.Root)
+	if err != nil {
+		t.Fatalf("Load config: %v", err)
+	}
+	if _, ok := cfg.Labels["backend"]; ok {
+		t.Fatal("expected old label key to be removed")
+	}
+	if _, ok := cfg.Labels["Backend"]; !ok {
+		t.Fatal("expected renamed label key in config")
+	}
+
+	first, err = s.Get(first.ID)
+	if err != nil {
+		t.Fatalf("Get first: %v", err)
+	}
+	if strings.Join(first.Labels, ",") != "Backend" {
+		t.Fatalf("first labels = %#v", first.Labels)
+	}
+	second, err = s.Get(second.ID)
+	if err != nil {
+		t.Fatalf("Get second: %v", err)
+	}
+	if strings.Join(second.Labels, ",") != "Backend,Legacy" {
+		t.Fatalf("second labels = %#v", second.Labels)
+	}
+	if got := strings.TrimSpace(out.String()); got != `Renamed label "backend" to "Backend" and updated 2 ticket(s)` {
+		t.Fatalf("output = %q", got)
+	}
+}
+
+func TestLabelsRenameCommandRejectsUnknownLabel(t *testing.T) {
+	s := newCleanupStoreWithConfig(t, config.Config{
+		Prefix:        "TIC",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "execute", "done"},
+	})
+
+	globalFlags.root = s.Root
+	cmd := newLabelsCmd()
+	cmd.SetArgs([]string{"rename", "missing", "Missing"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), `unknown label "missing"`) {
+		t.Fatalf("Execute() error = %v, want unknown label", err)
+	}
+}
+
+func TestLabelsRenameCommandRejectsSemanticRename(t *testing.T) {
+	s := newCleanupStoreWithConfig(t, config.Config{
+		Prefix:        "TIC",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "execute", "done"},
+		Labels: map[string]config.LabelConfig{
+			"Backend": {Color: "#0f766e"},
+		},
+	})
+
+	globalFlags.root = s.Root
+	cmd := newLabelsCmd()
+	cmd.SetArgs([]string{"rename", "Backend", "Platform"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), `label rename only supports casing changes`) {
+		t.Fatalf("Execute() error = %v, want casing-only error", err)
+	}
+}
+
+func TestLabelsRenameCommandRejectsExactCaseNoop(t *testing.T) {
+	s := newCleanupStoreWithConfig(t, config.Config{
+		Prefix:        "TIC",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "execute", "done"},
+		Labels: map[string]config.LabelConfig{
+			"Backend": {Color: "#0f766e"},
+		},
+	})
+
+	globalFlags.root = s.Root
+	cmd := newLabelsCmd()
+	cmd.SetArgs([]string{"rename", "Backend", "Backend"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), `label "Backend" already uses that casing`) {
+		t.Fatalf("Execute() error = %v, want noop error", err)
+	}
+}
+
 func TestLabelsCommandOnTicketShowsUnknownLabelsAndNone(t *testing.T) {
 	s := newCleanupStoreWithConfig(t, config.Config{
 		Prefix:        "TIC",

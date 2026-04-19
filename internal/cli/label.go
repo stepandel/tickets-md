@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -104,7 +105,7 @@ func newLabelsCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&onTicket, "on", "", "show the labels currently assigned to a ticket")
-	cmd.AddCommand(newLabelsCreateCmd())
+	cmd.AddCommand(newLabelsCreateCmd(), newLabelsEditCmd(), newLabelsRenameCmd())
 	return cmd
 }
 
@@ -140,6 +141,151 @@ func newLabelsCreateCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func newLabelsEditCmd() *cobra.Command {
+	var color string
+	var bold bool
+	var noBold bool
+	var order string
+
+	cmd := &cobra.Command{
+		Use:   "edit <name>",
+		Short: "Edit a configured label",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if cmd.Flags().Changed("bold") && cmd.Flags().Changed("no-bold") {
+				return fmt.Errorf("--bold and --no-bold are mutually exclusive")
+			}
+
+			s, err := openStore()
+			if err != nil {
+				return err
+			}
+			key, ok := canonicalConfiguredLabel(s.Config, args[0])
+			if !ok {
+				return fmt.Errorf("unknown label %q", normalizeLabelName(args[0]))
+			}
+			labelCfg := s.Config.Labels[key]
+
+			if cmd.Flags().Changed("color") {
+				labelCfg.Color = color
+			}
+			if cmd.Flags().Changed("bold") {
+				labelCfg.Bold = true
+			}
+			if cmd.Flags().Changed("no-bold") {
+				labelCfg.Bold = false
+			}
+			if cmd.Flags().Changed("order") {
+				value, err := parseOptionalOrder(order)
+				if err != nil {
+					return err
+				}
+				labelCfg.Order = value
+			}
+
+			s.Config.Labels[key] = labelCfg
+			if err := config.Save(s.Root, s.Config); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Updated label %q\n", key)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&color, "color", "", "set the label chip color")
+	cmd.Flags().BoolVar(&bold, "bold", false, "render the label in bold")
+	cmd.Flags().BoolVar(&noBold, "no-bold", false, "disable bold label rendering")
+	cmd.Flags().StringVar(&order, "order", "", "set picker order, or - to clear it")
+	return cmd
+}
+
+func newLabelsRenameCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "rename <old> <new>",
+		Short: "Rename a configured label by changing its casing",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := openStore()
+			if err != nil {
+				return err
+			}
+			oldKey, ok := canonicalConfiguredLabel(s.Config, args[0])
+			if !ok {
+				return fmt.Errorf("unknown label %q", normalizeLabelName(args[0]))
+			}
+
+			newKey := strings.TrimSpace(args[1])
+			if newKey == "" {
+				return fmt.Errorf("label name is required")
+			}
+			if normalizeLabelName(newKey) != normalizeLabelName(oldKey) {
+				return fmt.Errorf("label rename only supports casing changes; %q and %q are different labels", oldKey, newKey)
+			}
+			if oldKey == newKey {
+				return fmt.Errorf("label %q already uses that casing", oldKey)
+			}
+
+			labelCfg := s.Config.Labels[oldKey]
+			delete(s.Config.Labels, oldKey)
+			if s.Config.Labels == nil {
+				s.Config.Labels = map[string]config.LabelConfig{}
+			}
+			s.Config.Labels[newKey] = labelCfg
+			if err := config.Save(s.Root, s.Config); err != nil {
+				return err
+			}
+
+			grouped, err := s.ListAll()
+			if err != nil {
+				return err
+			}
+			updated := 0
+			for _, stage := range s.Config.Stages {
+				for _, tk := range grouped[stage] {
+					if !rewriteTicketLabel(&tk, oldKey, newKey) {
+						continue
+					}
+					if err := s.Save(tk); err != nil {
+						return err
+					}
+					updated++
+				}
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "Renamed label %q to %q and updated %d ticket(s)\n", oldKey, newKey, updated)
+			return nil
+		},
+	}
+}
+
+func parseOptionalOrder(raw string) (*int, error) {
+	value := strings.TrimSpace(raw)
+	if value == "-" {
+		return nil, nil
+	}
+	n, err := strconv.Atoi(value)
+	if err != nil {
+		return nil, fmt.Errorf("invalid --order %q", raw)
+	}
+	return &n, nil
+}
+
+func rewriteTicketLabel(t *ticket.Ticket, oldLabel, newLabel string) bool {
+	updated := false
+	oldNormalized := normalizeLabelName(oldLabel)
+	for i, label := range t.Labels {
+		if normalizeLabelName(label) != oldNormalized {
+			continue
+		}
+		if label == newLabel {
+			continue
+		}
+		t.Labels[i] = newLabel
+		updated = true
+	}
+	return updated
 }
 
 func normalizeLabelName(name string) string {
