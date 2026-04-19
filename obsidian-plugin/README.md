@@ -115,6 +115,10 @@ temporarily skipped until macOS CI coverage is restored.
 - Cron agents from `config.yml` in the Agents view, including edit,
   enable/disable, run now (desktop), stop an active session, and
   last-log actions.
+- Queued stage-agent tickets (waiting on `agent.max_concurrent`)
+  surface in the Board and Agents views with a "queued" badge and,
+  in the Agents view, a "Queued <elapsed>" hint derived from the
+  ticket's `queued_at` frontmatter.
 - Watcher pause/resume toggle in the Board and Agents view headers,
   with a status pill that reflects whether `tickets watch` is active,
   paused, offline, or unreachable. Pausing prompts for an optional
