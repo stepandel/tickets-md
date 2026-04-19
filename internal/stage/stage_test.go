@@ -25,6 +25,7 @@ func TestLoadAgentConfig(t *testing.T) {
   prompt: "do the thing"
   worktree: true
   base_branch: main
+  max_concurrent: 2
 `)
 	if err := os.WriteFile(filepath.Join(dir, ".stage.yml"), data, 0o644); err != nil {
 		t.Fatal(err)
@@ -44,6 +45,9 @@ func TestLoadAgentConfig(t *testing.T) {
 	}
 	if c.Agent.BaseBranch != "main" {
 		t.Errorf("BaseBranch = %q, want main", c.Agent.BaseBranch)
+	}
+	if c.Agent.MaxConcurrent != 2 {
+		t.Errorf("MaxConcurrent = %d, want 2", c.Agent.MaxConcurrent)
 	}
 }
 
@@ -117,6 +121,21 @@ func TestLoadRejectsInvalidYAML(t *testing.T) {
 	}
 	if _, err := Load(dir); err == nil {
 		t.Error("Load should reject malformed YAML")
+	}
+}
+
+func TestLoadRejectsNegativeMaxConcurrent(t *testing.T) {
+	dir := t.TempDir()
+	data := []byte(`agent:
+  command: claude
+  prompt: "do the thing"
+  max_concurrent: -1
+`)
+	if err := os.WriteFile(filepath.Join(dir, ".stage.yml"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(dir); err == nil {
+		t.Fatal("Load should reject negative max_concurrent")
 	}
 }
 

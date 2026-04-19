@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stepandel/tickets-md/internal/config"
 )
@@ -757,6 +758,27 @@ func TestLabelsRoundTripThroughSaveLoad(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got.Labels, a.Labels) {
 		t.Fatalf("Labels = %#v, want %#v", got.Labels, a.Labels)
+	}
+}
+
+func TestQueuedAtRoundTripThroughSaveLoad(t *testing.T) {
+	s := newTestStore(t)
+	a, err := s.Create("Alpha")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	queuedAt := time.Date(2026, time.April, 18, 12, 34, 56, 0, time.UTC)
+	a.QueuedAt = queuedAt
+	if err := s.Save(a); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	got, err := s.Get(a.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if !got.QueuedAt.Equal(queuedAt) {
+		t.Fatalf("QueuedAt = %v, want %v", got.QueuedAt, queuedAt)
 	}
 }
 

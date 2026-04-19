@@ -328,6 +328,22 @@ func List(root string) ([]AgentStatus, error) {
 	return statuses, nil
 }
 
+// ActiveCountByStage returns how many tickets currently have a latest
+// non-terminal run in the given stage.
+func ActiveCountByStage(root, stage string) (int, error) {
+	statuses, err := List(root)
+	if err != nil {
+		return 0, err
+	}
+	count := 0
+	for _, as := range statuses {
+		if as.Stage == stage && !as.Status.IsTerminal() {
+			count++
+		}
+	}
+	return count, nil
+}
+
 // ListAll returns every run across every ticket, sorted by spawn time.
 // Used by the monitor for reconciliation.
 func ListAll(root string) ([]AgentStatus, error) {

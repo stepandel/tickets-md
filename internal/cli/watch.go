@@ -3,11 +3,13 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -381,6 +383,7 @@ func runWatch(s *ticket.Store) error {
 	// capture missed it. Self-heals runs that finished under an
 	// older binary or raced transcript flushes.
 	backfillPlanFiles(s.Root)
+	stageConfigs := newStageConfigStore()
 	// PTY sessions don't survive watcher restart (child gets SIGHUP),
 	// so alive is always empty here. Kept for structural correctness.
 	for _, as := range alive {
@@ -397,7 +400,7 @@ func runWatch(s *ticket.Store) error {
 		}
 		log.Printf("%s/%s: re-attaching to running agent (session %s)", as.TicketID, as.RunID, as.Session)
 		mon.TrackRun(as.TicketID, as.RunID)
-		go waitForSession(t, as.RunID, as.Agent, as.Session, s.Root, mon, runner)
+		go waitForSession(t, as.RunID, as.Agent, as.Session, s.Root, stageConfigs, mon, runner)
 	}
 
 	go mon.Run(ctx)
@@ -407,7 +410,6 @@ func runWatch(s *ticket.Store) error {
 	// It's what lets us distinguish a real cross-directory move (which
 	// empties the source path) from an agent's atomic in-place rewrite
 	// (rename(tmp, foo.md), which leaves the path alive at a new inode).
-	stageConfigs := newStageConfigStore()
 	knownPaths := make(map[string]bool)
 	for _, st := range s.Config.Stages {
 		dir := filepath.Join(s.Root, config.ConfigDir, st)
@@ -432,6 +434,9 @@ func runWatch(s *ticket.Store) error {
 		}
 
 		log.Printf("watching %s/ (%s)", st, stageConfigStatus(sc))
+	}
+	for _, st := range s.Config.Stages {
+		drainQueuedStage(s, stageConfigs, st, mon, runner)
 	}
 	log.Printf("monitor: poll=%s idle-block=%s idle-kill=%s", timings.PollInterval, timings.IdleBlockAfter, timings.IdleKillAfter)
 	if paused, err := watchPauseActive(s.Root); err != nil {
@@ -645,6 +650,7 @@ func runWatch(s *ticket.Store) error {
 					continue
 				}
 				log.Printf("%s/.stage.yml: reloaded (%s)", stageName, stageConfigStatus(sc))
+				drainQueuedStage(s, stageConfigs, stageName, mon, runner)
 			}
 
 		case err, ok := <-w.Errors:
@@ -710,23 +716,13 @@ func handleCreate(s *ticket.Store, stageConfigs *stageConfigStore, path string, 
 		}
 		return
 	}
-	paused, err := watchPauseActive(s.Root)
-	if err != nil {
-		log.Printf("%s → %s: pause check failed: %v", ticketID, stageName, err)
-		return
-	}
-	if paused {
-		log.Printf("%s → %s: watcher paused, skipping agent spawn", ticketID, stageName)
-		return
-	}
-
 	t, err := ticket.LoadFile(path, stageName)
 	if err != nil {
 		log.Printf("%s: failed to parse ticket: %v", base, err)
 		return
 	}
 
-	if _, err := spawnAgent(t, sc, s.Root, worktreeLayout(s.Config), mon, runner, 0, 0); err != nil {
+	if _, err := admitStageTicket(s, t, sc, stageConfigs, mon, runner, 0, 0); err != nil && !errors.Is(err, errWatchPaused) && !errors.Is(err, errStageAtCapacity) {
 		log.Printf("%s → %s: spawn failed: %v", t.ID, t.Stage, err)
 	}
 }
@@ -811,6 +807,139 @@ func buildAgentArgs(t ticket.Ticket, ac *stage.AgentConfig, worktreePath string)
 	return argv
 }
 
+var errStageAtCapacity = errors.New("stage at capacity")
+
+func stageCapacityError(stageName string, active, max int) error {
+	return fmt.Errorf("%w: %q has %d active agent(s), limit %d", errStageAtCapacity, stageName, active, max)
+}
+
+func stageHasCapacity(root, stageName string, max int) (bool, int, error) {
+	if max <= 0 {
+		return true, 0, nil
+	}
+	active, err := agent.ActiveCountByStage(root, stageName)
+	if err != nil {
+		return false, 0, err
+	}
+	return active < max, active, nil
+}
+
+func setQueuedAtIfNeeded(s *ticket.Store, t *ticket.Ticket) error {
+	if !t.QueuedAt.IsZero() {
+		return nil
+	}
+	t.QueuedAt = time.Now().UTC().Truncate(time.Second)
+	return s.Save(*t)
+}
+
+func clearQueuedAtIfNeeded(s *ticket.Store, t *ticket.Ticket) error {
+	if t.QueuedAt.IsZero() {
+		return nil
+	}
+	t.QueuedAt = time.Time{}
+	return s.Save(*t)
+}
+
+func admitStageTicket(s *ticket.Store, t ticket.Ticket, sc stage.Config, stageConfigs *stageConfigStore, mon *agent.Monitor, runner *agent.PTYRunner, rows, cols uint16) (string, error) {
+	paused, err := watchPauseActive(s.Root)
+	if err != nil {
+		return "", fmt.Errorf("checking watch pause: %w", err)
+	}
+
+	maxConcurrent := 0
+	if sc.Agent != nil {
+		maxConcurrent = sc.Agent.MaxConcurrent
+	}
+	if maxConcurrent <= 0 {
+		if err := clearQueuedAtIfNeeded(s, &t); err != nil {
+			return "", fmt.Errorf("clearing queue marker: %w", err)
+		}
+		if paused {
+			log.Printf("%s → %s: watcher paused, skipping agent spawn", t.ID, t.Stage)
+			return "", errWatchPaused
+		}
+		return spawnAgent(t, sc, s.Root, worktreeLayout(s.Config), stageConfigs, mon, runner, rows, cols)
+	}
+
+	if paused {
+		if err := setQueuedAtIfNeeded(s, &t); err != nil {
+			return "", fmt.Errorf("marking ticket queued: %w", err)
+		}
+		log.Printf("%s → %s: watcher paused, ticket queued", t.ID, t.Stage)
+		return "", errWatchPaused
+	}
+
+	hasCapacity, active, err := stageHasCapacity(s.Root, t.Stage, maxConcurrent)
+	if err != nil {
+		return "", fmt.Errorf("checking stage capacity: %w", err)
+	}
+	if !hasCapacity {
+		if err := setQueuedAtIfNeeded(s, &t); err != nil {
+			return "", fmt.Errorf("marking ticket queued: %w", err)
+		}
+		log.Printf("%s → %s: queueing ticket (%d/%d active)", t.ID, t.Stage, active, maxConcurrent)
+		return "", stageCapacityError(t.Stage, active, maxConcurrent)
+	}
+
+	if err := clearQueuedAtIfNeeded(s, &t); err != nil {
+		return "", fmt.Errorf("clearing queue marker: %w", err)
+	}
+	return spawnAgent(t, sc, s.Root, worktreeLayout(s.Config), stageConfigs, mon, runner, rows, cols)
+}
+
+func drainQueuedStage(s *ticket.Store, stageConfigs *stageConfigStore, stageName string, mon *agent.Monitor, runner *agent.PTYRunner) {
+	sc, ok := stageConfigs.Get(stageName)
+	if !ok || !sc.HasAgent() || sc.Agent.MaxConcurrent <= 0 {
+		return
+	}
+	paused, err := watchPauseActive(s.Root)
+	if err != nil {
+		log.Printf("%s: pause check failed while draining queue: %v", stageName, err)
+		return
+	}
+	if paused {
+		return
+	}
+
+	ticketsInStage, err := s.List(stageName)
+	if err != nil {
+		log.Printf("%s: listing queued tickets: %v", stageName, err)
+		return
+	}
+
+	queued := make([]ticket.Ticket, 0, len(ticketsInStage))
+	for _, t := range ticketsInStage {
+		if !t.QueuedAt.IsZero() {
+			queued = append(queued, t)
+		}
+	}
+	sort.Slice(queued, func(i, j int) bool {
+		if queued[i].QueuedAt.Equal(queued[j].QueuedAt) {
+			return queued[i].ID < queued[j].ID
+		}
+		return queued[i].QueuedAt.Before(queued[j].QueuedAt)
+	})
+
+	for _, t := range queued {
+		hasCapacity, active, err := stageHasCapacity(s.Root, stageName, sc.Agent.MaxConcurrent)
+		if err != nil {
+			log.Printf("%s: checking stage capacity while draining queue: %v", stageName, err)
+			return
+		}
+		if !hasCapacity {
+			return
+		}
+		if _, err := admitStageTicket(s, t, sc, stageConfigs, mon, runner, 0, 0); err != nil {
+			if errors.Is(err, errStageAtCapacity) || errors.Is(err, errWatchPaused) {
+				return
+			}
+			log.Printf("%s → %s: queue drain spawn failed: %v", t.ID, stageName, err)
+			continue
+		}
+		log.Printf("%s → %s: admitted from queue (%d/%d active before spawn)", t.ID, stageName, active, sc.Agent.MaxConcurrent)
+	}
+}
+
 // rerunStageAgent is the handler for manual stage-agent re-runs
 // triggered by the Obsidian plugin. It mirrors the watcher's handleCreate
 // path: looks up the ticket's current stage config, verifies an agent is
@@ -846,16 +975,24 @@ func rerunStageAgent(ticketID string, force bool, s *ticket.Store, stageConfigs 
 					log.Printf("%s/%s: failed to mark superseded run: %v", ticketID, latest.RunID, err)
 				} else {
 					syncAgentFrontmatter(s.Root, ticketID)
+					if latest.Stage != t.Stage {
+						drainQueuedStage(s, stageConfigs, latest.Stage, mon, runner)
+					}
 				}
 			}
 		}
 	}
-	return spawnAgent(t, sc, s.Root, worktreeLayout(s.Config), mon, runner, rows, cols)
+	if hasCapacity, active, err := stageHasCapacity(s.Root, t.Stage, sc.Agent.MaxConcurrent); err != nil {
+		return "", fmt.Errorf("checking stage capacity: %w", err)
+	} else if !hasCapacity {
+		return "", stageCapacityError(t.Stage, active, sc.Agent.MaxConcurrent)
+	}
+	return spawnAgent(t, sc, s.Root, worktreeLayout(s.Config), stageConfigs, mon, runner, rows, cols)
 }
 
 // --- agent spawner ---
 
-func spawnAgent(t ticket.Ticket, sc stage.Config, root string, layout worktree.Layout, mon *agent.Monitor, runner *agent.PTYRunner, rows, cols uint16) (string, error) {
+func spawnAgent(t ticket.Ticket, sc stage.Config, root string, layout worktree.Layout, stageConfigs *stageConfigStore, mon *agent.Monitor, runner *agent.PTYRunner, rows, cols uint16) (string, error) {
 	ac := sc.Agent
 
 	runID, seq, attempt, err := agent.NextRun(root, t.ID, t.Stage)
@@ -963,7 +1100,7 @@ func spawnAgent(t ticket.Ticket, sc stage.Config, root string, layout worktree.L
 	log.Printf("%s → %s%s: agent running (view with: tickets agents log %s)%s", t.ID, t.Stage, attemptInfo, t.ID, wtInfo)
 
 	tracked = false
-	go waitForSession(t, runID, ac.Command, sessionName, root, mon, runner)
+	go waitForSession(t, runID, ac.Command, sessionName, root, stageConfigs, mon, runner)
 	return sessionName, nil
 }
 
@@ -983,7 +1120,7 @@ func markSpawnErrored(root, ticketID, runID string, cause error) {
 
 // waitForSession blocks until the PTY session exits and updates the
 // run's status file.
-func waitForSession(t ticket.Ticket, runID, agentName, sessionName, root string, mon *agent.Monitor, runner *agent.PTYRunner) {
+func waitForSession(t ticket.Ticket, runID, agentName, sessionName, root string, stageConfigs *stageConfigStore, mon *agent.Monitor, runner *agent.PTYRunner) {
 	defer mon.UntrackRun(t.ID, runID)
 
 	exitCode, waitErr := runner.Wait(sessionName)
@@ -1024,6 +1161,11 @@ func waitForSession(t ticket.Ticket, runID, agentName, sessionName, root string,
 	// Rewrite frontmatter from the (now-final) run YAML. The YAML is the
 	// source of truth; syncAgentFrontmatter projects it onto the md.
 	syncAgentFrontmatter(root, t.ID)
+	if stageConfigs != nil {
+		if store, err := ticket.Open(root); err == nil {
+			drainQueuedStage(store, stageConfigs, t.Stage, mon, runner)
+		}
+	}
 }
 
 func waitForConcurrentTerminalStatus(root, ticketID, runID string, timeout time.Duration) (agent.AgentStatus, bool) {

@@ -36,9 +36,10 @@ type Ticket struct {
 	// Agent fields are updated at lifecycle boundaries (spawn and
 	// completion) so Obsidian users can see agent state in the
 	// frontmatter without consulting .agents/ files.
-	AgentStatus  string `yaml:"agent_status,omitempty"`
-	AgentRun     string `yaml:"agent_run,omitempty"`
-	AgentSession string `yaml:"agent_session,omitempty"`
+	AgentStatus  string    `yaml:"agent_status,omitempty"`
+	AgentRun     string    `yaml:"agent_run,omitempty"`
+	AgentSession string    `yaml:"agent_session,omitempty"`
+	QueuedAt     time.Time `yaml:"queued_at,omitempty"`
 
 	// Body is the markdown content after the frontmatter block.
 	Body string `yaml:"-"`
