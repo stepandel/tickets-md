@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-04-19
+
 - `tickets watch resume` now drains queued stage agents immediately
   when the `.tickets/.watch-paused` sentinel is removed, so tickets
   that piled up during a pause start running without waiting for
