@@ -8,7 +8,7 @@ stages:
   - review
   - qa
   - docs
-  - merge
+  # - merge
   - done
   - archive
   - cancelled
