@@ -22,6 +22,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   root and keeps the daemon from silently competing with the main-repo
   watcher over `.tickets/.terminal-server`, fsnotify watches, and PTY
   sessions.
+- `tickets watch` now refuses to start when another watcher already
+  owns `.tickets/.watch.lock` for the same repo. The lock is an
+  exclusive `flock` that the kernel releases on process exit (so a
+  crashed watcher does not wedge subsequent starts), and the metadata
+  file records the holder's pid, hostname, and start time so the
+  refusal message names the existing owner. Forced per-worktree
+  daemons (`-C` into a linked worktree) keep their own lock under
+  that worktree's `.tickets/`.
 - `tickets labels create <name>` adds a configured label to
   `.tickets/config.yml` with the default chip color `#6b7280`, so the
   CLI no longer has to edit the config file by hand before assigning a
