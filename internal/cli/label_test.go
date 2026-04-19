@@ -215,6 +215,260 @@ func TestLabelsCreateCommandRejectsReservedNone(t *testing.T) {
 	}
 }
 
+func TestLabelsDeleteCommandRemovesUnusedLabel(t *testing.T) {
+	s := newCleanupStoreWithConfig(t, config.Config{
+		Prefix:        "TIC",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "execute", "done"},
+		Labels: map[string]config.LabelConfig{
+			"Backend": {Color: "#0f766e"},
+		},
+	})
+
+	globalFlags.root = s.Root
+	cmd := newLabelsCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"delete", "Backend"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	cfg, err := config.Load(s.Root)
+	if err != nil {
+		t.Fatalf("Load config: %v", err)
+	}
+	if _, ok := cfg.Labels["Backend"]; ok {
+		t.Fatal("expected Backend label removed from config")
+	}
+	if got := strings.TrimSpace(out.String()); got != `Deleted label "Backend"` {
+		t.Fatalf("output = %q", got)
+	}
+}
+
+func TestLabelsDeleteCommandIsCaseInsensitive(t *testing.T) {
+	s := newCleanupStoreWithConfig(t, config.Config{
+		Prefix:        "TIC",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "execute", "done"},
+		Labels: map[string]config.LabelConfig{
+			"Backend": {Color: "#0f766e"},
+		},
+	})
+
+	globalFlags.root = s.Root
+	cmd := newLabelsCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"delete", "backend"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	cfg, err := config.Load(s.Root)
+	if err != nil {
+		t.Fatalf("Load config: %v", err)
+	}
+	if _, ok := cfg.Labels["Backend"]; ok {
+		t.Fatal("expected Backend label removed from config")
+	}
+	if got := strings.TrimSpace(out.String()); got != `Deleted label "Backend"` {
+		t.Fatalf("output = %q", got)
+	}
+}
+
+func TestLabelsDeleteCommandRejectsUnknownLabel(t *testing.T) {
+	s := newCleanupStoreWithConfig(t, config.Config{
+		Prefix:        "TIC",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "execute", "done"},
+		Labels: map[string]config.LabelConfig{
+			"Backend": {Color: "#0f766e"},
+		},
+	})
+
+	globalFlags.root = s.Root
+	cmd := newLabelsCmd()
+	cmd.SetArgs([]string{"delete", "missing"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), `unknown label "missing"`) {
+		t.Fatalf("Execute() error = %v, want unknown label", err)
+	}
+}
+
+func TestLabelsDeleteCommandRejectsReservedNone(t *testing.T) {
+	s := newCleanupStoreWithConfig(t, config.Config{
+		Prefix:        "TIC",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "execute", "done"},
+	})
+
+	globalFlags.root = s.Root
+	cmd := newLabelsCmd()
+	cmd.SetArgs([]string{"delete", " none "})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), `label "none" is reserved`) {
+		t.Fatalf("Execute() error = %v, want reserved error", err)
+	}
+}
+
+func TestLabelsDeleteCommandFailsWhenAssignedWithoutForce(t *testing.T) {
+	s := newCleanupStoreWithConfig(t, config.Config{
+		Prefix:        "TIC",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "execute", "done"},
+		Labels: map[string]config.LabelConfig{
+			"Backend": {Color: "#0f766e"},
+		},
+	})
+	first, err := s.Create("First")
+	if err != nil {
+		t.Fatalf("Create first: %v", err)
+	}
+	first.Labels = []string{"Backend"}
+	if err := s.Save(first); err != nil {
+		t.Fatalf("Save first: %v", err)
+	}
+	second, err := s.Create("Second")
+	if err != nil {
+		t.Fatalf("Create second: %v", err)
+	}
+	second.Labels = []string{"Backend", "Legacy"}
+	if err := s.Save(second); err != nil {
+		t.Fatalf("Save second: %v", err)
+	}
+	second, err = s.Move(second.ID, "execute")
+	if err != nil {
+		t.Fatalf("Move second: %v", err)
+	}
+
+	globalFlags.root = s.Root
+	cmd := newLabelsCmd()
+	cmd.SetArgs([]string{"delete", "Backend"})
+	err = cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), `label "Backend" is still assigned to 2 ticket(s): `) {
+		t.Fatalf("error = %v", err)
+	}
+	if !strings.Contains(err.Error(), first.ID) || !strings.Contains(err.Error(), second.ID) {
+		t.Fatalf("error = %v, want both ticket IDs", err)
+	}
+	if !strings.Contains(err.Error(), "--force") {
+		t.Fatalf("error = %v, want force hint", err)
+	}
+
+	cfg, err := config.Load(s.Root)
+	if err != nil {
+		t.Fatalf("Load config: %v", err)
+	}
+	if _, ok := cfg.Labels["Backend"]; !ok {
+		t.Fatal("expected Backend label to remain configured")
+	}
+	gotFirst, err := s.Get(first.ID)
+	if err != nil {
+		t.Fatalf("Get first: %v", err)
+	}
+	if strings.Join(gotFirst.Labels, ",") != "Backend" {
+		t.Fatalf("first labels = %#v, want unchanged", gotFirst.Labels)
+	}
+	gotSecond, err := s.Get(second.ID)
+	if err != nil {
+		t.Fatalf("Get second: %v", err)
+	}
+	if strings.Join(gotSecond.Labels, ",") != "Backend,Legacy" {
+		t.Fatalf("second labels = %#v, want unchanged", gotSecond.Labels)
+	}
+}
+
+func TestLabelsDeleteCommandForceRemovesConfigButKeepsTicketLabels(t *testing.T) {
+	s := newCleanupStoreWithConfig(t, config.Config{
+		Prefix:        "TIC",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "execute", "done"},
+		Labels: map[string]config.LabelConfig{
+			"Backend": {Color: "#0f766e"},
+		},
+	})
+	tk, err := s.Create("Ticket")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	tk.Labels = []string{"Backend", "Legacy"}
+	if err := s.Save(tk); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	globalFlags.root = s.Root
+	cmd := newLabelsCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"delete", "--force", "Backend"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	cfg, err := config.Load(s.Root)
+	if err != nil {
+		t.Fatalf("Load config: %v", err)
+	}
+	if _, ok := cfg.Labels["Backend"]; ok {
+		t.Fatal("expected Backend label removed from config")
+	}
+	got, err := s.Get(tk.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if strings.Join(got.Labels, ",") != "Backend,Legacy" {
+		t.Fatalf("labels = %#v, want unchanged", got.Labels)
+	}
+	if want := `Deleted label "Backend" (still assigned to 1 ticket(s); use ` + "`tickets unlabel <id> Backend`" + ` to remove)`; strings.TrimSpace(out.String()) != want {
+		t.Fatalf("output = %q", out.String())
+	}
+}
+
+func TestLabelsDeleteCommandTruncatesLongCarrierList(t *testing.T) {
+	s := newCleanupStoreWithConfig(t, config.Config{
+		Prefix:        "TIC",
+		ProjectPrefix: "PRJ",
+		Stages:        []string{"backlog", "execute", "done"},
+		Labels: map[string]config.LabelConfig{
+			"Backend": {Color: "#0f766e"},
+		},
+	})
+
+	var ids []string
+	for i := 0; i < 5; i++ {
+		tk, err := s.Create("Ticket")
+		if err != nil {
+			t.Fatalf("Create %d: %v", i, err)
+		}
+		tk.Labels = []string{"Backend"}
+		if err := s.Save(tk); err != nil {
+			t.Fatalf("Save %d: %v", i, err)
+		}
+		ids = append(ids, tk.ID)
+	}
+
+	globalFlags.root = s.Root
+	cmd := newLabelsCmd()
+	cmd.SetArgs([]string{"delete", "Backend"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), strings.Join(ids[:3], ", ")) {
+		t.Fatalf("error = %v, want first three ids", err)
+	}
+	if strings.Contains(err.Error(), ids[3]) || strings.Contains(err.Error(), ids[4]) {
+		t.Fatalf("error = %v, did not expect IDs beyond truncation limit", err)
+	}
+	if !strings.Contains(err.Error(), "(and 2 more)") {
+		t.Fatalf("error = %v, want truncation count", err)
+	}
+}
+
 func TestLabelsCommandOnTicketShowsUnknownLabelsAndNone(t *testing.T) {
 	s := newCleanupStoreWithConfig(t, config.Config{
 		Prefix:        "TIC",

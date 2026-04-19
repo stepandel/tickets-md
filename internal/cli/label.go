@@ -105,6 +105,7 @@ func newLabelsCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&onTicket, "on", "", "show the labels currently assigned to a ticket")
 	cmd.AddCommand(newLabelsCreateCmd())
+	cmd.AddCommand(newLabelsDeleteCmd())
 	return cmd
 }
 
@@ -140,6 +141,52 @@ func newLabelsCreateCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func newLabelsDeleteCmd() *cobra.Command {
+	var force bool
+	cmd := &cobra.Command{
+		Use:   "delete <name>",
+		Short: "Delete a configured label",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := openStore()
+			if err != nil {
+				return err
+			}
+			name := strings.TrimSpace(args[0])
+			normalized := normalizeLabelName(name)
+			if normalized == "" {
+				return fmt.Errorf("label name is required")
+			}
+			if normalized == "none" {
+				return fmt.Errorf(`label "none" is reserved`)
+			}
+			key, ok := canonicalConfiguredLabel(s.Config, name)
+			if !ok {
+				return fmt.Errorf("unknown label %q", normalized)
+			}
+			carriers, err := ticketsCarryingLabel(s, key)
+			if err != nil {
+				return err
+			}
+			if len(carriers) > 0 && !force {
+				return fmt.Errorf("%s; pass --force to delete the config entry anyway", renderAssignedLabelError(key, carriers))
+			}
+			delete(s.Config.Labels, key)
+			if err := config.Save(s.Root, s.Config); err != nil {
+				return err
+			}
+			if len(carriers) > 0 {
+				fmt.Fprintf(cmd.OutOrStdout(), "Deleted label %q (still assigned to %d ticket(s); use `tickets unlabel <id> %s` to remove)\n", key, len(carriers), key)
+				return nil
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Deleted label %q\n", key)
+			return nil
+		},
+	}
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "delete the config entry even if tickets still carry the label")
+	return cmd
 }
 
 func normalizeLabelName(name string) string {
@@ -247,6 +294,35 @@ func renderLabelsOrNone(labels []string) string {
 		return "(none)"
 	}
 	return renderLabels(labels)
+}
+
+func ticketsCarryingLabel(s *ticket.Store, label string) ([]string, error) {
+	all, err := s.ListAll()
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	for _, stage := range s.Config.Stages {
+		for _, t := range all[stage] {
+			if ticketHasLabel(t, label) {
+				ids = append(ids, t.ID)
+			}
+		}
+	}
+	return ids, nil
+}
+
+func renderAssignedLabelError(label string, carriers []string) string {
+	const explicitLimit = 3
+	shown := carriers
+	if len(shown) > explicitLimit {
+		shown = shown[:explicitLimit]
+	}
+	message := fmt.Sprintf("label %q is still assigned to %d ticket(s): %s", label, len(carriers), strings.Join(shown, ", "))
+	if len(carriers) > explicitLimit {
+		message += fmt.Sprintf(" (and %d more)", len(carriers)-explicitLimit)
+	}
+	return message
 }
 
 func configuredAndUnconfiguredLabels(cfg config.Config, assigned []string) []pickerItem {

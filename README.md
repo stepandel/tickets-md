@@ -292,6 +292,7 @@ setup steps.
 | `tickets list [--stage X] [--project P] [--archived]`| List tickets, grouped by stage (alias: `ls`)       |
 | `tickets labels [--on <id>]`            | List configured labels, or the labels on a ticket  |
 | `tickets labels create <name>`          | Add a configured label with the default chip color |
+| `tickets labels delete <name> [--force]`| Remove a configured label entry from config        |
 | `tickets archive <id> [--from <stage>] [--older-than D] [--dry-run]` | Move a ticket, or older tickets from a stage, into the configured archive stage |
 | `tickets show <id>`                     | Print a ticket's contents                          |
 | `tickets move <id> <stage>`             | Move a ticket to another stage (alias: `mv`)       |
@@ -770,6 +771,7 @@ The CLI exposes the same ticket-level workflows:
 tickets labels
 tickets labels --on TIC-001
 tickets labels create backend
+tickets labels delete backend
 tickets label TIC-001 backend customer
 tickets unlabel TIC-001 customer
 ```
@@ -784,6 +786,16 @@ Assignment stays strict: `tickets label` and `tickets new --label` still
 fail on unknown labels instead of creating them implicitly. The board's
 `t` action can also create a new configured label on the fly with the
 same default color, then assign it immediately.
+
+Configured label deletion is explicit via `tickets labels delete <name>`.
+By default it fails if any tickets still carry that label and reports a
+short list of the affected ticket IDs. Pass `--force` to remove only the
+config entry and leave existing ticket frontmatter unchanged. Those
+leftover labels remain visible as unconfigured labels with fallback board
+styling, `tickets labels --on <id>` still shows them, and `tickets unlabel`
+can remove them. Re-adding the label with `tickets label` or
+`tickets new --label` stays strict and will fail until you recreate the
+configured entry with `tickets labels create`.
 
 ## Create-Time Metadata
 
