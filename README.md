@@ -294,6 +294,7 @@ setup steps.
 | `tickets labels create <name>`          | Add a configured label with the default chip color |
 | `tickets labels edit <name> [--color C] [--bold\|--no-bold] [--order N\| - ]` | Edit configured label styling fields |
 | `tickets labels rename <old> <new>`    | Change a configured label's casing and rewrite matching ticket labels |
+| `tickets labels delete <name> [--force]`| Remove a configured label entry from config        |
 | `tickets archive <id> [--from <stage>] [--older-than D] [--dry-run]` | Move a ticket, or older tickets from a stage, into the configured archive stage |
 | `tickets show <id>`                     | Print a ticket's contents                          |
 | `tickets move <id> <stage>`             | Move a ticket to another stage (alias: `mv`)       |
@@ -775,6 +776,7 @@ tickets labels create backend
 tickets labels edit backend --color '#0f766e' --bold --order 10
 tickets labels edit backend --order -
 tickets labels rename backend Backend
+tickets labels delete backend
 tickets label TIC-001 backend customer
 tickets unlabel TIC-001 customer
 ```
@@ -791,8 +793,12 @@ rendering, and `--order` sets picker ordering (`--order -` clears it).
 `tickets labels rename` supports casing-only renames such as `backend`
 to `Backend`, and rewrites matching ticket frontmatter labels to keep
 ticket casing aligned with config.
-Semantic renames across different normalized label names and label
-deletion are intentionally not supported yet.
+`tickets labels delete` removes a configured label entry. By default it
+fails if any tickets still carry that label and prints carrier IDs so
+you can scrub them first with `tickets unlabel`; `--force` removes only
+the config entry and leaves existing ticket frontmatter intact.
+Semantic renames across different normalized label names are
+intentionally not supported yet.
 Assignment stays strict: `tickets label` and `tickets new --label` still
 fail on unknown labels instead of creating them implicitly. The board's
 `t` action can also create a new configured label on the fly with the

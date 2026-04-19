@@ -35,8 +35,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   clear it). `tickets labels rename <old> <new>` supports casing-only
   renames such as `backend` to `Backend` and rewrites matching ticket
   labels to keep frontmatter aligned with the configured key. Semantic
-  renames across different normalized names and label deletion remain
-  unsupported.
+  renames across different normalized names remain unsupported.
+- `tickets labels delete <name>` removes a configured label from
+  `.tickets/config.yml`. By default it fails when any tickets still
+  carry the label and prints the first few carrier IDs so you can scrub
+  them with `tickets unlabel`. Pass `--force` to drop only the config
+  entry and leave existing ticket frontmatter intact; those leftover
+  labels remain visible on the board and in `tickets labels --on <id>`
+  as unconfigured labels until you remove them or recreate the entry.
 - `tickets watch` now detects when a configured stage directory is
   removed, renamed, or recreated on the filesystem without a matching
   `stages:` edit. The watcher drops the watch and clears the cached
