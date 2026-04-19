@@ -231,7 +231,7 @@ worse than none — it advertises capability that does not exist.
    `queued_at` frontmatter is stamped and the spawn is deferred;
    `drainQueuedStage` admits queued tickets in FIFO order (oldest
    `queued_at` first) as active runs finish, `.stage.yml` is reloaded,
-   or the watcher starts.
+   the watcher starts, or the watcher is resumed from a pause.
 3. A `StatusSpawned` run YAML is written, then the PTY session is
    started (optionally inside a per-ticket worktree).
 4. The monitor (`internal/agent/monitor.go`) polls every 5s by
@@ -251,7 +251,9 @@ worse than none — it advertises capability that does not exist.
 `tickets watch pause` / `resume` gates step 2 (and the equivalent
 cron and rerun entry points) by toggling `.tickets/.watch-paused`;
 the monitor in step 4 still reconciles running sessions while the
-watcher is paused.
+watcher is paused. On resume the watcher immediately runs
+`drainAllStages` so tickets that piled up during the pause spawn
+without waiting for another event.
 
 ## When you break a rule
 

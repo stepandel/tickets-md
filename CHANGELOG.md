@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `tickets watch resume` now drains queued stage agents immediately
+  when the `.tickets/.watch-paused` sentinel is removed, so tickets
+  that piled up during a pause start running without waiting for
+  another stage event.
 - `.stage.yml` gained an optional `agent.max_concurrent` field that
   caps how many non-terminal agent runs may be active in a stage at
   once (default `0` = unlimited). When the cap is reached, arriving

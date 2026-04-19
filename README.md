@@ -572,7 +572,9 @@ tickets watch resume                   # clears the pause
 
 Pause state is tracked in `.tickets/.watch-paused`, so it survives
 restarts and is picked up immediately by any `tickets watch` process
-without reconfiguration.
+without reconfiguration. Resuming drains any tickets that queued up
+during the pause right away, instead of waiting for the next stage
+event.
 
 The Obsidian plugin's Board and Agents views both expose the same
 pause/resume toggle (with a status pill) in their headers while
