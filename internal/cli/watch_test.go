@@ -871,3 +871,60 @@ func TestMovedTicketActiveRunStillCountsAgainstOldStageCapacity(t *testing.T) {
 	}
 	waitForRunStatus(t, s.Root, movedTicket.ID, agent.StatusFailed)
 }
+
+func TestRerunStageAgentClearsQueuedAt(t *testing.T) {
+	s := newWatchStore(t)
+	tk, err := s.Create("Queued rerun")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	tk, err = s.Move(tk.ID, "execute")
+	if err != nil {
+		t.Fatalf("Move: %v", err)
+	}
+	tk.QueuedAt = time.Date(2026, time.April, 18, 10, 0, 0, 0, time.UTC)
+	if err := s.Save(tk); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	runner := agent.NewPTYRunner()
+	t.Cleanup(runner.Shutdown)
+	mon := agent.NewMonitor(s.Root, 0, 0, 0, runner.Alive, runner.IdleSeconds, runner.Kill)
+	stageConfigs := newStageConfigStore()
+	stageConfigs.Set("execute", stage.Config{
+		Agent: &stage.AgentConfig{
+			Command:       "/bin/sh",
+			Args:          []string{"-c", "sleep 30"},
+			Prompt:        "ignored",
+			MaxConcurrent: 2,
+		},
+	})
+
+	session, err := rerunStageAgent(tk.ID, false, s, stageConfigs, mon, runner, 0, 0)
+	if err != nil {
+		t.Fatalf("rerunStageAgent: %v", err)
+	}
+
+	got, err := s.Get(tk.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if !got.QueuedAt.IsZero() {
+		t.Fatalf("QueuedAt = %v, want cleared after rerun spawn", got.QueuedAt)
+	}
+
+	if err := runner.Kill(session); err != nil {
+		t.Fatalf("Kill(%q): %v", session, err)
+	}
+	waitForRunStatus(t, s.Root, tk.ID, agent.StatusFailed)
+
+	// After termination, drainQueuedStage runs via waitForSession. With
+	// QueuedAt cleared, no phantom second run should appear.
+	latest, err := agent.Latest(s.Root, tk.ID)
+	if err != nil {
+		t.Fatalf("Latest: %v", err)
+	}
+	if latest.RunID != "001-execute" {
+		t.Fatalf("latest run id = %q, want 001-execute (no phantom rerun)", latest.RunID)
+	}
+}

@@ -987,6 +987,11 @@ func rerunStageAgent(ticketID string, force bool, s *ticket.Store, stageConfigs 
 	} else if !hasCapacity {
 		return "", stageCapacityError(t.Stage, active, sc.Agent.MaxConcurrent)
 	}
+	// A rerun takes the ticket out of the queue: clear QueuedAt so a
+	// later drain doesn't re-spawn the same ticket after this run ends.
+	if err := clearQueuedAtIfNeeded(s, &t); err != nil {
+		return "", fmt.Errorf("clearing queue marker: %w", err)
+	}
 	return spawnAgent(t, sc, s.Root, worktreeLayout(s.Config), stageConfigs, mon, runner, rows, cols)
 }
 
