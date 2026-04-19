@@ -442,9 +442,7 @@ func runWatch(s *ticket.Store) error {
 
 		log.Printf("watching %s/ (%s)", st, stageConfigStatus(sc))
 	}
-	for _, st := range s.Config.Stages {
-		drainQueuedStage(s, stageConfigs, st, mon, runner)
-	}
+	drainAllStages(s, stageConfigs, mon, runner)
 	log.Printf("monitor: poll=%s idle-block=%s idle-kill=%s", timings.PollInterval, timings.IdleBlockAfter, timings.IdleKillAfter)
 	if paused, err := watchPauseActive(s.Root); err != nil {
 		log.Printf("watch pause: check failed: %v", err)
@@ -573,6 +571,18 @@ func runWatch(s *ticket.Store) error {
 		case event, ok := <-w.Events:
 			if !ok {
 				return nil
+			}
+			if event.Name == watchPausePath(s.Root) {
+				if event.Has(fsnotify.Remove) {
+					log.Printf("watch resume: draining queued tickets")
+					drainAllStages(s, stageConfigs, mon, runner)
+				} else if event.Has(fsnotify.Rename) {
+					if _, err := os.Stat(event.Name); errors.Is(err, os.ErrNotExist) {
+						log.Printf("watch resume: draining queued tickets")
+						drainAllStages(s, stageConfigs, mon, runner)
+					}
+				}
+				continue
 			}
 			if event.Name == configPath {
 				scheduleConfigReload()
@@ -944,6 +954,12 @@ func drainQueuedStage(s *ticket.Store, stageConfigs *stageConfigStore, stageName
 			continue
 		}
 		log.Printf("%s → %s: admitted from queue (%d/%d active before spawn)", t.ID, stageName, active, sc.Agent.MaxConcurrent)
+	}
+}
+
+func drainAllStages(s *ticket.Store, stageConfigs *stageConfigStore, mon *agent.Monitor, runner *agent.PTYRunner) {
+	for _, stageName := range s.Config.Stages {
+		drainQueuedStage(s, stageConfigs, stageName, mon, runner)
 	}
 }
 
