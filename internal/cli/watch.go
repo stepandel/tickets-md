@@ -44,6 +44,8 @@ with a .log sibling under runs/.
 When invoked from a linked git worktree, watch refuses to start unless
 you pass -C explicitly. Run it from the main repo root so one daemon
 owns .tickets/.terminal-server, fsnotify watches, and PTY sessions.
+It also refuses to start when another main-repo watcher already owns
+.tickets/.watch.lock; forced per-worktree daemons keep their own lock.
 
 Create a .stage.yml in any stage directory to configure an agent:
 
@@ -64,6 +66,11 @@ Create a .stage.yml in any stage directory to configure an agent:
 			if err != nil {
 				return err
 			}
+			lock, err := acquireWatcherLock(s.Root)
+			if err != nil {
+				return err
+			}
+			defer lock.Release()
 			return runWatch(s)
 		},
 	}

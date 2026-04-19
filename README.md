@@ -1110,6 +1110,13 @@ unless you pass `-C` explicitly. `tickets watch` refuses to start from
 the linked worktree by default; run it from the main repo root so one
 daemon owns `.tickets/.terminal-server`, fsnotify watches, and PTY
 sessions, or pass `-C <path>` to opt into a per-worktree daemon.
+`tickets watch` also refuses to start when another watcher already
+holds `.tickets/.watch.lock` for the same repo — the lock is an
+exclusive `flock` the kernel releases on process exit, and its
+metadata file names the existing owner (pid, hostname, start time)
+so the refusal message points you at the process already running.
+Forced per-worktree daemons (`-C` into a linked worktree) keep their
+own lock file under that worktree's `.tickets/`.
 
 ID numbers are assigned by scanning every stage directory for the
 highest existing `<PREFIX>-NNN`, so deletions and manual edits never
