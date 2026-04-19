@@ -29,6 +29,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and case-insensitive duplicates by reporting the existing configured
   key. `tickets label` and `tickets new --label` remain strict and
   still fail on unknown labels instead of creating them implicitly.
+- `tickets labels delete <name>` removes a configured label from
+  `.tickets/config.yml`. By default it fails when any tickets still
+  carry the label and prints the first few carrier IDs so you can scrub
+  them with `tickets unlabel`. Pass `--force` to drop only the config
+  entry and leave existing ticket frontmatter intact; those leftover
+  labels remain visible on the board and in `tickets labels --on <id>`
+  as unconfigured labels until you remove them or recreate the entry.
 - `tickets watch` now detects when a configured stage directory is
   removed, renamed, or recreated on the filesystem without a matching
   `stages:` edit. The watcher drops the watch and clears the cached
