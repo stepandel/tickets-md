@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.15] - 2026-04-19
+
+- Recut the release tag from the commit that includes the direct
+  `golang.org/x/sys` dependency, so the published release picks up the
+  Windows watcher-lock build fix and passes the release workflow's
+  `go mod tidy -diff` gate.
+
 ## [0.1.14] - 2026-04-19
 
 - Promoted `golang.org/x/sys` to a direct module dependency so the new
