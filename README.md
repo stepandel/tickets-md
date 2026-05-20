@@ -7,7 +7,7 @@
    ╚═╝   ╚═╝ ╚═════╝╚═╝  ╚═╝╚══════╝   ╚═╝   ╚══════╝    ╚═╝     ╚═╝╚═════╝
 ```
 
-# tickets-md
+# tickets.md
 
 A Linear-style ticket tracker that lives inside a single git repo —
 every ticket is a markdown file, every stage a folder, kept right
